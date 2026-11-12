@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=600, height=600, initial-scale=1">
+<title>Meu App</title>
+<style>
+  /* Tela dos óculos: 600x600, fundo preto (preto aparece transparente na lente) */
+  :root {
+    --bg: #000;
+    --text: #f5f5f5;
+    --muted: #9a9a9a;
+    --accent: #4fc3f7;
+    --ok: #81c784;
+    --card: #141414;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 600px; height: 600px; overflow: hidden;
+    background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .screen { display: none; width: 600px; height: 600px; padding: 40px; flex-direction: column; }
+  .screen.active { display: flex; }
+  h1 { font-size: 34px; font-weight: 600; margin-bottom: 24px; }
+  .hint { margin-top: auto; font-size: 18px; color: var(--muted); text-align: center; }
+
+  .list { display: flex; flex-direction: column; gap: 12px; }
+  .item {
+    font-size: 28px; padding: 16px 22px; border-radius: 16px;
+    background: var(--card); border: 3px solid transparent;
+    display: flex; align-items: center; gap: 14px;
+  }
+  .item.focus { border-color: var(--accent); }
+  .item .icon { width: 36px; text-align: center; }
+  .item.done .label { color: var(--muted); text-decoration: line-through; }
+
+  .big { font-size: 110px; font-weight: 300; text-align: center; margin-top: 50px; font-variant-numeric: tabular-nums; }
+  .sub { font-size: 30px; color: var(--muted); text-align: center; margin-top: 10px; }
+</style>
+</head>
+<body>
+
+<!-- MENU INICIAL -->
+<section class="screen" id="menu">
+  <h1>Meu App</h1>
+  <div class="list">
+    <div class="item" data-go="relogio"><span class="icon">🕒</span><span class="label">Relógio</span></div>
+    <div class="item" data-go="tarefas"><span class="icon">✅</span><span class="label">Tarefas</span></div>
+    <div class="item" data-go="cronometro"><span class="icon">⏱️</span><span class="label">Cronômetro</span></div>
+  </div>
+  <p class="hint">Deslize para escolher · toque para abrir</p>
+</section>
+
+<!-- RELÓGIO -->
+<section class="screen" id="relogio">
+  <div class="big" id="hora">--:--</div>
+  <div class="sub" id="data"></div>
+  <div class="list" style="margin-top:auto">
+    <div class="item" data-go="menu"><span class="icon">←</span><span class="label">Voltar</span></div>
+  </div>
+</section>
+
+<!-- TAREFAS -->
+<section class="screen" id="tarefas">
+  <h1>Tarefas</h1>
+  <div class="list" id="lista-tarefas"></div>
+</section>
+
+<!-- CRONÔMETRO -->
+<section class="screen" id="cronometro">
+  <div class="big" id="crono">00:00</div>
+  <div class="list" style="margin-top:auto">
+    <div class="item" data-action="crono-toggle"><span class="icon">▶</span><span class="label" id="crono-btn">Iniciar</span></div>
+    <div class="item" data-action="crono-zerar"><span class="icon">↺</span><span class="label">Zerar</span></div>
+    <div class="item" data-go="menu"><span class="icon">←</span><span class="label">Voltar</span></div>
+  </div>
+</section>
+
+<script>
+/* ---------- Tarefas (edite esta lista ou peça ao Claude) ---------- */
+const TAREFAS_PADRAO = ["Beber água", "Responder mensagens", "Treinar", "Ler 10 páginas"];
+
+function lerFeitas() {
+  try { return JSON.parse(localStorage.getItem("feitas") || "[]"); } catch { return []; }
+}
+function salvarFeitas(v) {
+  try { localStorage.setItem("feitas", JSON.stringify(v)); } catch {}
+}
+function montarTarefas() {
+  const feitas = lerFeitas();
+  const el = document.getElementById("lista-tarefas");
+  el.innerHTML = "";
+  TAREFAS_PADRAO.forEach((t, i) => {
+    const d = document.createElement("div");
+    const ok = feitas.includes(i);
+    d.className = "item" + (ok ? " done" : "");
+    d.dataset.action = "tarefa";
+    d.dataset.idx = i;
+    d.innerHTML = `<span class="icon">${ok ? "☑" : "☐"}</span><span class="label">${t}</span>`;
+    el.appendChild(d);
+  });
+  const v = document.createElement("div");
+  v.className = "item"; v.dataset.go = "menu";
+  v.innerHTML = `<span class="icon">←</span><span class="label">Voltar</span>`;
+  el.appendChild(v);
+}
+
+/* ---------- Navegação por setas + Enter (Neural Band) ---------- */
+let telaAtual = "menu";
+let foco = 0;
+
+function itens() { return [...document.querySelectorAll(`#${telaAtual} .item`)]; }
+function pintarFoco() {
+  const l = itens();
+  if (foco >= l.length) foco = l.length - 1;
+  if (foco < 0) foco = 0;
+  l.forEach((it, i) => it.classList.toggle("focus", i === foco));
+  if (l[foco]) l[foco].scrollIntoView({ block: "nearest" });
+}
+function irPara(id) {
+  document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
+  document.getElementById(id).classList.add("active");
+  telaAtual = id;
+  if (id === "tarefas") montarTarefas();
+  foco = 0;
+  pintarFoco();
+}
+function ativar(it) {
+  if (!it) return;
+  if (it.dataset.go) return irPara(it.dataset.go);
+  const a = it.dataset.action;
+  if (a === "tarefa") {
+    const i = Number(it.dataset.idx);
+    let f = lerFeitas();
+    f = f.includes(i) ? f.filter(x => x !== i) : [...f, i];
+    salvarFeitas(f);
+    const pos = foco; montarTarefas(); foco = pos; pintarFoco();
+  }
+  if (a === "crono-toggle") cronoToggle();
+  if (a === "crono-zerar") cronoZerar();
+}
+
+document.addEventListener("keydown", e => {
+  const k = e.key;
+  if (k === "ArrowDown" || k === "ArrowRight") { foco++; pintarFoco(); e.preventDefault(); }
+  else if (k === "ArrowUp" || k === "ArrowLeft") { foco--; pintarFoco(); e.preventDefault(); }
+  else if (k === "Enter" || k === " ") { ativar(itens()[foco]); e.preventDefault(); }
+  else if ((k === "Escape" || k === "Backspace") && telaAtual !== "menu") { irPara("menu"); e.preventDefault(); }
+});
+/* Também funciona com clique/toque (útil para testar no computador/celular) */
+document.addEventListener("click", e => {
+  const it = e.target.closest(".item");
+  if (!it) return;
+  foco = itens().indexOf(it);
+  pintarFoco();
+  ativar(it);
+});
+
+/* ---------- Relógio ---------- */
+function atualizarRelogio() {
+  const d = new Date();
+  document.getElementById("hora").textContent =
+    d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  document.getElementById("data").textContent =
+    (s => s[0].toUpperCase() + s.slice(1))(d.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" }));
+}
+setInterval(atualizarRelogio, 1000);
+atualizarRelogio();
+
+/* ---------- Cronômetro ---------- */
+let cronoInicio = null, cronoAcumulado = 0, cronoTimer = null;
+function cronoMostrar() {
+  const ms = cronoAcumulado + (cronoInicio ? Date.now() - cronoInicio : 0);
+  const s = Math.floor(ms / 1000);
+  const mm = String(Math.floor(s / 60)).padStart(2, "0");
+  const ss = String(s % 60).padStart(2, "0");
+  document.getElementById("crono").textContent = `${mm}:${ss}`;
+}
+function cronoToggle() {
+  if (cronoInicio) {
+    cronoAcumulado += Date.now() - cronoInicio; cronoInicio = null;
+    clearInterval(cronoTimer);
+    document.getElementById("crono-btn").textContent = "Continuar";
+  } else {
+    cronoInicio = Date.now();
+    cronoTimer = setInterval(cronoMostrar, 250);
+    document.getElementById("crono-btn").textContent = "Pausar";
+  }
+}
+function cronoZerar() {
+  cronoInicio = null; cronoAcumulado = 0; clearInterval(cronoTimer);
+  document.getElementById("crono-btn").textContent = "Iniciar";
+  cronoMostrar();
+}
+
+irPara("menu");
+</script>
+</body>
+</html>
