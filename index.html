@@ -13,6 +13,7 @@
     --accent: #4fc3f7;
     --ok: #81c784;
     --card: #141414;
+    --err: #ef9a9a;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body {
@@ -20,23 +21,64 @@
     background: var(--bg); color: var(--text);
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
-  .screen { display: none; width: 600px; height: 600px; padding: 40px; flex-direction: column; }
+  .screen { display: none; width: 600px; height: 600px; padding: 36px 40px; flex-direction: column; }
   .screen.active { display: flex; }
-  h1 { font-size: 34px; font-weight: 600; margin-bottom: 24px; }
-  .hint { margin-top: auto; font-size: 18px; color: var(--muted); text-align: center; }
+  h1 { font-size: 32px; font-weight: 600; margin-bottom: 20px; }
+  .hint { margin-top: auto; padding-top: 10px; font-size: 18px; color: var(--muted); text-align: center; }
 
-  .list { display: flex; flex-direction: column; gap: 12px; }
+  .list { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; min-height: 0; scrollbar-width: none; }
+  .list::-webkit-scrollbar { display: none; }
   .item {
     font-size: 28px; padding: 16px 22px; border-radius: 16px;
     background: var(--card); border: 3px solid transparent;
-    display: flex; align-items: center; gap: 14px;
+    display: flex; align-items: center; gap: 14px; flex-shrink: 0;
   }
   .item.focus { border-color: var(--accent); }
-  .item .icon { width: 36px; text-align: center; }
+  .item .icon { width: 36px; text-align: center; flex-shrink: 0; }
   .item.done .label { color: var(--muted); text-decoration: line-through; }
+  .item.result { flex-direction: column; align-items: flex-start; gap: 4px; font-size: 24px; }
+  .item.result .rt { font-weight: 600; }
+  .item.result .rs { font-size: 19px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .item.result .ru { font-size: 16px; color: var(--accent); }
 
   .big { font-size: 110px; font-weight: 300; text-align: center; margin-top: 50px; font-variant-numeric: tabular-nums; }
   .sub { font-size: 30px; color: var(--muted); text-align: center; margin-top: 10px; }
+
+  /* ---------- Navegador ---------- */
+  .campo {
+    font-size: 26px; min-height: 64px; padding: 14px 18px; border-radius: 14px;
+    background: var(--card); border: 2px solid #333; margin-bottom: 16px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: ltr;
+  }
+  .campo .cursor { display: inline-block; width: 2px; height: 28px; background: var(--accent); vertical-align: middle; animation: pisca 1s steps(1) infinite; }
+  @keyframes pisca { 50% { opacity: 0; } }
+  .campo .vazio { color: var(--muted); }
+  .teclado { display: flex; flex-direction: column; gap: 6px; }
+  .linha { display: flex; gap: 6px; }
+  .tecla {
+    flex: 1; height: 50px; border-radius: 10px; background: var(--card);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 24px; border: 3px solid transparent;
+  }
+  .tecla.especial { font-size: 19px; color: #ddd; }
+  .tecla.ir { background: #0d3a4f; color: #fff; font-weight: 600; }
+  .tecla.focus { border-color: var(--accent); }
+
+  .leitor-titulo { font-size: 22px; font-weight: 600; color: var(--accent); margin-bottom: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .leitor {
+    flex: 1; min-height: 0; overflow-y: auto; font-size: 25px; line-height: 1.45;
+    scrollbar-width: none; padding-right: 4px;
+  }
+  .leitor::-webkit-scrollbar { display: none; }
+  .leitor p { margin-bottom: 16px; }
+  .leitor h2 { font-size: 28px; margin: 18px 0 10px; }
+  .barra { display: flex; gap: 10px; margin-top: 12px; }
+  .barra .item { flex: 1; justify-content: center; font-size: 21px; padding: 12px 6px; }
+  .progresso { height: 4px; background: #222; border-radius: 2px; margin-top: 8px; }
+  .progresso div { height: 100%; width: 0; background: var(--accent); border-radius: 2px; }
+
+  .aviso { font-size: 26px; color: var(--muted); text-align: center; margin-top: 120px; line-height: 1.4; }
+  .aviso.erro { color: var(--err); }
 </style>
 </head>
 <body>
@@ -45,6 +87,7 @@
 <section class="screen" id="menu">
   <h1>Meu App</h1>
   <div class="list">
+    <div class="item" data-go="navegador"><span class="icon">🌐</span><span class="label">Navegador</span></div>
     <div class="item" data-go="relogio"><span class="icon">🕒</span><span class="label">Relógio</span></div>
     <div class="item" data-go="tarefas"><span class="icon">✅</span><span class="label">Tarefas</span></div>
     <div class="item" data-go="cronometro"><span class="icon">⏱️</span><span class="label">Cronômetro</span></div>
@@ -57,7 +100,7 @@
   <div class="big" id="hora">--:--</div>
   <div class="sub" id="data"></div>
   <div class="list" style="margin-top:auto">
-    <div class="item" data-go="menu"><span class="icon">←</span><span class="label">Voltar</span></div>
+    <div class="item" data-go="voltar"><span class="icon">←</span><span class="label">Voltar</span></div>
   </div>
 </section>
 
@@ -73,83 +116,173 @@
   <div class="list" style="margin-top:auto">
     <div class="item" data-action="crono-toggle"><span class="icon">▶</span><span class="label" id="crono-btn">Iniciar</span></div>
     <div class="item" data-action="crono-zerar"><span class="icon">↺</span><span class="label">Zerar</span></div>
-    <div class="item" data-go="menu"><span class="icon">←</span><span class="label">Voltar</span></div>
+    <div class="item" data-go="voltar"><span class="icon">←</span><span class="label">Voltar</span></div>
+  </div>
+</section>
+
+<!-- NAVEGADOR: início -->
+<section class="screen" id="navegador">
+  <h1>Navegador</h1>
+  <div class="list" id="nav-inicio"></div>
+</section>
+
+<!-- NAVEGADOR: teclado -->
+<section class="screen" id="digitar">
+  <div class="campo" id="campo"></div>
+  <div class="teclado" id="teclado"></div>
+</section>
+
+<!-- NAVEGADOR: resultados / links / favoritos (lista genérica) -->
+<section class="screen" id="lista">
+  <h1 id="lista-titulo">Resultados</h1>
+  <div class="list" id="lista-itens"></div>
+</section>
+
+<!-- NAVEGADOR: leitor de página -->
+<section class="screen" id="leitor">
+  <div class="leitor-titulo" id="leitor-titulo"></div>
+  <div class="leitor" id="leitor-texto"></div>
+  <div class="progresso"><div id="leitor-prog"></div></div>
+  <div class="barra" id="leitor-barra">
+    <div class="item" data-action="leitor-links">🔗 Links</div>
+    <div class="item" data-action="leitor-fav">☆ Salvar</div>
+    <div class="item" data-go="voltar">← Voltar</div>
+  </div>
+</section>
+
+<!-- CARREGANDO / ERRO -->
+<section class="screen" id="carregando">
+  <div class="aviso" id="carregando-msg">Carregando…</div>
+  <div class="list" style="margin-top:auto">
+    <div class="item" data-go="voltar"><span class="icon">←</span><span class="label">Voltar</span></div>
   </div>
 </section>
 
 <script>
-/* ---------- Tarefas (edite esta lista ou peça ao Claude) ---------- */
+/* ======================================================================
+   Utilidades de armazenamento (podem falhar em modo privado)
+   ====================================================================== */
+function ler(chave, padrao) {
+  try { const v = localStorage.getItem(chave); return v ? JSON.parse(v) : padrao; } catch { return padrao; }
+}
+function salvar(chave, valor) {
+  try { localStorage.setItem(chave, JSON.stringify(valor)); } catch {}
+}
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+/* ======================================================================
+   Tarefas
+   ====================================================================== */
 const TAREFAS_PADRAO = ["Beber água", "Responder mensagens", "Treinar", "Ler 10 páginas"];
 
-function lerFeitas() {
-  try { return JSON.parse(localStorage.getItem("feitas") || "[]"); } catch { return []; }
-}
-function salvarFeitas(v) {
-  try { localStorage.setItem("feitas", JSON.stringify(v)); } catch {}
-}
 function montarTarefas() {
-  const feitas = lerFeitas();
+  const feitas = ler("feitas", []);
   const el = document.getElementById("lista-tarefas");
   el.innerHTML = "";
   TAREFAS_PADRAO.forEach((t, i) => {
-    const d = document.createElement("div");
     const ok = feitas.includes(i);
-    d.className = "item" + (ok ? " done" : "");
-    d.dataset.action = "tarefa";
-    d.dataset.idx = i;
-    d.innerHTML = `<span class="icon">${ok ? "☑" : "☐"}</span><span class="label">${t}</span>`;
-    el.appendChild(d);
+    el.insertAdjacentHTML("beforeend",
+      `<div class="item${ok ? " done" : ""}" data-action="tarefa" data-idx="${i}">
+         <span class="icon">${ok ? "☑" : "☐"}</span><span class="label">${esc(t)}</span></div>`);
   });
-  const v = document.createElement("div");
-  v.className = "item"; v.dataset.go = "menu";
-  v.innerHTML = `<span class="icon">←</span><span class="label">Voltar</span>`;
-  el.appendChild(v);
+  el.insertAdjacentHTML("beforeend", `<div class="item" data-go="voltar"><span class="icon">←</span><span class="label">Voltar</span></div>`);
 }
 
-/* ---------- Navegação por setas + Enter (Neural Band) ---------- */
+/* ======================================================================
+   Navegação entre telas (com histórico para "Voltar")
+   ====================================================================== */
 let telaAtual = "menu";
 let foco = 0;
+const pilha = [];          // telas anteriores: { id, foco }
 
 function itens() { return [...document.querySelectorAll(`#${telaAtual} .item`)]; }
+
 function pintarFoco() {
   const l = itens();
-  if (foco >= l.length) foco = l.length - 1;
-  if (foco < 0) foco = 0;
+  if (!l.length) return;
+  foco = Math.max(0, Math.min(foco, l.length - 1));
   l.forEach((it, i) => it.classList.toggle("focus", i === foco));
-  if (l[foco]) l[foco].scrollIntoView({ block: "nearest" });
+  l[foco].scrollIntoView({ block: "nearest" });
 }
-function irPara(id) {
+
+function mostrar(id) {
   document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
   document.getElementById(id).classList.add("active");
   telaAtual = id;
+}
+
+function irPara(id, opts = {}) {
+  if (id === "voltar") return voltar();
+  if (!opts.semHistorico && telaAtual !== id && telaAtual !== "carregando") pilha.push({ id: telaAtual, foco });
+  mostrar(id);
   if (id === "tarefas") montarTarefas();
-  foco = 0;
+  if (id === "navegador") montarInicioNav();
+  if (id === "digitar") { tecFoco = { l: 0, c: 0 }; montarTeclado(); }
+  foco = opts.foco || 0;
+  if (id === "leitor") { foco = 2; atualizarProgresso(); }
   pintarFoco();
 }
+
+function voltar() {
+  const ant = pilha.pop();
+  if (!ant) return irPara("menu", { semHistorico: true });
+  mostrar(ant.id);
+  if (ant.id === "tarefas") montarTarefas();
+  if (ant.id === "navegador") montarInicioNav();
+  if (ant.id === "digitar") montarTeclado();
+  foco = ant.foco;
+  if (ant.id === "leitor") atualizarProgresso();
+  pintarFoco();
+}
+
 function ativar(it) {
   if (!it) return;
   if (it.dataset.go) return irPara(it.dataset.go);
   const a = it.dataset.action;
   if (a === "tarefa") {
     const i = Number(it.dataset.idx);
-    let f = lerFeitas();
+    let f = ler("feitas", []);
     f = f.includes(i) ? f.filter(x => x !== i) : [...f, i];
-    salvarFeitas(f);
+    salvar("feitas", f);
     const pos = foco; montarTarefas(); foco = pos; pintarFoco();
   }
   if (a === "crono-toggle") cronoToggle();
   if (a === "crono-zerar") cronoZerar();
-}
+  if (a === "abrir") abrirPagina(it.dataset.url);
+  if (a === "buscar") buscar(it.dataset.q);
+  if (a === "digitar-novo") { textoDigitado = ""; irPara("digitar"); }
+  if (a === "favoritos") mostrarFavoritos();
+  if (a === "leitor-links") mostrarLinksDaPagina();
+  if (a === "leitor-fav") favoritarAtual(it);
+  }
 
+/* ======================================================================
+   Controles: setas + Enter (Neural Band) e clique (para testar)
+   ====================================================================== */
 document.addEventListener("keydown", e => {
   const k = e.key;
+
+  if (telaAtual === "digitar") { if (teclaNoTeclado(e)) e.preventDefault(); return; }
+
+  if (telaAtual === "leitor") {
+    const t = document.getElementById("leitor-texto");
+    if (k === "ArrowDown") { t.scrollBy({ top: 330, behavior: "smooth" }); setTimeout(atualizarProgresso, 350); e.preventDefault(); return; }
+    if (k === "ArrowUp")   { t.scrollBy({ top: -330, behavior: "smooth" }); setTimeout(atualizarProgresso, 350); e.preventDefault(); return; }
+    if (k === "ArrowRight") { foco++; pintarFoco(); e.preventDefault(); return; }
+    if (k === "ArrowLeft")  { foco--; pintarFoco(); e.preventDefault(); return; }
+  }
+
   if (k === "ArrowDown" || k === "ArrowRight") { foco++; pintarFoco(); e.preventDefault(); }
   else if (k === "ArrowUp" || k === "ArrowLeft") { foco--; pintarFoco(); e.preventDefault(); }
   else if (k === "Enter" || k === " ") { ativar(itens()[foco]); e.preventDefault(); }
-  else if ((k === "Escape" || k === "Backspace") && telaAtual !== "menu") { irPara("menu"); e.preventDefault(); }
+  else if ((k === "Escape" || k === "Backspace") && telaAtual !== "menu") { voltar(); e.preventDefault(); }
 });
-/* Também funciona com clique/toque (útil para testar no computador/celular) */
+
 document.addEventListener("click", e => {
+  const tecla = e.target.closest(".tecla");
+  if (tecla) { tecFoco = { l: Number(tecla.dataset.l), c: Number(tecla.dataset.c) }; pressionarTecla(); return; }
   const it = e.target.closest(".item");
   if (!it) return;
   foco = itens().indexOf(it);
@@ -157,25 +290,28 @@ document.addEventListener("click", e => {
   ativar(it);
 });
 
-/* ---------- Relógio ---------- */
+/* ======================================================================
+   Relógio
+   ====================================================================== */
 function atualizarRelogio() {
   const d = new Date();
   document.getElementById("hora").textContent =
     d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-  document.getElementById("data").textContent =
-    (s => s[0].toUpperCase() + s.slice(1))(d.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" }));
+  const s = d.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
+  document.getElementById("data").textContent = s[0].toUpperCase() + s.slice(1);
 }
 setInterval(atualizarRelogio, 1000);
 atualizarRelogio();
 
-/* ---------- Cronômetro ---------- */
+/* ======================================================================
+   Cronômetro
+   ====================================================================== */
 let cronoInicio = null, cronoAcumulado = 0, cronoTimer = null;
 function cronoMostrar() {
   const ms = cronoAcumulado + (cronoInicio ? Date.now() - cronoInicio : 0);
   const s = Math.floor(ms / 1000);
-  const mm = String(Math.floor(s / 60)).padStart(2, "0");
-  const ss = String(s % 60).padStart(2, "0");
-  document.getElementById("crono").textContent = `${mm}:${ss}`;
+  document.getElementById("crono").textContent =
+    `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 }
 function cronoToggle() {
   if (cronoInicio) {
@@ -194,7 +330,272 @@ function cronoZerar() {
   cronoMostrar();
 }
 
-irPara("menu");
+/* ======================================================================
+   NAVEGADOR
+   Busca: DuckDuckGo (versão leve)  ·  Leitura de páginas: r.jina.ai,
+   que transforma qualquer site em texto limpo para a tela pequena.
+   ====================================================================== */
+const LEITOR = "https://r.jina.ai/";
+const BUSCA = q => "https://lite.duckduckgo.com/lite/?kl=br-pt&q=" + encodeURIComponent(q);
+
+const FAVORITOS_PADRAO = [
+  { t: "Wikipédia", u: "https://pt.m.wikipedia.org/wiki/Especial:Aleatória" },
+  { t: "g1 – Últimas notícias", u: "https://g1.globo.com/ultimas-noticias/" },
+  { t: "BBC News Brasil", u: "https://www.bbc.com/portuguese" },
+];
+
+let textoDigitado = "";
+let paginaAtual = null;   // { titulo, url, links: [{t,u}] }
+
+function montarInicioNav() {
+  const hist = ler("buscas", []).slice(0, 4);
+  let html = `<div class="item" data-action="digitar-novo"><span class="icon">⌨️</span><span class="label">Buscar ou digitar site</span></div>
+              <div class="item" data-action="favoritos"><span class="icon">⭐</span><span class="label">Favoritos</span></div>`;
+  hist.forEach(q => {
+    html += `<div class="item" data-action="buscar" data-q="${esc(q)}"><span class="icon">🕘</span><span class="label">${esc(q)}</span></div>`;
+  });
+  html += `<div class="item" data-go="voltar"><span class="icon">←</span><span class="label">Voltar</span></div>`;
+  document.getElementById("nav-inicio").innerHTML = html;
+}
+
+/* ---------- Teclado na tela ---------- */
+const TECLAS = [
+  ["a","b","c","d","e","f","g"],
+  ["h","i","j","k","l","m","n"],
+  ["o","p","q","r","s","t","u"],
+  ["v","w","x","y","z","ç","ã"],
+  ["é","á","ó","í","ê","õ","."],
+  ["1","2","3","4","5","6","7"],
+  ["8","9","0","-","/",":","@"],
+  ["ESPAÇO","APAGAR","LIMPAR","IR"],
+];
+let tecFoco = { l: 0, c: 0 };
+
+function montarTeclado() {
+  const cont = document.getElementById("teclado");
+  cont.innerHTML = TECLAS.map((linha, l) =>
+    `<div class="linha">${linha.map((t, c) => {
+      const esp = t.length > 1;
+      const cls = "tecla" + (esp ? " especial" : "") + (t === "IR" ? " ir" : "") +
+                  (l === tecFoco.l && c === tecFoco.c ? " focus" : "");
+      const rot = { "ESPAÇO": "espaço", "APAGAR": "⌫ apagar", "LIMPAR": "limpar", "IR": "Ir ➜" }[t] || t;
+      return `<div class="${cls}" data-l="${l}" data-c="${c}">${rot}</div>`;
+    }).join("")}</div>`).join("");
+  const campo = document.getElementById("campo");
+  campo.innerHTML = textoDigitado
+    ? `${esc(textoDigitado)}<span class="cursor"></span>`
+    : `<span class="vazio">Busque ou digite um site</span><span class="cursor"></span>`;
+  campo.scrollLeft = campo.scrollWidth;
+}
+
+function moverTecla(dl, dc) {
+  let { l, c } = tecFoco;
+  if (dl) {
+    const largAnt = TECLAS[l].length;
+    l = (l + dl + TECLAS.length) % TECLAS.length;
+    c = Math.min(TECLAS[l].length - 1, Math.floor((c + 0.5) * TECLAS[l].length / largAnt));
+  } else {
+    c = (c + dc + TECLAS[l].length) % TECLAS[l].length;
+  }
+  tecFoco = { l, c };
+  montarTeclado();
+}
+
+function pressionarTecla() {
+  const t = TECLAS[tecFoco.l][tecFoco.c];
+  if (t === "ESPAÇO") textoDigitado += " ";
+  else if (t === "APAGAR") textoDigitado = textoDigitado.slice(0, -1);
+  else if (t === "LIMPAR") textoDigitado = "";
+  else if (t === "IR") return irDoTeclado();
+  else textoDigitado += t;
+  montarTeclado();
+}
+
+function teclaNoTeclado(e) {
+  const k = e.key;
+  if (k === "ArrowUp") moverTecla(-1, 0);
+  else if (k === "ArrowDown") moverTecla(1, 0);
+  else if (k === "ArrowLeft") moverTecla(0, -1);
+  else if (k === "ArrowRight") moverTecla(0, 1);
+  else if (k === "Enter") pressionarTecla();
+  else if (k === "Escape") voltar();
+  /* teclado físico (para testar no computador) */
+  else if (k === "Backspace") { textoDigitado = textoDigitado.slice(0, -1); montarTeclado(); }
+  else if (k.length === 1) { textoDigitado += k; montarTeclado(); }
+  else return false;
+  return true;
+}
+
+function irDoTeclado() {
+  const q = textoDigitado.trim();
+  if (!q) return;
+  if (pareceSite(q)) abrirPagina(q.startsWith("http") ? q : "https://" + q);
+  else buscar(q);
+}
+function pareceSite(s) {
+  return /^https?:\/\//i.test(s) || (/^[\w-]+(\.[\w-]+)+(\/\S*)?$/.test(s) && !s.includes(" "));
+}
+
+/* ---------- Carregar via leitor ---------- */
+async function lerViaLeitor(url) {
+  const r = await fetch(LEITOR + url);
+  if (r.status === 429) throw new Error("Muitos acessos seguidos. Espere 1 minuto e tente de novo.");
+  if (!r.ok) throw new Error("Não consegui abrir esta página (erro " + r.status + ").");
+  const txt = await r.text();
+  const titulo = (txt.match(/^Title:\s*(.*)$/m) || [])[1] || url;
+  const i = txt.indexOf("Markdown Content:");
+  const corpo = i >= 0 ? txt.slice(i + "Markdown Content:".length) : txt;
+  return { titulo: titulo.trim(), corpo };
+}
+
+function carregando(msg) {
+  if (telaAtual !== "carregando") pilha.push({ id: telaAtual, foco });
+  mostrar("carregando");
+  const el = document.getElementById("carregando-msg");
+  el.className = "aviso"; el.textContent = msg;
+  foco = 0; pintarFoco();
+}
+function erro(msg) {
+  const el = document.getElementById("carregando-msg");
+  el.className = "aviso erro"; el.textContent = msg;
+}
+/* Ao terminar de carregar, substitui a tela "carregando" pela tela de destino */
+function trocarCarregando(id) {
+  mostrar(id);
+}
+
+/* ---------- Busca ---------- */
+async function buscar(q) {
+  let h = ler("buscas", []).filter(x => x !== q);
+  h.unshift(q); salvar("buscas", h.slice(0, 10));
+  carregando("Buscando “" + q + "”…");
+  try {
+    const { corpo } = await lerViaLeitor(BUSCA(q));
+    const res = [];
+    const re = /^\s*\d+\.\s*\[(.+?)\]\((https?:\/\/[^\s)]+)\)\s*\n([\s\S]*?)(?=\n\s*\d+\.\s*\[|(?![\s\S]))/gm;
+    let m;
+    while ((m = re.exec(corpo)) && res.length < 12) {
+      let url = m[2];
+      const ud = url.match(/[?&]uddg=([^&]+)/);
+      if (ud) url = decodeURIComponent(ud[1]);
+      if (/duckduckgo\.com\/y\.js|ad_domain|ad_provider/.test(url)) continue;   // anúncios
+      const linhas = m[3].trim().split("\n").map(s => s.trim()).filter(Boolean);
+      const resumo = linhas.slice(0, -1).join(" ").replace(/\*\*/g, "");
+      res.push({ t: m[1].replace(/\*\*/g, ""), u: url, s: resumo, d: (linhas[linhas.length - 1] || "").replace(/\*\*/g, "") });
+    }
+    if (telaAtual !== "carregando") return;
+    if (!res.length) return erro("Nenhum resultado para “" + q + "”.");
+    mostrarLista("“" + q + "”", res.map(r =>
+      `<div class="item result" data-action="abrir" data-url="${esc(r.u)}">
+         <span class="rt">${esc(r.t)}</span>
+         ${r.s ? `<span class="rs">${esc(r.s)}</span>` : ""}
+         <span class="ru">${esc(r.d)}</span></div>`).join(""));
+  } catch (e) {
+    if (telaAtual === "carregando") erro(e.message.includes("fetch") ? "Sem internet ou serviço fora do ar." : e.message);
+  }
+}
+
+function mostrarLista(titulo, html) {
+  document.getElementById("lista-titulo").textContent = titulo;
+  document.getElementById("lista-itens").innerHTML =
+    html + `<div class="item" data-go="voltar"><span class="icon">←</span><span class="label">Voltar</span></div>`;
+  trocarCarregando("lista");
+  foco = 0; pintarFoco();
+}
+
+/* ---------- Abrir página ---------- */
+async function abrirPagina(url) {
+  carregando("Abrindo página…");
+  try {
+    const { titulo, corpo } = await lerViaLeitor(url);
+    if (telaAtual !== "carregando") return;
+    const { html, links } = markdownParaTela(corpo, url);
+    paginaAtual = { titulo, url, links };
+    document.getElementById("leitor-titulo").textContent = titulo;
+    const t = document.getElementById("leitor-texto");
+    t.innerHTML = html || `<p>Esta página não tem texto para mostrar.</p>`;
+    t.scrollTop = 0;
+    const jaFav = ler("favoritos", FAVORITOS_PADRAO).some(f => f.u === url);
+    document.querySelector('[data-action="leitor-fav"]').textContent = jaFav ? "★ Salvo" : "☆ Salvar";
+    trocarCarregando("leitor");
+    foco = 2; pintarFoco(); atualizarProgresso();
+  } catch (e) {
+    if (telaAtual === "carregando") erro(e.message.includes("fetch") ? "Sem internet ou serviço fora do ar." : e.message);
+  }
+}
+
+/* Converte o texto do site em parágrafos legíveis e separa os links */
+function markdownParaTela(md, base) {
+  const links = [];
+  const vistos = new Set();
+  md = md.slice(0, 30000)
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")                       // imagens
+    .replace(/\[\s*\]\([^)]*\)/g, "");                          // links vazios
+  md = md.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)[^)]*\)/g, (_, txt, u) => {
+    const t = txt.replace(/[*_`]/g, "").trim();
+    if (t.length > 2 && !vistos.has(u) && !u.startsWith(base + "#")) { vistos.add(u); links.push({ t, u }); }
+    return t;
+  });
+  const blocos = md.split(/\n\s*\n/).map(b => b.trim()).filter(Boolean);
+  let html = "";
+  for (let b of blocos) {
+    if (/^\|?\s*-{3,}/.test(b) || /^[-=*_\s|]+$/.test(b)) continue;          // separadores de tabela/linha
+    b = b.replace(/\|/g, " ").replace(/[ \t]+/g, " ");
+    const h = b.match(/^#{1,6}\s+(.*)/);
+    if (h) { html += `<h2>${esc(h[1].replace(/[*_`]/g, ""))}</h2>`; continue; }
+    const linha = b.replace(/^[-*+]\s+/gm, "• ").replace(/[*_`]{1,3}/g, "").replace(/\n/g, " ").trim();
+    if (linha.length < 3) continue;
+    html += `<p>${esc(linha)}</p>`;
+  }
+  return { html, links };
+}
+
+function atualizarProgresso() {
+  const t = document.getElementById("leitor-texto");
+  const max = t.scrollHeight - t.clientHeight;
+  document.getElementById("leitor-prog").style.width = (max > 0 ? Math.min(100, t.scrollTop / max * 100) : 100) + "%";
+}
+
+function mostrarLinksDaPagina() {
+  if (!paginaAtual) return;
+  pilha.push({ id: telaAtual, foco });
+  const ls = paginaAtual.links.slice(0, 60);
+  document.getElementById("lista-titulo").textContent = "Links da página";
+  document.getElementById("lista-itens").innerHTML =
+    (ls.length ? ls.map(l => `<div class="item result" data-action="abrir" data-url="${esc(l.u)}">
+        <span class="rt">${esc(l.t)}</span><span class="ru">${esc(new URL(l.u).hostname)}</span></div>`).join("")
+      : `<div class="aviso" style="margin-top:20px">Nenhum link nesta página.</div>`) +
+    `<div class="item" data-go="voltar"><span class="icon">←</span><span class="label">Voltar</span></div>`;
+  mostrar("lista");
+  foco = 0; pintarFoco();
+}
+
+/* ---------- Favoritos ---------- */
+function mostrarFavoritos() {
+  pilha.push({ id: telaAtual, foco });
+  const favs = ler("favoritos", FAVORITOS_PADRAO);
+  document.getElementById("lista-titulo").textContent = "Favoritos";
+  document.getElementById("lista-itens").innerHTML =
+    favs.map(f => `<div class="item result" data-action="abrir" data-url="${esc(f.u)}">
+        <span class="rt">⭐ ${esc(f.t)}</span><span class="ru">${esc(new URL(f.u).hostname)}</span></div>`).join("") +
+    `<div class="item" data-go="voltar"><span class="icon">←</span><span class="label">Voltar</span></div>`;
+  mostrar("lista");
+  foco = 0; pintarFoco();
+}
+function favoritarAtual(botao) {
+  if (!paginaAtual) return;
+  let favs = ler("favoritos", FAVORITOS_PADRAO);
+  if (favs.some(f => f.u === paginaAtual.url)) {
+    favs = favs.filter(f => f.u !== paginaAtual.url);
+    botao.textContent = "☆ Salvar";
+  } else {
+    favs.unshift({ t: paginaAtual.titulo.slice(0, 60), u: paginaAtual.url });
+    botao.textContent = "★ Salvo";
+  }
+  salvar("favoritos", favs);
+}
+
+irPara("menu", { semHistorico: true });
 </script>
 </body>
 </html>
