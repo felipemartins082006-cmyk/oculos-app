@@ -14,8 +14,8 @@ android {
     applicationId = "com.martins.logbook"
     minSdk = 26
     targetSdk = 36
-    versionCode = 1
-    versionName = "1.0"
+    versionCode = 2
+    versionName = "1.1"
   }
 
   // Chave fixa de assinatura: assim cada versão nova instala por cima da anterior
@@ -57,6 +57,7 @@ dependencies {
   implementation(platform(libs.androidx.compose.bom))
   implementation(libs.androidx.material3)
   testImplementation(libs.junit)
+  testImplementation(libs.orgjson)
   testImplementation(libs.robolectric)
   testImplementation(platform(libs.androidx.compose.bom))
   testImplementation(libs.androidx.ui.test.junit4)

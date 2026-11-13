@@ -22,12 +22,16 @@ class Logbook(private val context: Context) {
 
   private var proximoId = (series.value.maxOfOrNull { it.id } ?: 0L) + 1
 
-  /** Na primeira vez que o app abre, já entra com o logbook que você mandou. */
-  fun carregarInicialSePreciso() {
-    if (prefs.getBoolean("inicial_importado", false)) return
-    val texto = context.assets.open("logbook_inicial.txt").bufferedReader().use { it.readText() }
-    importar(Leitor.ler(texto, LocalDate.now()).series)
-    prefs.edit().putBoolean("inicial_importado", true).apply()
+  /** Quantas séries da última importação ainda dá para desfazer (0 = nada). */
+  val desfazivel = mutableStateOf(ultimaImportacao().count())
+
+  init {
+    // A versão 1.0 vinha com um logbook de exemplo (ids 1 a 155, gravados antes de qualquer
+    // outra coisa). O app agora começa vazio: tira só esses registros de exemplo.
+    if (prefs.getBoolean("inicial_importado", false)) {
+      salvar(series.value.filter { it.id > 155 })
+      prefs.edit().remove("inicial_importado").apply()
+    }
   }
 
   fun adicionar(lidas: List<SerieLida>): List<Serie> {
@@ -40,7 +44,10 @@ class Logbook(private val context: Context) {
 
   fun apagar(id: Long) = salvar(series.value.filter { it.id != id })
 
-  fun apagarTudo() = salvar(emptyList())
+  fun apagarTudo() {
+    salvar(emptyList())
+    esquecerImportacao()
+  }
 
   /** Renomeia um exercício; se o nome novo já existe, os dois viram um só. */
   fun renomear(de: String, para: String) {
@@ -50,14 +57,14 @@ class Logbook(private val context: Context) {
   }
 
   /**
-   * Junta séries importadas sem duplicar: num mesmo dia, uma série igual
-   * (exercício + carga + reps) que já está salva não entra de novo. Assim dá para
-   * importar o mesmo texto do Discord duas vezes, ou um pedaço que se sobrepõe, sem bagunçar.
+   * Separa o que é novo do que já está salvo: num mesmo dia, uma série igual
+   * (exercício + carga + reps) que já existe não entra de novo. Assim dá para importar
+   * o mesmo texto do Discord duas vezes, ou um pedaço que se sobrepõe, sem duplicar.
    */
-  fun importar(lidas: List<SerieLida>): Importacao {
+  fun separarNovas(lidas: List<SerieLida>): Pair<List<SerieLida>, Int> {
     val jaTem = HashMap<String, Int>()
     series.value.forEach { jaTem.merge(chave(it.data, it.exercicio, it.peso, it.reps), 1, Int::plus) }
-    val entram = mutableListOf<SerieLida>()
+    val novas = mutableListOf<SerieLida>()
     var repetidas = 0
     for (l in lidas) {
       val k = chave(l.data, l.exercicio, l.peso, l.reps)
@@ -65,10 +72,45 @@ class Logbook(private val context: Context) {
       if (n > 0) {
         jaTem[k] = n - 1
         repetidas++
-      } else entram += l
+      } else novas += l
     }
-    if (entram.isNotEmpty()) adicionar(entram)
-    return Importacao(entram.size, repetidas, entram.map { it.data }.distinct().size)
+    return novas to repetidas
+  }
+
+  /** Importa de uma vez (ex.: todo o histórico do Discord). Dá para desfazer depois. */
+  fun importar(lidas: List<SerieLida>): Importacao {
+    val (novas, repetidas) = separarNovas(lidas)
+    if (novas.isNotEmpty()) {
+      val salvas = adicionar(novas)
+      prefs.edit()
+          .putLong("imp_de", salvas.first().id)
+          .putLong("imp_ate", salvas.last().id)
+          .apply()
+      desfazivel.value = ultimaImportacao().count()
+    }
+    return Importacao(novas.size, repetidas, novas.map { it.data }.distinct().size)
+  }
+
+  /** Apaga as séries da última importação (as que você editou depois também saem). */
+  fun desfazerImportacao(): Int {
+    val ids = ultimaImportacao()
+    val n = series.value.count { it.id in ids }
+    salvar(series.value.filter { it.id !in ids })
+    esquecerImportacao()
+    return n
+  }
+
+  private fun ultimaImportacao(): LongRange {
+    val de = prefs.getLong("imp_de", 0)
+    val ate = prefs.getLong("imp_ate", -1)
+    return if (de <= 0 || ate < de) LongRange.EMPTY
+    else if (series.value.none { it.id in de..ate }) LongRange.EMPTY
+    else de..ate
+  }
+
+  private fun esquecerImportacao() {
+    prefs.edit().remove("imp_de").remove("imp_ate").apply()
+    desfazivel.value = 0
   }
 
   private fun chave(d: LocalDate, ex: String, peso: Double, reps: Int) = "$d|$ex|${fmtPeso(peso)}|$reps"

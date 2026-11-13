@@ -24,7 +24,9 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Surface
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
@@ -37,6 +39,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
@@ -72,17 +75,37 @@ fun TelaTreino(
     dia: LocalDate,
     onDia: (LocalDate) -> Unit,
     onAbrirExercicio: (String) -> Unit,
+    onImportar: () -> Unit,
 ) {
   val ctx = LocalContext.current
   var campo by remember { mutableStateOf(TextFieldValue("")) }
   var erro by remember { mutableStateOf<String?>(null) }
   var editando by remember { mutableStateOf<Serie?>(null) }
   var escolhendoData by remember { mutableStateOf(false) }
+  var colando by remember { mutableStateOf(false) }
+  val hoje = LocalDate.now()
 
   val doDia = todas.filter { it.data == dia }.sortedBy { it.id }
   val porExercicio = doDia.groupBy { it.exercicio }
   val nomes = remember(todas) { resumos(todas).map { it.exercicio } }
   val digitado = nomeDigitado(campo.text)
+
+  fun colar(texto: String): Leitura {
+    val r = Leitor.ler(texto, dia)
+    if (r.series.isNotEmpty()) {
+      val antes = todas
+      val novas = lb.adicionar(r.series)
+      val dias = novas.map { it.data }.distinct()
+      Toast.makeText(
+          ctx,
+          "${novas.size} séries adicionadas" + if (dias.size == 1) " em ${dataCurta(dias[0])}" else " em ${dias.size} dias",
+          Toast.LENGTH_LONG,
+      ).show()
+      novas.firstNotNullOfOrNull { recordeBatido(antes.filter { s -> s.data <= it.data }, it) }
+          ?.let { Toast.makeText(ctx, "🏆 $it", Toast.LENGTH_LONG).show() }
+    }
+    return r
+  }
 
   fun adicionar(texto: String) {
     val r = Leitor.ler(texto, dia)
@@ -120,14 +143,28 @@ fun TelaTreino(
           Text("›", fontSize = 28.sp, color = if (dia < LocalDate.now()) Cinza else Superficie2)
         }
       }
-      if (dia != LocalDate.now()) {
-        TextButton(onClick = { onDia(LocalDate.now()) }, modifier = Modifier.fillMaxWidth()) {
-          Text("Voltar para hoje")
+      Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton(onClick = { escolhendoData = true }, modifier = Modifier.weight(1f)) { Text("📅 Outro dia") }
+        OutlinedButton(onClick = { colando = true }, modifier = Modifier.weight(1f)) { Text("📋 Colar treino") }
+      }
+      if (dia != hoje) {
+        Surface(
+            color = Color(0xFF3A2414), shape = RoundedCornerShape(10.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        ) {
+          Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Registrando em ${dataComSemana(dia)}", color = Laranja, fontSize = 14.sp, modifier = Modifier.weight(1f))
+            TextButton(onClick = { onDia(hoje) }) { Text("Ir para hoje") }
+          }
         }
       }
     }
 
-    item {
+    if (colando) item { ColarTreino(dia, onFechar = { colando = false }, onAdicionar = ::colar) }
+
+    if (todas.isEmpty() && !colando) item { BoasVindas(onImportar) }
+
+    if (!colando) item {
       Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
           OutlinedTextField(
@@ -176,10 +213,11 @@ fun TelaTreino(
       }
     }
 
-    if (porExercicio.isEmpty()) {
+    if (porExercicio.isEmpty() && todas.isNotEmpty()) {
       item {
         Text(
-            "Nenhum exercício neste dia.\nDigite como no Discord, uma série por vez:\nsquat 160kg x 4\nsquat 150kg x 6 (1 RIR)",
+            if (dia == hoje) "Nada registrado hoje ainda.\nDigite uma série por vez:\nsquat 160kg x 4"
+            else "Nada registrado em ${dataCurta(dia)}.\nDigite as séries que você lembra,\nou use “Colar treino” para lançar tudo de uma vez.",
             color = Cinza, modifier = Modifier.padding(top = 24.dp).fillMaxWidth(),
             textAlign = androidx.compose.ui.text.style.TextAlign.Center, lineHeight = 22.sp,
         )
@@ -278,8 +316,12 @@ private fun EditarSerie(s: Serie, onSalvar: (Serie) -> Unit, onApagar: () -> Uni
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EscolherData(dia: LocalDate, onEscolher: (LocalDate) -> Unit, onFechar: () -> Unit) {
+  val limite = LocalDate.now().plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
   val estado = rememberDatePickerState(
       initialSelectedDateMillis = dia.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
+      selectableDates = object : SelectableDates {
+        override fun isSelectableDate(utcTimeMillis: Long) = utcTimeMillis < limite
+      },
   )
   DatePickerDialog(
       onDismissRequest = onFechar,
@@ -291,4 +333,55 @@ private fun EscolherData(dia: LocalDate, onEscolher: (LocalDate) -> Unit, onFech
       },
       dismissButton = { TextButton(onClick = onFechar) { Text("Cancelar") } },
   ) { DatePicker(state = estado) }
+}
+
+@Composable
+private fun BoasVindas(onImportar: () -> Unit) {
+  Cartao {
+    Text("Seu logbook está vazio", color = Texto, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+    Passo("Treinando agora?", "Digite cada série no campo abaixo, do jeito que você já escreve: squat 160kg x 4")
+    Passo("Esqueceu de registrar um dia?", "Toque em “Outro dia”, escolha a data e lance as séries, uma por uma ou todas com “Colar treino”.")
+    Passo("Já tem tudo anotado no Discord?", "Traga o histórico inteiro de uma vez:")
+    Button(onClick = onImportar, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+      Text("Importar do Discord")
+    }
+  }
+}
+
+@Composable
+private fun Passo(titulo: String, texto: String) {
+  Text(titulo, color = Laranja, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.padding(top = 12.dp))
+  Text(texto, color = Cinza, fontSize = 13.sp)
+}
+
+/** Lançar um treino inteiro de uma vez num dia (útil quando você esqueceu de registrar). */
+@Composable
+private fun ColarTreino(dia: LocalDate, onFechar: () -> Unit, onAdicionar: (String) -> Leitura) {
+  var texto by remember { mutableStateOf("") }
+  var aviso by remember { mutableStateOf<String?>(null) }
+  Cartao {
+    Text("Treino de ${dataComSemana(dia)}", color = Texto, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+    Text("Uma série por linha:", color = Cinza, fontSize = 13.sp, modifier = Modifier.padding(vertical = 6.dp))
+    OutlinedTextField(
+        texto, { texto = it; aviso = null },
+        modifier = Modifier.fillMaxWidth(),
+        placeholder = { Text("squat 160kg x 4\nsquat 150kg x 6\nleg extension 80kg x 10, 10, 8") },
+        minLines = 6, maxLines = 14,
+        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false),
+    )
+    aviso?.let { Text(it, color = Laranja, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp)) }
+    Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+      Button(enabled = texto.isNotBlank(), onClick = {
+        val r = onAdicionar(texto)
+        if (r.naoEntendidas.isEmpty() && r.series.isNotEmpty()) onFechar()
+        else {
+          // Deixa no campo só o que não deu para entender, para você corrigir.
+          texto = r.naoEntendidas.joinToString("\n")
+          aviso = (if (r.series.isNotEmpty()) "${r.series.size} séries adicionadas. " else "") +
+              "Não entendi ${if (r.naoEntendidas.size == 1) "esta linha" else "estas linhas"}: corrija e toque em Adicionar."
+        }
+      }) { Text("Adicionar") }
+      OutlinedButton(onClick = onFechar) { Text("Fechar") }
+    }
+  }
 }

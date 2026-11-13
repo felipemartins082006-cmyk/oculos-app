@@ -3,9 +3,12 @@
 App Android para registrar o treino da academia, no lugar do canal do Discord.
 Tudo fica salvo só no celular: sem conta, sem internet e sem permissões.
 
-## Como usar
+O app começa vazio: quem usa é que vai inserindo os treinos.
 
-**Treino**: o dia de hoje já vem aberto. Digite uma série por vez, do mesmo jeito do Discord:
+## Três jeitos de inserir
+
+**1. Treinando agora (aba Treino):** o dia de hoje já vem aberto. Digite uma série por vez,
+do mesmo jeito do Discord:
 
     squat 160kg x 4
     bench press -> 94kg x 4 reps (1 RIR)
@@ -13,23 +16,29 @@ Tudo fica salvo só no celular: sem conta, sem internet e sem permissões.
     lower-back extension 20kg x 3 sets x 8 reps
     pull ups bw x 10             (só o peso do corpo)
 
-- Enquanto você digita o nome, aparecem os seus exercícios como sugestão, e embaixo
-  aparece o que você fez da última vez e o seu recorde.
-- Quando uma série bate o recorde de carga ou de 1RM estimado, aparece um aviso 🏆.
-- Toque numa série para editar ou apagar. Use "+ repetir" para repetir a última série.
-- Use ‹ › ou toque na data para registrar ou corrigir outro dia.
+Enquanto você digita o nome, aparecem os seus exercícios como sugestão, e embaixo
+aparece o que você fez da última vez e o seu recorde. Quando bate um recorde, aparece um aviso 🏆.
 
-**Histórico**: todos os dias de treino, do mais novo para o mais antigo, com filtro por exercício.
+**2. Esqueceu de registrar (aba Treino):** toque em "Outro dia" (ou ‹) e escolha a data.
+Uma faixa laranja mostra que você está registrando num dia passado. Lance as séries uma
+por uma, ou toque em "Colar treino" e escreva/cole o treino inteiro, uma série por linha.
+Linhas que o app não entender ficam no campo para você corrigir.
 
-**Evolução**: um gráfico por exercício (carga, reps, 1RM estimado e volume), com período
-de 1 mês a tudo, recordes e todos os treinos. Também dá para renomear um exercício
-ou juntar dois nomes (por exemplo, um erro de digitação).
+**3. Já tem tudo no Discord (aba Importar):** cole as mensagens do canal (com as linhas de
+data, ex.: "milkinaa — 21/7/25, 7:21") ou escolha o arquivo exportado (TXT, CSV ou JSON do
+DiscordChatExporter). O app mostra uma prévia (quantas séries, quais dias, o que é novo e o
+que já existe, linhas ignoradas) antes de importar. Dá para importar em partes: o que já
+está no app não entra repetido. Se algo vier errado, "Desfazer importação".
+As datas são lidas como dia/mês/ano; se o texto estiver em mês/dia, o app detecta ou você toca em "Trocar".
 
-**Dados**: importar mensagens do Discord (colando o texto ou escolhendo um .txt),
-salvar backup e apagar tudo. Na importação, uma série que já está no app não entra
-repetida, então pode importar um texto que se sobrepõe ao que já tem.
+## O resto
 
-O app já vem com o logbook de 07/06/25 a 23/07/25 (`app/src/main/assets/logbook_inicial.txt`).
+**Histórico**: todos os dias de treino, com filtro por exercício. Toque num dia para editar.
+
+**Evolução**: gráfico por exercício (carga, reps, 1RM estimado e volume), recordes e todos
+os treinos. Dá para renomear um exercício ou juntar dois nomes (ex.: erro de digitação).
+
+**Backup** (aba Importar): salva tudo num .txt no formato do Discord, que dá para importar de volta.
 
 ## Instalar
 

@@ -29,7 +29,6 @@ class MainActivity : ComponentActivity() {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
     val logbook = Logbook(applicationContext)
-    logbook.carregarInicialSePreciso()
     setContent { Tema { App(logbook) } }
   }
 }
@@ -38,7 +37,7 @@ private enum class Aba(val titulo: String, val icone: String) {
   TREINO("Treino", "＋"),
   HISTORICO("Histórico", "☰"),
   EVOLUCAO("Evolução", "↗"),
-  DADOS("Dados", "⇅"),
+  DADOS("Importar", "⇅"),
 }
 
 @Composable
@@ -82,7 +81,12 @@ private fun App(lb: Logbook) {
   ) { pad ->
     Box(Modifier.fillMaxSize().padding(pad).consumeWindowInsets(pad).imePadding()) {
       when (aba) {
-        Aba.TREINO -> TelaTreino(lb, series, dia, onDia = { dia = it }, onAbrirExercicio = abrirExercicio)
+        Aba.TREINO -> TelaTreino(
+            lb, series, dia,
+            onDia = { dia = it },
+            onAbrirExercicio = abrirExercicio,
+            onImportar = { aba = Aba.DADOS },
+        )
         Aba.HISTORICO -> TelaHistorico(series, onAbrirDia = abrirDia)
         Aba.EVOLUCAO -> {
           val ex = exercicio

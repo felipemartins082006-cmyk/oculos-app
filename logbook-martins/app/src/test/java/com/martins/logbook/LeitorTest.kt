@@ -12,7 +12,7 @@ class LeitorTest {
   private fun uma(t: String) = Leitor.ler(t, hoje, hoje).series.single()
 
   @Test fun logbookDoDiscordInteiro() {
-    val texto = File("src/main/assets/logbook_inicial.txt").readText()
+    val texto = File("src/test/resources/exemplo_discord.txt").readText()
     val r = Leitor.ler(texto, hoje, hoje)
     assertEquals(emptyList<String>(), r.naoEntendidas)
     // 32 cabeçalhos e 153 linhas de série; "3 sets x 8" vira 3 séries.
@@ -51,7 +51,7 @@ class LeitorTest {
   }
 
   @Test fun backupVoltaIgual() {
-    val r = Leitor.ler(File("src/main/assets/logbook_inicial.txt").readText(), hoje, hoje)
+    val r = Leitor.ler(File("src/test/resources/exemplo_discord.txt").readText(), hoje, hoje)
     val series = r.series.mapIndexed { i, l -> Serie(i.toLong(), l.data, l.exercicio, l.peso, l.reps, l.nota) }
     val de = Leitor.ler(Leitor.escrever(series), hoje, hoje)
     assertEquals(emptyList<String>(), de.naoEntendidas)
@@ -62,5 +62,41 @@ class LeitorTest {
     val r = Leitor.ler("milkinaa — 7/6/25, 15:56\nhoje treinei muito\nsquat 100 x 5", hoje, hoje)
     assertEquals(listOf("hoje treinei muito"), r.naoEntendidas)
     assertEquals(LocalDate.of(2025, 6, 7), r.series.single().data)
+  }
+
+  @Test fun ordemDasDatas() {
+    // Só dias até 12: ambíguo, lê como dia/mês e avisa.
+    val a = Leitor.ler("x — 7/6/25, 15:56\nsquat 100 x 5", hoje, hoje)
+    assertEquals(LocalDate.of(2025, 6, 7), a.series.single().data)
+    assertTrue(a.ordemAmbigua)
+    // Formato americano detectado pelo 6/21.
+    val b = Leitor.ler("x — 6/7/25\nsquat 100 x 5\nx — 6/21/25\nsquat 105 x 5", hoje, hoje)
+    assertEquals(OrdemData.MES_DIA, b.ordem)
+    assertEquals(listOf(LocalDate.of(2025, 6, 7), LocalDate.of(2025, 6, 21)), b.series.map { it.data })
+    // Trocar à mão.
+    val c = Leitor.ler("x — 7/6/25\nsquat 100 x 5", hoje, hoje, OrdemData.MES_DIA)
+    assertEquals(LocalDate.of(2025, 7, 6), c.series.single().data)
+  }
+
+  @Test fun exportacoesDoDiscord() {
+    val txt = "[07-Jun-25 3:56 PM] milkinaa\npull ups -> 7.5kg x 7 reps\n\n[10-Jun-25 2:22 PM] milkinaa\nsquat 100 x 5\n"
+    assertEquals(listOf(LocalDate.of(2025, 6, 7), LocalDate.of(2025, 6, 10)), Leitor.ler(txt, hoje, hoje).series.map { it.data })
+
+    val csv = "AuthorID,Author,Date,Content,Attachments,Reactions\n" +
+        "\"1\",\"milkinaa\",\"2025-06-07T15:56:00.0000000-03:00\",\"pull ups -> 7.5kg x 7 reps\nincline smith bench press -> 62.5kg x 6 reps\",\"\",\"\"\n" +
+        "\"1\",\"milkinaa\",\"2025-06-10T14:22:00.0000000-03:00\",\"incline smith bench press -> 70kg x 9 reps (1 RIR)\",\"\",\"\"\n"
+    val rc = Leitor.ler(csv, hoje, hoje)
+    assertEquals("CSV do Discord", rc.formato)
+    assertEquals(3, rc.series.size)
+    assertEquals(LocalDate.of(2025, 6, 10), rc.series.last().data)
+    assertEquals("1 RIR", rc.series.last().nota)
+
+    val json = """{"guild":{},"messages":[
+      {"timestamp":"2025-06-07T15:56:00.000-03:00","content":"pull ups -> 7.5kg x 7 reps"},
+      {"timestamp":"2025-06-14T14:07:00.000-03:00","content":"pull ups -> 8.75kg x 8 reps\nlol"}]}"""
+    val rj = Leitor.ler(json, hoje, hoje)
+    assertEquals("JSON do Discord", rj.formato)
+    assertEquals(listOf(7.5, 8.75), rj.series.map { it.peso })
+    assertEquals(listOf("lol"), rj.naoEntendidas)
   }
 }
