@@ -55,14 +55,20 @@
   .campo .vazio { color: var(--muted); }
   .teclado { display: flex; flex-direction: column; gap: 6px; }
   .linha { display: flex; gap: 6px; }
+  #digitar { padding-top: 22px; padding-bottom: 22px; }
+  #digitar .campo { min-height: 56px; padding: 10px 18px; margin-bottom: 10px; }
   .tecla {
-    flex: 1; height: 50px; border-radius: 10px; background: var(--card);
+    flex: 1; min-width: 0; height: 44px; border-radius: 10px; background: var(--card);
     display: flex; align-items: center; justify-content: center;
     font-size: 24px; border: 3px solid transparent;
   }
   .tecla.especial { font-size: 19px; color: #ddd; }
   .tecla.ir { background: #0d3a4f; color: #fff; font-weight: 600; }
   .tecla.focus { border-color: var(--accent); }
+  .tecla.sug {
+    font-size: 19px; background: #10283a; color: #e3f4ff; padding: 0 8px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; line-height: 38px; text-align: center;
+  }
 
   .leitor-titulo { font-size: 22px; font-weight: 600; color: var(--accent); margin-bottom: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .leitor {
@@ -219,7 +225,7 @@ function irPara(id, opts = {}) {
   mostrar(id);
   if (id === "tarefas") montarTarefas();
   if (id === "navegador") montarInicioNav();
-  if (id === "digitar") { tecFoco = { l: 0, c: 0 }; montarTeclado(); }
+  if (id === "digitar") { tecFoco = { l: 0, c: 0 }; sugestoes = []; montarTeclado(); }
   foco = opts.foco || 0;
   if (id === "leitor") { foco = 2; atualizarProgresso(); }
   pintarFoco();
@@ -254,6 +260,7 @@ function ativar(it) {
   if (a === "buscar") buscar(it.dataset.q);
   if (a === "digitar-novo") { textoDigitado = ""; irPara("digitar"); }
   if (a === "favoritos") mostrarFavoritos();
+  if (a === "prontas") mostrarProntas();
   if (a === "leitor-links") mostrarLinksDaPagina();
   if (a === "leitor-fav") favoritarAtual(it);
   }
@@ -344,12 +351,21 @@ const FAVORITOS_PADRAO = [
   { t: "BBC News Brasil", u: "https://www.bbc.com/portuguese" },
 ];
 
+/* Pesquisas prontas: um toque e já busca. Peça ao Claude para trocar. */
+const PESQUISAS_PRONTAS = [
+  "previsão do tempo hoje",
+  "cotação do dólar hoje",
+  "notícias de hoje",
+  "jogos de futebol hoje",
+];
+
 let textoDigitado = "";
 let paginaAtual = null;   // { titulo, url, links: [{t,u}] }
 
 function montarInicioNav() {
   const hist = ler("buscas", []).slice(0, 4);
   let html = `<div class="item" data-action="digitar-novo"><span class="icon">⌨️</span><span class="label">Buscar ou digitar site</span></div>
+              <div class="item" data-action="prontas"><span class="icon">⚡</span><span class="label">Pesquisas prontas</span></div>
               <div class="item" data-action="favoritos"><span class="icon">⭐</span><span class="label">Favoritos</span></div>`;
   hist.forEach(q => {
     html += `<div class="item" data-action="buscar" data-q="${esc(q)}"><span class="icon">🕘</span><span class="label">${esc(q)}</span></div>`;
@@ -370,11 +386,52 @@ const TECLAS = [
   ["ESPAÇO","APAGAR","LIMPAR","IR"],
 ];
 let tecFoco = { l: 0, c: 0 };
+let sugestoes = [];          // até 3 sugestões mostradas acima do teclado
+let sugTimer = null, sugPedido = 0;
+
+/* Linhas atuais do teclado: a linha de sugestões só aparece quando há sugestões */
+function linhas() { return sugestoes.length ? [sugestoes.map(s => "SUG:" + s), ...TECLAS] : TECLAS; }
+
+function definirSugestoes(lista) {
+  const tinha = sugestoes.length > 0;
+  sugestoes = lista.slice(0, 3);
+  const tem = sugestoes.length > 0;
+  if (tinha && !tem) tecFoco.l = Math.max(0, tecFoco.l - 1);     // linha sumiu: mantém a mesma tecla
+  if (!tinha && tem) tecFoco.l += 1;                             // linha apareceu: idem
+  if (tem && tecFoco.l === 0) tecFoco.c = Math.min(tecFoco.c, sugestoes.length - 1);
+  montarTeclado();
+}
+
+function normalizar(s) { return s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); }
+
+/* Sugestões: suas buscas e pesquisas prontas primeiro, depois a Wikipédia */
+function pedirSugestoes() {
+  clearTimeout(sugTimer);
+  const q = textoDigitado.trim();
+  if (q.length < 2 || pareceSite(q)) return definirSugestoes([]);
+  const nq = normalizar(q);
+  const locais = [...ler("buscas", []), ...PESQUISAS_PRONTAS]
+    .filter((x, i, arr) => arr.indexOf(x) === i && normalizar(x).startsWith(nq) && normalizar(x) !== nq);
+  definirSugestoes(locais);
+  const pedido = ++sugPedido;
+  sugTimer = setTimeout(async () => {
+    try {
+      const r = await fetch("https://pt.wikipedia.org/w/api.php?action=opensearch&limit=6&namespace=0&format=json&origin=*&search=" + encodeURIComponent(q));
+      const [, titulos] = await r.json();
+      if (pedido !== sugPedido || telaAtual !== "digitar") return;
+      const todas = [...locais];
+      for (const t of titulos.map(t => t.toLowerCase()).filter(t => t.split(" ").length <= 3)) if (!todas.some(x => normalizar(x) === normalizar(t)) && normalizar(t) !== nq) todas.push(t);
+      definirSugestoes(todas);
+    } catch {}
+  }, 300);
+}
 
 function montarTeclado() {
   const cont = document.getElementById("teclado");
-  cont.innerHTML = TECLAS.map((linha, l) =>
+  cont.innerHTML = linhas().map((linha, l) =>
     `<div class="linha">${linha.map((t, c) => {
+      const foc = l === tecFoco.l && c === tecFoco.c ? " focus" : "";
+      if (t.startsWith("SUG:")) return `<div class="tecla sug${foc}" data-l="${l}" data-c="${c}">${esc(t.slice(4))}</div>`;
       const esp = t.length > 1;
       const cls = "tecla" + (esp ? " especial" : "") + (t === "IR" ? " ir" : "") +
                   (l === tecFoco.l && c === tecFoco.c ? " focus" : "");
@@ -389,26 +446,33 @@ function montarTeclado() {
 }
 
 function moverTecla(dl, dc) {
+  const L = linhas();
   let { l, c } = tecFoco;
   if (dl) {
-    const largAnt = TECLAS[l].length;
-    l = (l + dl + TECLAS.length) % TECLAS.length;
-    c = Math.min(TECLAS[l].length - 1, Math.floor((c + 0.5) * TECLAS[l].length / largAnt));
+    const largAnt = L[l].length;
+    l = (l + dl + L.length) % L.length;
+    c = Math.min(L[l].length - 1, Math.floor((c + 0.5) * L[l].length / largAnt));
   } else {
-    c = (c + dc + TECLAS[l].length) % TECLAS[l].length;
+    c = (c + dc + L[l].length) % L[l].length;
   }
   tecFoco = { l, c };
   montarTeclado();
 }
 
 function pressionarTecla() {
-  const t = TECLAS[tecFoco.l][tecFoco.c];
+  const t = linhas()[tecFoco.l][tecFoco.c];
+  if (t.startsWith("SUG:")) {
+    textoDigitado = t.slice(4);
+    sugestoes = []; tecFoco = { l: 0, c: 0 };
+    return irDoTeclado();
+  }
   if (t === "ESPAÇO") textoDigitado += " ";
   else if (t === "APAGAR") textoDigitado = textoDigitado.slice(0, -1);
   else if (t === "LIMPAR") textoDigitado = "";
   else if (t === "IR") return irDoTeclado();
   else textoDigitado += t;
   montarTeclado();
+  pedirSugestoes();
 }
 
 function teclaNoTeclado(e) {
@@ -420,8 +484,8 @@ function teclaNoTeclado(e) {
   else if (k === "Enter") pressionarTecla();
   else if (k === "Escape") voltar();
   /* teclado físico (para testar no computador) */
-  else if (k === "Backspace") { textoDigitado = textoDigitado.slice(0, -1); montarTeclado(); }
-  else if (k.length === 1) { textoDigitado += k; montarTeclado(); }
+  else if (k === "Backspace") { textoDigitado = textoDigitado.slice(0, -1); montarTeclado(); pedirSugestoes(); }
+  else if (k.length === 1) { textoDigitado += k; montarTeclado(); pedirSugestoes(); }
   else return false;
   return true;
 }
@@ -565,6 +629,18 @@ function mostrarLinksDaPagina() {
     (ls.length ? ls.map(l => `<div class="item result" data-action="abrir" data-url="${esc(l.u)}">
         <span class="rt">${esc(l.t)}</span><span class="ru">${esc(new URL(l.u).hostname)}</span></div>`).join("")
       : `<div class="aviso" style="margin-top:20px">Nenhum link nesta página.</div>`) +
+    `<div class="item" data-go="voltar"><span class="icon">←</span><span class="label">Voltar</span></div>`;
+  mostrar("lista");
+  foco = 0; pintarFoco();
+}
+
+/* ---------- Pesquisas prontas ---------- */
+function mostrarProntas() {
+  pilha.push({ id: telaAtual, foco });
+  document.getElementById("lista-titulo").textContent = "Pesquisas prontas";
+  document.getElementById("lista-itens").innerHTML =
+    PESQUISAS_PRONTAS.map(q => `<div class="item" data-action="buscar" data-q="${esc(q)}">
+        <span class="icon">⚡</span><span class="label">${esc(q)}</span></div>`).join("") +
     `<div class="item" data-go="voltar"><span class="icon">←</span><span class="label">Voltar</span></div>`;
   mostrar("lista");
   foco = 0; pintarFoco();
