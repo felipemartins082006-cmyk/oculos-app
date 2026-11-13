@@ -31,6 +31,17 @@ que já existe, linhas ignoradas) antes de importar. Dá para importar em partes
 está no app não entra repetido. Se algo vier errado, "Desfazer importação".
 As datas são lidas como dia/mês/ano; se o texto estiver em mês/dia, o app detecta ou você toca em "Trocar".
 
+### Exportar o canal inteiro pelo Chrome
+
+`ferramentas/exportar-discord.js` exporta o canal aberto no Discord (no Chrome do computador)
+para um `logbook-discord.txt` que a aba Importar lê direto. Ele só rola o canal até o começo e
+lê o que aparece na tela: não usa token, senha nem a API, e não envia nada para lugar nenhum.
+
+1. Abra o canal do logbook no Chrome e aperte F12 → Console.
+2. Cole o conteúdo do arquivo e aperte Enter (se o Chrome pedir, digite `allow pasting` antes).
+3. Espere sem mexer na aba; no fim ele baixa o `.txt`. Mande esse arquivo para o celular
+   e use Importar → Escolher arquivo.
+
 ## O resto
 
 **Histórico**: todos os dias de treino, com filtro por exercício. Toque num dia para editar.

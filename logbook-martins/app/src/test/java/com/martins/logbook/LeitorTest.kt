@@ -99,4 +99,14 @@ class LeitorTest {
     assertEquals(listOf(7.5, 8.75), rj.series.map { it.peso })
     assertEquals(listOf("lol"), rj.naoEntendidas)
   }
+
+  @Test fun arquivoDoScriptDoChrome() {
+    // Gerado por ferramentas/exportar-discord.js numa página que imita o Discord.
+    val r = Leitor.ler(File("src/test/resources/exportado_pelo_script.txt").readText(), hoje, hoje)
+    assertEquals(emptyList<String>(), r.naoEntendidas)
+    assertEquals(301, r.series.size) // 299 squats + uma mensagem com stiff e leg press
+    assertEquals(LocalDate.of(2025, 6, 7), r.series.first().data)
+    assertEquals(LocalDate.of(2025, 9, 27), r.series.last().data)
+    assertEquals(listOf("stiff", "unilateral leg press"), r.series.filter { it.exercicio != "squat" }.map { it.exercicio })
+  }
 }
