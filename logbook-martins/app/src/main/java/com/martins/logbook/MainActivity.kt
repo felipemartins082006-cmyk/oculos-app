@@ -18,6 +18,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,8 +36,15 @@ class MainActivity : ComponentActivity() {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
     val logbook = Logbook(applicationContext)
+    val figuras = Figuras(applicationContext)
     if (savedInstanceState == null) receber(intent)
-    setContent { Tema { App(logbook, recebido.value, onRecebidoLido = { recebido.value = null }) } }
+    setContent {
+      Tema {
+        CompositionLocalProvider(LocalFiguras provides figuras) {
+          App(logbook, recebido.value, onRecebidoLido = { recebido.value = null })
+        }
+      }
+    }
   }
 
   // Com o app já aberto, um novo "Compartilhar" chega aqui.

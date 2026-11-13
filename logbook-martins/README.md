@@ -48,6 +48,16 @@ lê o que aparece na tela: não usa token, senha nem a API, e não envia nada pa
    digite `logbookSalvar()` no console para baixar o PDF completo.
 4. Mande o arquivo para o celular e use Importar → Escolher arquivo.
 
+## Figuras dos exercícios
+
+Ao digitar o nome (ex.: `squat`), aparece a ilustração do exercício, alternando entre o início e o
+fim do movimento. O app reconhece os nomes usados na academia, em inglês e em português (stiff, larsen,
+scott, pulldown, agachamento, supino, puxada, cadeira extensora…). Na página do exercício (aba Evolução)
+dá para colocar uma foto sua (do aparelho, por exemplo), escolher outra ilustração ou ficar sem imagem.
+
+Ilustrações: [Everkinetic](https://github.com/everkinetic/data) (CC BY-SA 4.0) e
+[wger](https://wger.de) (CC BY-SA 3.0), adaptadas em tons de cinza — ver `app/src/main/assets/ilustracoes/LICENCA.txt`.
+
 ## O resto
 
 **Histórico**: todos os dias de treino, com filtro por exercício. Toque num dia para editar.

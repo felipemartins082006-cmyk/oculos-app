@@ -27,8 +27,15 @@ class CompartilharTest {
   @get:Rule val regra = createEmptyComposeRule()
   private val ctx = ApplicationProvider.getApplicationContext<Context>()
 
-  private fun esperarPrevia() =
+  private fun esperarPrevia() {
+    try {
       regra.waitUntil(30_000) { regra.onAllNodesWithText("Prévia").fetchSemanticsNodes().isNotEmpty() }
+    } catch (e: Throwable) {
+      Thread.getAllStackTraces().filter { (t, st) -> st.any { "logbook" in it.className || "coroutines" in it.className } }
+          .forEach { (t, st) -> System.err.println("== ${t.name} ${t.state}\n" + st.take(25).joinToString("\n") { "   $it" }) }
+      throw e
+    }
+  }
 
   @Test fun arquivoCompartilhadoDoAppArquivos() {
     val arquivo = File(ctx.cacheDir, "logbook-discord.txt")

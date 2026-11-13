@@ -1,6 +1,22 @@
 package com.martins.logbook
 
 import androidx.activity.compose.BackHandler
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -55,6 +71,8 @@ fun TelaExercicios(todas: List<Serie>, onAbrir: (String) -> Unit) {
     items(lista, key = { it.exercicio }) { r ->
       Cartao(onClick = { onAbrir(r.exercicio) }) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+          FiguraExercicio(r.exercicio, Modifier.size(52.dp))
+          Spacer(Modifier.width(12.dp))
           Column(Modifier.weight(1f)) {
             Text(nomeBonito(r.exercicio), color = Texto, fontWeight = FontWeight.Bold, fontSize = 16.sp,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -95,6 +113,24 @@ fun TelaExercicio(
   var metrica by rememberSaveable { mutableStateOf(Metrica.CARGA) }
   var periodo by rememberSaveable { mutableStateOf(Periodo.TUDO) }
   var renomeando by remember { mutableStateOf(false) }
+  var escolhendoIlustracao by rememberSaveable { mutableStateOf(false) }
+  val figuras = LocalFiguras.current
+  val ctx = LocalContext.current
+  val escolherFoto = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+    if (uri != null && !figuras.usarFoto(exercicio, uri)) {
+      Toast.makeText(ctx, "Não consegui abrir essa foto", Toast.LENGTH_LONG).show()
+    }
+  }
+
+  if (escolhendoIlustracao) {
+    BackHandler { escolhendoIlustracao = false }
+    TelaEscolherIlustracao(
+        exercicio,
+        onEscolher = { figuras.usarIlustracao(exercicio, it); escolhendoIlustracao = false },
+        onVoltar = { escolhendoIlustracao = false },
+    )
+    return
+  }
 
   val hist = remember(todas, exercicio) { historicoDe(todas, exercicio) }
   val series = hist.flatMap { it.series }
@@ -119,6 +155,46 @@ fun TelaExercicio(
         Text(nomeBonito(exercicio), fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Texto,
             modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
         TextButton(onClick = { renomeando = true }) { Text("Renomear") }
+      }
+    }
+    item {
+      Cartao {
+        val figura = figuras.de(exercicio)
+        if (figura != null) {
+          FiguraExercicio(exercicio, Modifier.fillMaxWidth().height(220.dp), animar = true)
+          Text(
+              when (figura) {
+                is Figura.Foto -> "Sua foto"
+                is Figura.DeIlustracao ->
+                  figura.ilustracao.titulo + if (figura.automatica) " · achada pelo nome" else ""
+              },
+              color = Cinza, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp),
+          )
+        } else {
+          Text(
+              if (figuras.temEscolha(exercicio)) "Sem imagem para este exercício."
+              else "Não achei uma ilustração para “${nomeBonito(exercicio)}”. Coloque uma foto sua " +
+                  "(do aparelho, por exemplo) ou escolha uma ilustração.",
+              color = Cinza, fontSize = 13.sp,
+          )
+        }
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          OutlinedButton(
+              onClick = { escolherFoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+              modifier = Modifier.weight(1f),
+          ) { Text("📷 Minha foto", maxLines = 1) }
+          OutlinedButton(onClick = { escolhendoIlustracao = true }, modifier = Modifier.weight(1f)) {
+            Text("🔍 Ilustração", maxLines = 1)
+          }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+          if (figuras.temEscolha(exercicio)) {
+            TextButton(onClick = { figuras.automatica(exercicio) }) { Text("Voltar à automática") }
+          }
+          if (figura != null) {
+            TextButton(onClick = { figuras.semFigura(exercicio) }) { Text("Sem imagem", color = Cinza) }
+          }
+        }
       }
     }
     item {
@@ -186,6 +262,7 @@ fun TelaExercicio(
         confirmButton = {
           TextButton(enabled = novo.isNotEmpty() && novo != exercicio, onClick = {
             lb.renomear(exercicio, novo)
+            figuras.renomear(exercicio, novo)
             renomeando = false
             onRenomeado(novo)
           }) { Text(if (existe) "Juntar" else "Salvar") }
@@ -203,5 +280,46 @@ private fun Recorde(titulo: String, valor: String, data: LocalDate) {
       Text(valor, color = Laranja, fontWeight = FontWeight.Bold, fontSize = 15.sp)
     }
     Text(dataCurta(data), color = Cinza, fontSize = 12.sp)
+  }
+}
+
+/** Escolher outra ilustração: busca pelo nome (em inglês) e toca na figura. */
+@Composable
+private fun TelaEscolherIlustracao(exercicio: String, onEscolher: (Ilustracao) -> Unit, onVoltar: () -> Unit) {
+  val buscador = LocalFiguras.current.buscador
+  var busca by rememberSaveable { mutableStateOf(exercicio) }
+  val lista = remember(busca) { buscador.buscar(busca) }
+  LazyVerticalGrid(
+      columns = GridCells.Fixed(3),
+      modifier = Modifier.fillMaxSize(),
+      contentPadding = PaddingValues(16.dp),
+      horizontalArrangement = Arrangement.spacedBy(10.dp),
+      verticalArrangement = Arrangement.spacedBy(12.dp),
+  ) {
+    item(span = { GridItemSpan(maxLineSpan) }) {
+      Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          TextButton(onClick = onVoltar) { Text("‹", fontSize = 28.sp, color = Cinza) }
+          Text("Escolher ilustração", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Texto)
+        }
+        OutlinedTextField(
+            busca, { busca = it },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("Buscar (em inglês): squat, row, curl…") },
+            singleLine = true,
+        )
+        Text("${lista.size} ilustrações", color = Cinza, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+      }
+    }
+    gridItems(lista, key = { it.id }) { il ->
+      Column(Modifier.clickable { onEscolher(il) }) {
+        FiguraIlustracao(il, Modifier.fillMaxWidth().aspectRatio(1f))
+        Text(il.titulo, color = Texto, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            lineHeight = 13.sp, modifier = Modifier.padding(top = 4.dp))
+      }
+    }
+    item(span = { GridItemSpan(maxLineSpan) }) {
+      Text("Ilustrações: Everkinetic e wger (CC BY-SA)", color = Cinza, fontSize = 11.sp)
+    }
   }
 }

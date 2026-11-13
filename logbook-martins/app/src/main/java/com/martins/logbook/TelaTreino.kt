@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -209,7 +210,7 @@ fun TelaTreino(
         }
 
         // Dica: o que você fez da última vez nesse exercício.
-        if (digitado in nomes) UltimaVez(todas, digitado, dia)
+        if (digitado.isNotEmpty()) PreviaExercicio(todas, digitado, dia)
       }
     }
 
@@ -227,6 +228,8 @@ fun TelaTreino(
     items(porExercicio.entries.toList(), key = { it.key }) { (ex, ss) ->
       Cartao {
         Row(verticalAlignment = Alignment.CenterVertically) {
+          FiguraExercicio(ex, Modifier.size(52.dp).clickable { onAbrirExercicio(ex) })
+          Spacer(Modifier.width(12.dp))
           Text(
               nomeBonito(ex), fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Texto,
               modifier = Modifier.weight(1f).clickable { onAbrirExercicio(ex) },
@@ -264,16 +267,32 @@ fun TelaTreino(
   if (escolhendoData) EscolherData(dia, onEscolher = { onDia(it); escolhendoData = false }, onFechar = { escolhendoData = false })
 }
 
+/**
+ * Enquanto você digita: a figura do exercício (animada) e, se já fez antes, a última vez e o recorde.
+ */
 @Composable
-private fun UltimaVez(todas: List<Serie>, exercicio: String, dia: LocalDate) {
+private fun PreviaExercicio(todas: List<Serie>, exercicio: String, dia: LocalDate) {
+  val figura = LocalFiguras.current.de(exercicio)
   val hist = historicoDe(todas, exercicio)
-  val anterior = hist.lastOrNull { it.data < dia } ?: hist.lastOrNull { it.data != dia } ?: return
-  val recorde = todas.filter { it.exercicio == exercicio }.maxWith(compareBy<Serie>({ it.peso }, { it.reps }))
+  val anterior = hist.lastOrNull { it.data < dia } ?: hist.lastOrNull { it.data != dia }
+  if (figura == null && anterior == null) return
+  val recorde = todas.filter { it.exercicio == exercicio }.maxWithOrNull(compareBy<Serie>({ it.peso }, { it.reps }))
   Surface(color = Superficie2, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
-    Column(Modifier.padding(10.dp)) {
-      Text("Última vez · ${dataComSemana(anterior.data)}", color = Cinza, fontSize = 12.sp)
-      Text(resumoSeries(anterior.series), color = Texto, fontSize = 14.sp)
-      Text("Recorde: ${fmtSerie(recorde)} (${dataCurta(recorde.data)})", color = Laranja, fontSize = 12.sp)
+    Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+      if (figura != null) {
+        FiguraExercicio(exercicio, Modifier.size(84.dp), animar = true)
+        Spacer(Modifier.width(12.dp))
+      }
+      Column(Modifier.weight(1f)) {
+        Text(nomeBonito(exercicio), color = Texto, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+        if (anterior != null) {
+          Text("Última vez · ${dataComSemana(anterior.data)}", color = Cinza, fontSize = 12.sp)
+          Text(resumoSeries(anterior.series), color = Texto, fontSize = 14.sp)
+        } else {
+          Text("Primeira vez neste exercício", color = Cinza, fontSize = 12.sp)
+        }
+        recorde?.let { Text("Recorde: ${fmtSerie(it)} (${dataCurta(it.data)})", color = Laranja, fontSize = 12.sp) }
+      }
     }
   }
 }

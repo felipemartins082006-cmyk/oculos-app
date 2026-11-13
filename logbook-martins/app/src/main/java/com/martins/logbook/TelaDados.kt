@@ -291,6 +291,14 @@ fun TelaDados(lb: Logbook, todas: List<Serie>, recebido: Recebido? = null, onRec
         }
       }
     }
+
+    item {
+      Text(
+          "Ilustrações de exercícios: Everkinetic (everkinetic.com) e wger (wger.de), " +
+              "licença Creative Commons BY-SA. Adaptadas em tons de cinza.",
+          color = Cinza, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 4.dp),
+      )
+    }
   }
 
   if (confirmandoApagar) {
