@@ -91,7 +91,7 @@ fun TelaTreino(
     val r = Leitor.ler(texto, dia)
     if (r.series.isNotEmpty()) {
       val antes = todas
-      val novas = lb.adicionar(r.series)
+      val novas = lb.adicionar(r.series, momento = if (dia == LocalDate.now()) System.currentTimeMillis() else null)
       val dias = novas.map { it.data }.distinct()
       Toast.makeText(
           ctx,
@@ -111,9 +111,13 @@ fun TelaTreino(
       return
     }
     val antes = todas
-    val novas = lb.adicionar(r.series)
-    // Primeira série de hoje: guarda a hora em que o treino começou (para cruzar com sono e comida).
-    if (dia == LocalDate.now()) diario.marcarTreino(dia, horaAgora())
+    val ehHoje = dia == LocalDate.now()
+    val novas = lb.adicionar(r.series, momento = if (ehHoje) System.currentTimeMillis() else null)
+    // Primeira série de hoje: guarda a hora do treino e liga o cronômetro da sessão (se não estava ligado).
+    if (ehHoje) {
+      diario.marcarTreino(dia, horaAgora())
+      if (diario.de(dia).treinoInicio == null) diario.iniciarSessao(dia)
+    }
     erro = null
     campo = TextFieldValue("")
     novas.firstNotNullOfOrNull { recordeBatido(antes.filter { s -> s.data <= dia }, it) }
@@ -160,6 +164,9 @@ fun TelaTreino(
     }
 
     if (colando) item { ColarTreino(dia, onFechar = { colando = false }, onAdicionar = ::colar) }
+
+    // Cronômetro da sessão, descanso e temporizador (só no treino de hoje).
+    if (dia == hoje && !colando) item { BarraSessao(diario, todas, dia) }
 
     // Começo da sessão: pede o peso de hoje (some quando você pesa ou fecha).
     if (dia == hoje && diario.de(dia).pesagens.isEmpty() && !pesoFechado && !colando) {

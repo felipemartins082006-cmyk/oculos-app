@@ -63,12 +63,16 @@ data class Dia(
     val refeicoes: List<Refeicao> = emptyList(),
     /** Hora em que o treino começou ("18:30"): marcada sozinha na primeira série do dia. */
     val treinoHora: String? = null,
+    /** Cronômetro da sessão (epoch ms): começa no "Iniciar treino" ou na primeira série do dia. */
+    val treinoInicio: Long? = null,
+    /** Quando você tocou em "Finalizar". */
+    val treinoFim: Long? = null,
 ) {
   val kcal: Double get() = refeicoes.sumOf { it.kcal }
   val vazio: Boolean
     get() = pesagens.isEmpty() && sonoHoras == null && sonoQualidade == null && sonoNota.isBlank() &&
         humor == null && estresse == null && notaDia.isBlank() && eventos.isEmpty() && refeicoes.isEmpty() &&
-        treinoHora == null
+        treinoHora == null && treinoInicio == null && treinoFim == null
 
   /** Refeições feitas antes do treino (pelo horário). Sem hora do treino: null. */
   fun refeicoesAntesDoTreino(): List<Refeicao>? = treinoHora?.let { t -> refeicoes.filter { it.hora < t } }
@@ -177,6 +181,19 @@ class Diario(context: Context) {
     if (de(data).treinoHora == null) alterar(data) { it.copy(treinoHora = hora) }
   }
 
+  /** Começa o cronômetro da sessão (se ainda não estava rodando). */
+  fun iniciarSessao(data: LocalDate, agora: Long = System.currentTimeMillis()) = alterar(data) {
+    if (it.treinoInicio != null && it.treinoFim == null) it
+    else it.copy(treinoInicio = agora, treinoFim = null, treinoHora = it.treinoHora ?: horaDe(agora))
+  }
+
+  fun finalizarSessao(data: LocalDate, agora: Long = System.currentTimeMillis()) = alterar(data) {
+    if (it.treinoInicio == null) it else it.copy(treinoFim = agora)
+  }
+
+  /** Recomeça (apaga o tempo marcado). */
+  fun zerarSessao(data: LocalDate) = alterar(data) { it.copy(treinoInicio = null, treinoFim = null) }
+
   /** Para o backup completo e para restaurar. */
   fun paraJson(): JSONObject = JSONObject().apply {
     dias.value.toSortedMap().forEach { (d, dia) -> put(d.toString(), diaJson(dia)) }
@@ -224,6 +241,8 @@ class Diario(context: Context) {
       if (d.notaDia.isNotBlank()) put("notaDia", d.notaDia)
       if (d.eventos.isNotEmpty()) put("eventos", JSONArray(d.eventos))
       d.treinoHora?.let { put("treinoHora", it) }
+      d.treinoInicio?.let { put("ini", it) }
+      d.treinoFim?.let { put("fim", it) }
       if (d.pesagens.isNotEmpty()) put("pesagens", JSONArray().apply {
         d.pesagens.forEach { p -> put(JSONObject().put("id", p.id).put("hora", p.hora).put("kg", p.kg).put("tipo", p.tipo.name)) }
       })
@@ -274,7 +293,13 @@ class Diario(context: Context) {
             )
           },
           treinoHora = if (o.has("treinoHora")) o.getString("treinoHora") else null,
+          treinoInicio = if (o.has("ini")) o.getLong("ini") else null,
+          treinoFim = if (o.has("fim")) o.getLong("fim") else null,
       )
     }
   }
 }
+
+fun horaDe(epochMs: Long): String =
+    java.time.Instant.ofEpochMilli(epochMs).atZone(java.time.ZoneId.systemDefault()).toLocalTime()
+        .let { "%02d:%02d".format(it.hour, it.minute) }

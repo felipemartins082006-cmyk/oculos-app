@@ -14,6 +14,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.performScrollToNode
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -58,9 +59,13 @@ class FigurasTest {
     campo().performImeAction()
     regra.waitForIdle()
     // Cada cartão do dia tem a figura do exercício (o farmer walk não tem ilustração: mostra a inicial).
-    assertEquals(1, figura("Barbell Squat").fetchSemanticsNodes().size)
-    assertEquals(1, figura("Seated Ab Crunch with Cable").fetchSemanticsNodes().size)
-    assertEquals(1, figura("Bench Press: Smith Machine (Incline)").fetchSemanticsNodes().size)
+    for (t in listOf("Barbell Squat", "Seated Ab Crunch with Cable", "Bench Press: Smith Machine (Incline)")) {
+      regra.onAllNodes(androidx.compose.ui.test.hasScrollToNodeAction()).onFirst()
+          .performScrollToNode(hasContentDescription("Ilustração: $t"))
+      assertEquals(t, 1, figura(t).fetchSemanticsNodes().size)
+    }
+    regra.onAllNodes(androidx.compose.ui.test.hasScrollToNodeAction()).onFirst()
+        .performScrollToNode(androidx.compose.ui.test.hasText("Farmer Walk"))
     regra.onNodeWithText("F").assertExists()
     foto("f2-treino-com-figuras")
   }

@@ -34,8 +34,8 @@ class Logbook(private val context: Context) {
     }
   }
 
-  fun adicionar(lidas: List<SerieLida>): List<Serie> {
-    val novas = lidas.map { it.comId(proximoId++) }
+  fun adicionar(lidas: List<SerieLida>, momento: Long? = null): List<Serie> {
+    val novas = lidas.map { it.comId(proximoId++).copy(momento = momento) }
     salvar(series.value + novas)
     return novas
   }
@@ -134,7 +134,8 @@ class Logbook(private val context: Context) {
           .put("ex", it.exercicio)
           .put("kg", it.peso)
           .put("reps", it.reps)
-          .put("nota", it.nota))
+          .put("nota", it.nota)
+          .apply { it.momento?.let { m -> put("t", m) } })
     }
     // Grava num arquivo temporário e troca: se o celular desligar no meio, nada se perde.
     val tmp = File(arquivo.parentFile, "logbook.json.tmp")
@@ -166,6 +167,7 @@ class Logbook(private val context: Context) {
           peso = o.getDouble("kg"),
           reps = o.getInt("reps"),
           nota = o.optString("nota"),
+          momento = if (o.has("t")) o.getLong("t") else null,
       )
     }
   }

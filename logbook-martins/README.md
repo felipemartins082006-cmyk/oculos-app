@@ -48,6 +48,19 @@ lê o que aparece na tela: não usa token, senha nem a API, e não envia nada pa
    digite `logbookSalvar()` no console para baixar o PDF completo.
 4. Mande o arquivo para o celular e use Importar → Escolher arquivo.
 
+## Cronômetro, temporizador e números (versão 2.1)
+
+**Cronômetro do treino:** no alto do Treino de hoje, "⏱ Iniciar treino" (ou a primeira série do dia) liga o
+cronômetro, que continua contando mesmo com o app fechado; "Finalizar" guarda o tempo total. Cada série
+guarda a hora em que foi anotada, e o app mostra "Descansando 1:32 desde a última série".
+
+**Temporizador:** "⏲ Timer" com atalhos (0:45 a 5:00) ou minutos e segundos à mão; pausar, +15s, zerar.
+Ao terminar, o celular vibra e toca.
+
+**Números (Evolução → Números):** por período (30 dias, 3 meses, 12 meses, tudo): treinos, média por
+semana, séries, volume, sequência de semanas, tempo médio de treino e de descanso, pizza dos grupos
+musculares, treinos por mês e por dia da semana, recordes, maiores progressões de carga e melhores treinos.
+
 ## Diário, peso e insights (versão 2.0)
 
 **Peso:** no começo de cada treino aparece "Peso de hoje", com a escolha *Em jejum* (ao acordar, de cueca)

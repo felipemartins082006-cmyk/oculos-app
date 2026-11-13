@@ -42,7 +42,11 @@ class MainActivity : ComponentActivity() {
     val logbook = Logbook(applicationContext)
     val figuras = Figuras(applicationContext)
     val diario = Diario(applicationContext)
-    if (savedInstanceState == null) receber(intent)
+    if (savedInstanceState == null) {
+      receber(intent)
+      // Abrindo o app do zero: um temporizador que já tinha terminado não fica mais na tela.
+      if (Temporizador.fimEm == null && (Temporizador.terminou || Temporizador.restantePausado == 0L)) Temporizador.zerar()
+    }
     setContent {
       Tema {
         CompositionLocalProvider(LocalFiguras provides figuras) {
@@ -81,6 +85,7 @@ private fun App(lb: Logbook, diario: Diario, recebido: Recebido?, onRecebidoLido
   var exercicio by rememberSaveable { mutableStateOf<String?>(null) }
   val series = lb.series.value
   val dias = diario.dias.value
+  VigiaTemporizador()
 
   // Chegou algo pelo "Compartilhar": vai direto para a aba Importar.
   LaunchedEffect(recebido?.id) { if (recebido != null && aba != Aba.DADOS) aba = Aba.DADOS }

@@ -67,16 +67,20 @@ fun TelaExercicios(
     item {
       Rotulo("Evolução")
       Text(
-          listOf("Seus exercícios", "Peso corporal", "O que mexe no seu treino")[secao],
+          listOf("Seus exercícios", "Seus números", "Peso corporal", "O que mexe no seu treino")[secao],
           fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Texto,
       )
     }
-    item { Segmentos(listOf("Exercícios", "Peso", "Insights"), secao) { secao = it } }
+    item { Segmentos(listOf("Exercícios", "Números", "Peso", "Insights"), secao) { secao = it } }
     if (secao == 1) {
-      conteudoPeso(dias, onAbrirDia)
+      conteudoEstatisticas(todas, dias, onAbrirDia)
       return@LazyColumn
     }
     if (secao == 2) {
+      conteudoPeso(dias, onAbrirDia)
+      return@LazyColumn
+    }
+    if (secao == 3) {
       conteudoInsights(todas, dias, onAbrirDia)
       return@LazyColumn
     }

@@ -18,6 +18,8 @@ data class Serie(
     val reps: Int,
     /** O que vinha entre parênteses: RIR, cluster set, etc. */
     val nota: String = "",
+    /** Quando a série foi anotada (epoch ms). Séries importadas não têm. Serve para o tempo de descanso. */
+    val momento: Long? = null,
 ) {
   /** 1RM estimado (fórmula de Epley). Junta carga e repetições num número só. */
   val umRm: Double get() = umRmEstimado(peso, reps)
