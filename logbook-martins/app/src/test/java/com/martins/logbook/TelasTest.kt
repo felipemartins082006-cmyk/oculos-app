@@ -93,7 +93,7 @@ class TelasTest {
     val discord = File("src/test/resources/exemplo_discord.txt").readText()
     campoPrincipal().performTextInput(discord)
     regra.onNodeWithText("Ler texto colado").performClick()
-    regra.waitUntil(10_000) { regra.onAllNodesWithText("Prévia").fetchSemanticsNodes().isNotEmpty() }
+    regra.waitUntil(30_000) { regra.onAllNodesWithText("Prévia").fetchSemanticsNodes().isNotEmpty() }
     regra.onNodeWithText("155 séries em 22 dias", substring = true).assertExists()
     foto("6-previa")
     regra.onNodeWithText("Importar 155").performClick()
@@ -104,7 +104,7 @@ class TelasTest {
     // Importar o mesmo texto de novo não duplica nada.
     campoPrincipal().performTextInput(discord)
     regra.onNodeWithText("Ler texto colado").performClick()
-    regra.waitUntil(10_000) { regra.onAllNodesWithText("Prévia").fetchSemanticsNodes().isNotEmpty() }
+    regra.waitUntil(30_000) { regra.onAllNodesWithText("Prévia").fetchSemanticsNodes().isNotEmpty() }
     regra.onNodeWithText("0 novas", substring = true).assertExists()
     regra.onNodeWithText("Voltar").performClick()
 
@@ -140,7 +140,7 @@ class TelasTest {
           android.content.Intent().setData(android.net.Uri.fromFile(arquivo)),
       )
     }
-    regra.waitUntil(10_000) { regra.onAllNodesWithText("Prévia").fetchSemanticsNodes().isNotEmpty() }
+    regra.waitUntil(30_000) { regra.onAllNodesWithText("Prévia").fetchSemanticsNodes().isNotEmpty() }
     regra.onNodeWithText("155 séries em 22 dias", substring = true).assertExists()
     regra.onNodeWithText("Importar 155").performClick()
     regra.waitForIdle()

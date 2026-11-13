@@ -4,7 +4,8 @@
 //
 // Como usar: abra o canal do logbook no Chrome, aperte F12, vá em "Console",
 // cole este código e aperte Enter.
-// - Ele tenta rolar sozinho até o começo do canal e baixa "logbook-discord.txt".
+// - Ele tenta rolar sozinho até o começo do canal e baixa "logbook-discord.pdf"
+//   (o app Logbook importa esse PDF pelo Compartilhar). Para .txt: logbookSalvarTxt()
 // - Enquanto roda, ele lê tudo que passa pela tela: se a rolagem automática parar,
 //   role para cima com o mouse até o começo do canal e depois digite logbookSalvar()
 (() => {
@@ -70,7 +71,70 @@
     return m ? fmt(new Date(m.ts)) : '-';
   };
 
-  const salvar = () => {
+  /**
+   * Monta um PDF simples (só texto, fonte Helvetica, folha A4) sem biblioteca nenhuma:
+   * o Discord não deixa carregar scripts de fora. O app lê o texto de dentro dele.
+   */
+  const fazerPdf = (linhasTexto) => {
+    const W = 595, H = 842, M = 40, TAM = 9, ENTRE = 11.5, MAX = 110;
+    const porPagina = Math.floor((H - 2 * M) / ENTRE);
+    const linhas = [];
+    linhasTexto.forEach((l) => {
+      while (l.length > MAX) { linhas.push(l.slice(0, MAX)); l = l.slice(MAX); }
+      linhas.push(l);
+    });
+    const paginas = [];
+    for (let i = 0; i < linhas.length; i += porPagina) paginas.push(linhas.slice(i, i + porPagina));
+    if (!paginas.length) paginas.push([]);
+    // Acentos vão como Latin-1; travessão, aspas curvas etc. na tabela WinAnsi.
+    const win = { '\u2014': 0x97, '\u2013': 0x96, '\u2019': 0x92, '\u2018': 0x91, '\u201C': 0x93,
+      '\u201D': 0x94, '\u2022': 0x95, '\u2026': 0x85, '\u20AC': 0x80 };
+    const esc = (t) => {
+      let o = '';
+      for (const ch of t) {
+        let c = win[ch] || ch.codePointAt(0);
+        if (!win[ch] && (c > 255 || (c >= 0x80 && c < 0xa0))) c = 63; // "?" para emoji e afins
+        if (c === 40 || c === 41 || c === 92) o += '\\' + String.fromCharCode(c);
+        else o += c < 32 ? ' ' : String.fromCharCode(c);
+      }
+      return o;
+    };
+    const objs = [];
+    objs[0] = '<< /Type /Catalog /Pages 2 0 R >>';
+    objs[2] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>';
+    const kids = [];
+    paginas.forEach((pg, i) => {
+      const nPag = 4 + i * 2, nCont = 5 + i * 2;
+      kids.push(`${nPag} 0 R`);
+      const fluxo = `BT /F1 ${TAM} Tf ${ENTRE} TL ${M} ${H - M} Td\n` +
+          pg.map((l) => `(${esc(l)}) Tj T*`).join('\n') + '\nET';
+      objs[nPag - 1] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${W} ${H}] ` +
+          `/Resources << /Font << /F1 3 0 R >> >> /Contents ${nCont} 0 R >>`;
+      objs[nCont - 1] = `<< /Length ${fluxo.length} >>\nstream\n${fluxo}\nendstream`;
+    });
+    objs[1] = `<< /Type /Pages /Kids [${kids.join(' ')}] /Count ${kids.length} >>`;
+    let pdf = '%PDF-1.4\n%\xE2\xE3\xCF\xD3\n';
+    const posicoes = [];
+    objs.forEach((o, i) => { posicoes.push(pdf.length); pdf += `${i + 1} 0 obj\n${o}\nendobj\n`; });
+    const xref = pdf.length;
+    pdf += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n` +
+        posicoes.map((p) => String(p).padStart(10, '0') + ' 00000 n \n').join('') +
+        `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+    const bytes = new Uint8Array(pdf.length);
+    for (let i = 0; i < pdf.length; i++) bytes[i] = pdf.charCodeAt(i) & 255;
+    return bytes;
+  };
+
+  const baixar = (conteudo, tipo, nome) => {
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob([conteudo], { type: tipo }));
+    link.download = nome;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  };
+
+  const salvar = (formato = 'pdf') => {
     coletar();
     const ordenadas = [...msgs.values()].filter((m) => m.texto).sort((a, b) => a.ts - b.ts);
     if (ordenadas.length === 0) {
@@ -83,13 +147,10 @@
       return;
     }
     const texto = ordenadas.map((m) => `${m.dia}\n${m.texto}`).join('\n\n') + '\n';
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(new Blob([texto], { type: 'text/plain;charset=utf-8' }));
-    link.download = 'logbook-discord.txt';
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    console.log(`Logbook: arquivo baixado com ${ordenadas.length} mensagens ` +
+    const nome = `logbook-discord.${formato === 'txt' ? 'txt' : 'pdf'}`;
+    if (formato === 'txt') baixar(texto, 'text/plain;charset=utf-8', nome);
+    else baixar(fazerPdf(texto.split('\n')), 'application/pdf', nome);
+    console.log(`Logbook: ${nome} baixado com ${ordenadas.length} mensagens ` +
         `(${fmt(new Date(ordenadas[0].ts))} a ${fmt(new Date(ordenadas[ordenadas.length - 1].ts))}).`);
   };
 
@@ -101,7 +162,8 @@
   // Lê o tempo todo, inclusive enquanto você rola com o mouse.
   clearInterval(window.__logbookIntervalo);
   window.__logbookIntervalo = setInterval(coletar, 200);
-  window.logbookSalvar = salvar;
+  window.logbookSalvar = () => salvar('pdf');
+  window.logbookSalvarTxt = () => salvar('txt');
   coletar();
 
   // Tenta subir de vários jeitos, porque o Discord só carrega as mais antigas
@@ -140,7 +202,7 @@
         ultimoAviso = Date.now();
       }
     }
-    salvar();
+    salvar('pdf');
     console.log(
         '%cLogbook: a rolagem automática parou na mensagem de ' + maisAntiga() + '.\n' +
         'Se essa ainda NÃO é a primeira mensagem do canal: role para cima com o mouse até o começo ' +

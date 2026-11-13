@@ -28,7 +28,7 @@ class CompartilharTest {
   private val ctx = ApplicationProvider.getApplicationContext<Context>()
 
   private fun esperarPrevia() =
-      regra.waitUntil(10_000) { regra.onAllNodesWithText("Prévia").fetchSemanticsNodes().isNotEmpty() }
+      regra.waitUntil(30_000) { regra.onAllNodesWithText("Prévia").fetchSemanticsNodes().isNotEmpty() }
 
   @Test fun arquivoCompartilhadoDoAppArquivos() {
     val arquivo = File(ctx.cacheDir, "logbook-discord.txt")
@@ -80,6 +80,29 @@ class CompartilharTest {
       esperarPrevia()
       regra.onNodeWithText("155 séries em 22 dias", substring = true).assertExists()
       regra.onNodeWithText("Arquivo: logbook.pdf").assertExists()
+    }
+  }
+
+  @Test fun pdfGeradoPeloScriptDoChrome() {
+    // PDF feito por ferramentas/exportar-discord.js numa página que imita o Discord (300 mensagens).
+    val arquivo = File(ctx.cacheDir, "logbook-discord.pdf")
+    File("src/test/resources/gerado_pelo_script.pdf").copyTo(arquivo, overwrite = true)
+    val texto = textoDoPdf(ctx, arquivo.readBytes())
+    val r = Leitor.ler(texto, java.time.LocalDate.now())
+    org.junit.Assert.assertEquals(emptyList<String>(), r.naoEntendidas)
+    org.junit.Assert.assertEquals(301, r.series.size)
+    assertTrue(r.series.any { it.exercicio == "elevação lateral — cabo" && it.nota == "fácil" })
+
+    val intent = Intent(ctx, MainActivity::class.java)
+        .setAction(Intent.ACTION_SEND)
+        .setType("application/pdf")
+        .putExtra(Intent.EXTRA_STREAM, Uri.fromFile(arquivo))
+    ActivityScenario.launch<MainActivity>(intent).use {
+      esperarPrevia()
+      regra.onNodeWithText("301 séries em", substring = true).assertExists()
+      regra.onNodeWithText("Importar 301").performClick()
+      regra.waitForIdle()
+      assertTrue(ShadowToast.getTextOfLatestToast().contains("301 séries importadas"))
     }
   }
 

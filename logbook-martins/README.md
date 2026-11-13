@@ -38,14 +38,14 @@ As datas são lidas como dia/mês/ano; se o texto estiver em mês/dia, o app det
 ### Exportar o canal inteiro pelo Chrome
 
 `ferramentas/exportar-discord.js` exporta o canal aberto no Discord (no Chrome do computador)
-para um `logbook-discord.txt` que a aba Importar lê direto. Ele só rola o canal até o começo e
+para um `logbook-discord.pdf` que o app importa pelo Compartilhar (ou `.txt` com `logbookSalvarTxt()`). Ele só rola o canal até o começo e
 lê o que aparece na tela: não usa token, senha nem a API, e não envia nada para lugar nenhum.
 
 1. Abra o canal do logbook no Chrome e aperte F12 → Console.
 2. Cole o conteúdo do arquivo e aperte Enter (se o Chrome pedir, digite `allow pasting` antes).
-3. Ele rola sozinho até o começo do canal e baixa o `.txt`. Se a rolagem automática parar antes
+3. Ele rola sozinho até o começo do canal e baixa o PDF. Se a rolagem automática parar antes
    do começo, role para cima com o mouse até a primeira mensagem (o script continua lendo) e
-   digite `logbookSalvar()` no console para baixar o arquivo completo.
+   digite `logbookSalvar()` no console para baixar o PDF completo.
 4. Mande o arquivo para o celular e use Importar → Escolher arquivo.
 
 ## O resto
