@@ -1,4 +1,4 @@
-// Exporta o canal do Discord aberto nesta aba para um .txt que o app Logbook importa.
+// Exporta o canal do Discord aberto nesta aba para um PDF (ou .txt) que o app Logbook importa.
 // Só lê as mensagens que aparecem na tela (rolando até o começo do canal):
 // não usa token, senha nem a API do Discord, e não envia nada para lugar nenhum.
 //
