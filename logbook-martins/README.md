@@ -24,7 +24,10 @@ Uma faixa laranja mostra que você está registrando num dia passado. Lance as s
 por uma, ou toque em "Colar treino" e escreva/cole o treino inteiro, uma série por linha.
 Linhas que o app não entender ficam no campo para você corrigir.
 
-**3. Já tem tudo no Discord (aba Importar):** cole as mensagens do canal (com as linhas de
+**3. Já tem treinos anotados (compartilhar ou aba Importar):** o jeito mais fácil é, no app de
+arquivos (ou Discord, WhatsApp, e-mail), segurar o arquivo → Compartilhar → Logbook (ou tocar no
+arquivo → Abrir com → Logbook). O app abre na aba Importar já com a prévia. Também dá para usar
+"Escolher arquivo do celular" ou colar o texto. Formatos aceitos: cole as mensagens do canal (com as linhas de
 data, ex.: "milkinaa — 21/7/25, 7:21") ou escolha o arquivo exportado (TXT, CSV ou JSON do
 DiscordChatExporter). O app mostra uma prévia (quantas séries, quais dias, o que é novo e o
 que já existe, linhas ignoradas) antes de importar. Dá para importar em partes: o que já

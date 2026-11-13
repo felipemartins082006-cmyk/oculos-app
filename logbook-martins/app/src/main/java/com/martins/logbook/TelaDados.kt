@@ -4,11 +4,12 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
-import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,9 +23,11 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -59,14 +62,9 @@ private class EscolherArquivo : ActivityResultContracts.OpenDocument() {
       )
 }
 
-private fun nomeDoArquivo(ctx: Context, uri: Uri): String? = runCatching {
-  ctx.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
-    if (c.moveToFirst()) c.getString(0) else null
-  }
-}.getOrNull()
 
 @Composable
-fun TelaDados(lb: Logbook, todas: List<Serie>) {
+fun TelaDados(lb: Logbook, todas: List<Serie>, recebido: Recebido? = null, onRecebidoLido: () -> Unit = {}) {
   val ctx = LocalContext.current
   val escopo = rememberCoroutineScope()
   var texto by remember { mutableStateOf("") }
@@ -89,9 +87,18 @@ fun TelaDados(lb: Logbook, todas: List<Serie>) {
     }
   }
 
+  // Chegou um arquivo pelo "Compartilhar": já mostra a prévia.
+  LaunchedEffect(recebido?.id) {
+    if (recebido != null) {
+      texto = ""
+      ler(recebido.texto, arquivo = recebido.nome ?: "texto compartilhado")
+      onRecebidoLido()
+    }
+  }
+
   val abrirArquivo = rememberLauncherForActivityResult(EscolherArquivo()) { uri ->
     if (uri != null) {
-      runCatching { ctx.contentResolver.openInputStream(uri)!!.bufferedReader().use { it.readText() } }
+      runCatching { lerArquivo(ctx, uri) }
           .onSuccess { texto = ""; ler(it, arquivo = nomeDoArquivo(ctx, uri)) }
           .onFailure { Toast.makeText(ctx, "Não consegui abrir o arquivo", Toast.LENGTH_LONG).show() }
     }
@@ -142,6 +149,16 @@ fun TelaDados(lb: Logbook, todas: List<Serie>) {
                   "(Downloads, Arquivos, Drive…), uma exportação do Discord ou um backup deste app.",
               color = Cinza, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp),
           )
+          Surface(color = Superficie2, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
+            Column(Modifier.padding(12.dp)) {
+              Text("Jeito mais fácil", color = Laranja, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+              Text(
+                  "No app de arquivos (ou no Discord, WhatsApp, e-mail…), segure o arquivo, toque em " +
+                      "Compartilhar e escolha Logbook. O app abre aqui já com a prévia.",
+                  color = Texto, fontSize = 13.sp,
+              )
+            }
+          }
           Button(
               onClick = { abrirArquivo.launch(arrayOf("*/*")) },
               enabled = !lendo,

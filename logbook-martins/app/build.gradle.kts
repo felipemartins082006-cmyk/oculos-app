@@ -14,8 +14,8 @@ android {
     applicationId = "com.martins.logbook"
     minSdk = 26
     targetSdk = 36
-    versionCode = 3
-    versionName = "1.2"
+    versionCode = 4
+    versionName = "1.3"
   }
 
   // Chave fixa de assinatura: assim cada versão nova instala por cima da anterior

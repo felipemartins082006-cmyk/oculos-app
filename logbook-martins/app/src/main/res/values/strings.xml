@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Logbook</string>
+    <string name="importar_no_logbook">Importar no Logbook</string>
 </resources>
