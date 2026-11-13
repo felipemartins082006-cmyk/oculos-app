@@ -23,7 +23,7 @@ import androidx.compose.ui.unit.sp
 import java.time.LocalDate
 
 @Composable
-fun TelaHistorico(todas: List<Serie>, onAbrirDia: (LocalDate) -> Unit) {
+fun TelaHistorico(todas: List<Serie>, diasDiario: Map<LocalDate, Dia>, onAbrirDia: (LocalDate) -> Unit) {
   var busca by rememberSaveable { mutableStateOf("") }
   val filtro = normalizarNome(busca)
   val dias = remember(todas, filtro) {
@@ -32,6 +32,8 @@ fun TelaHistorico(todas: List<Serie>, onAbrirDia: (LocalDate) -> Unit) {
         .toSortedMap(compareByDescending { it })
         .toList()
   }
+
+  val perf = remember(todas) { performancePorDia(todas) }
 
   LazyColumn(
       Modifier.fillMaxSize(),
@@ -54,13 +56,20 @@ fun TelaHistorico(todas: List<Serie>, onAbrirDia: (LocalDate) -> Unit) {
       Cartao(onClick = { onAbrirDia(d) }) {
         Row {
           Text(dataComSemana(d), fontWeight = FontWeight.Bold, color = Texto, fontSize = 16.sp, modifier = Modifier.weight(1f))
+          perf[d]?.let {
+            Text(fmtPct(it.variacao) + "  ", color = if (it.variacao >= 0) Verde else Destaque, fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold)
+          }
           Text("${ss.size} séries", color = Cinza, fontSize = 13.sp)
         }
+        // O contexto do dia (sono, humor, eventos…), quando você preencheu o diário.
+        val ctx = contextoDoDia(diasDiario[d])
+        if (ctx.isNotEmpty()) Text(ctx.joinToString(" · "), color = Cinza, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
         ss.sortedBy { it.id }.groupBy { it.exercicio }.forEach { (ex, doEx) ->
           val destaque = filtro.isNotEmpty() && filtro in ex
           Text(
               nomeBonito(ex),
-              color = if (destaque) Laranja else Texto, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+              color = if (destaque) Destaque else Texto, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
               modifier = Modifier.padding(top = 8.dp),
           )
           Text(resumoSeries(doEx), color = Cinza, fontSize = 13.sp)

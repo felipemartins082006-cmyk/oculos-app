@@ -42,6 +42,7 @@ class FigurasTest {
   private fun figura(titulo: String) = regra.onAllNodes(hasContentDescription("Ilustração: $titulo"))
 
   @Test fun digitarSquatMostraOAgachamento() {
+    regra.onNodeWithText("Agora não").performClick() // fecha o cartão "Peso de hoje"
     campo().performTextInput("squat")
     regra.waitForIdle()
     assertEquals(1, figura("Barbell Squat").fetchSemanticsNodes().size)
@@ -65,6 +66,7 @@ class FigurasTest {
   }
 
   @Test fun semIlustracaoEscolherOutraOuPorFoto() {
+    regra.onNodeWithText("Agora não").performClick() // fecha o cartão "Peso de hoje"
     campo().performTextInput("farmer walk 40kg x 30")
     campo().performImeAction()
     campo().performTextInput("squat 160kg x 4")
@@ -122,6 +124,7 @@ class FigurasTest {
   }
 
   @Test fun renomearLevaAFigura() {
+    regra.onNodeWithText("Agora não").performClick() // fecha o cartão "Peso de hoje"
     campo().performTextInput("farmer walk 40kg x 30")
     campo().performImeAction()
     regra.onNodeWithText("Evolução").performClick()

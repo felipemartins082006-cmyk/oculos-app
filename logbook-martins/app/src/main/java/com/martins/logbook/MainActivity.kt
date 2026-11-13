@@ -25,6 +25,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.time.LocalDate
 
@@ -37,11 +41,12 @@ class MainActivity : ComponentActivity() {
     enableEdgeToEdge()
     val logbook = Logbook(applicationContext)
     val figuras = Figuras(applicationContext)
+    val diario = Diario(applicationContext)
     if (savedInstanceState == null) receber(intent)
     setContent {
       Tema {
         CompositionLocalProvider(LocalFiguras provides figuras) {
-          App(logbook, recebido.value, onRecebidoLido = { recebido.value = null })
+          App(logbook, diario, recebido.value, onRecebidoLido = { recebido.value = null })
         }
       }
     }
@@ -62,18 +67,20 @@ class MainActivity : ComponentActivity() {
 
 private enum class Aba(val titulo: String, val icone: String) {
   TREINO("Treino", "＋"),
+  DIA("Dia", "◐"),
   HISTORICO("Histórico", "☰"),
   EVOLUCAO("Evolução", "↗"),
   DADOS("Importar", "⇅"),
 }
 
 @Composable
-private fun App(lb: Logbook, recebido: Recebido?, onRecebidoLido: () -> Unit) {
+private fun App(lb: Logbook, diario: Diario, recebido: Recebido?, onRecebidoLido: () -> Unit) {
   // Aberto pelo "Compartilhar": já começa na aba Importar.
   var aba by rememberSaveable { mutableStateOf(if (recebido != null) Aba.DADOS else Aba.TREINO) }
   var dia by rememberSaveable { mutableStateOf(LocalDate.now()) }
   var exercicio by rememberSaveable { mutableStateOf<String?>(null) }
   val series = lb.series.value
+  val dias = diario.dias.value
 
   // Chegou algo pelo "Compartilhar": vai direto para a aba Importar.
   LaunchedEffect(recebido?.id) { if (recebido != null && aba != Aba.DADOS) aba = Aba.DADOS }
@@ -86,9 +93,15 @@ private fun App(lb: Logbook, recebido: Recebido?, onRecebidoLido: () -> Unit) {
   val abrirExercicio: (String) -> Unit = { exercicio = it; aba = Aba.EVOLUCAO }
 
   Scaffold(
-      containerColor = Fundo,
+      modifier = Modifier.fundoDoApp(),
+      containerColor = Color.Transparent,
       bottomBar = {
-        NavigationBar(containerColor = Superficie) {
+        NavigationBar(
+            containerColor = Color(0xE60B080C),
+            modifier = Modifier.drawBehind {
+              drawLine(DegradeBorda, Offset(0f, 0f), Offset(size.width, 0f), 1.dp.toPx())
+            },
+        ) {
           Aba.entries.forEach { a ->
             NavigationBarItem(
                 selected = aba == a,
@@ -97,11 +110,11 @@ private fun App(lb: Logbook, recebido: Recebido?, onRecebidoLido: () -> Unit) {
                   aba = a
                 },
                 icon = { Text(a.icone, fontSize = 20.sp) },
-                label = { Text(a.titulo) },
+                label = { Text(a.titulo, fontSize = 11.sp, maxLines = 1) },
                 colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = Laranja,
-                    selectedTextColor = Laranja,
-                    indicatorColor = Superficie2,
+                    selectedIconColor = Destaque,
+                    selectedTextColor = Destaque,
+                    indicatorColor = Color(0x2EFF5C6C),
                     unselectedIconColor = Cinza,
                     unselectedTextColor = Cinza,
                 ),
@@ -113,16 +126,17 @@ private fun App(lb: Logbook, recebido: Recebido?, onRecebidoLido: () -> Unit) {
     Box(Modifier.fillMaxSize().padding(pad).consumeWindowInsets(pad).imePadding()) {
       when (aba) {
         Aba.TREINO -> TelaTreino(
-            lb, series, dia,
+            lb, diario, series, dia,
             onDia = { dia = it },
             onAbrirExercicio = abrirExercicio,
             onImportar = { aba = Aba.DADOS },
         )
-        Aba.HISTORICO -> TelaHistorico(series, onAbrirDia = abrirDia)
+        Aba.DIA -> TelaDia(diario, series, dia, onDia = { dia = it }, onAbrirTreino = { aba = Aba.TREINO })
+        Aba.HISTORICO -> TelaHistorico(series, dias, onAbrirDia = abrirDia)
         Aba.EVOLUCAO -> {
           val ex = exercicio
           if (ex == null || series.none { it.exercicio == ex }) {
-            TelaExercicios(series, onAbrir = { exercicio = it })
+            TelaExercicios(series, dias, onAbrir = { exercicio = it }, onAbrirDia = abrirDia)
           } else {
             TelaExercicio(
                 lb, series, ex,
@@ -132,7 +146,7 @@ private fun App(lb: Logbook, recebido: Recebido?, onRecebidoLido: () -> Unit) {
             )
           }
         }
-        Aba.DADOS -> TelaDados(lb, series, recebido, onRecebidoLido)
+        Aba.DADOS -> TelaDados(lb, diario, series, recebido, onRecebidoLido)
       }
     }
   }

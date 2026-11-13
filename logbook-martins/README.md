@@ -48,6 +48,23 @@ lê o que aparece na tela: não usa token, senha nem a API, e não envia nada pa
    digite `logbookSalvar()` no console para baixar o PDF completo.
 4. Mande o arquivo para o celular e use Importar → Escolher arquivo.
 
+## Diário, peso e insights (versão 2.0)
+
+**Peso:** no começo de cada treino aparece "Peso de hoje", com a escolha *Em jejum* (ao acordar, de cueca)
+ou *Na sessão* (na academia, com roupa). O gráfico (Evolução → Peso) mostra cada tipo separado, com a
+média dos últimos 7 dias, e quanto a pesagem na sessão costuma ser maior que em jejum.
+
+**Aba Dia:** sono (horas e qualidade), cabeça (humor, estresse, como foi o dia, eventos como "Prova / TCC"),
+alimentação (refeições com horário e itens do jeito que você pesa: `arroz 150g 195kcal`, com ícones) e a
+hora em que o treino começou (marcada sozinha na primeira série do dia).
+
+**Insights (Evolução → Insights):** cada treino é comparado com as suas últimas sessões dos mesmos
+exercícios (1RM estimado) e o app mostra como você rende com e sem cada fator (sono, comer antes do treino,
+café da manhã, calorias, humor, estresse, eventos), além dos treinos acima e abaixo do normal com o
+contexto do dia. São padrões nos seus registros, não diagnóstico.
+
+O backup agora é completo (séries e diário) em `.json`.
+
 ## Figuras dos exercícios
 
 Ao digitar o nome (ex.: `squat`), aparece a ilustração do exercício, alternando entre o início e o

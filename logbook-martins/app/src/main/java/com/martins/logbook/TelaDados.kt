@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.widget.Toast
+import org.json.JSONObject
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -27,6 +28,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,7 +49,23 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** O que foi lido, pronto para conferir antes de importar. */
-private class Previa(val texto: String, val leitura: Leitura, val novas: Int, val repetidas: Int, val arquivo: String?)
+private class Previa(
+    val texto: String,
+    val leitura: Leitura,
+    val novas: Int,
+    val repetidas: Int,
+    val arquivo: String?,
+    /** Backup completo do app: o diário (peso, sono, comida…) que vem junto. */
+    val diario: JSONObject? = null,
+)
+
+/** Backup completo do app: {"logbook": 2, "series": [...], "diario": {...}}. */
+private fun lerBackup(t: String): Pair<List<SerieLida>, JSONObject>? = runCatching {
+  val inicio = t.trimStart()
+  if (!inicio.startsWith("{") || "\"logbook\"" !in inicio.take(200)) return null
+  val o = JSONObject(inicio)
+  Logbook.seriesDeJson(o.optJSONArray("series") ?: org.json.JSONArray()) to (o.optJSONObject("diario") ?: JSONObject())
+}.getOrNull()
 
 /**
  * Seletor de arquivos do Android (o mesmo do app Arquivos): abre na pasta Downloads,
@@ -64,7 +82,7 @@ private class EscolherArquivo : ActivityResultContracts.OpenDocument() {
 
 
 @Composable
-fun TelaDados(lb: Logbook, todas: List<Serie>, recebido: Recebido? = null, onRecebidoLido: () -> Unit = {}) {
+fun TelaDados(lb: Logbook, diario: Diario, todas: List<Serie>, recebido: Recebido? = null, onRecebidoLido: () -> Unit = {}) {
   val ctx = LocalContext.current
   val escopo = rememberCoroutineScope()
   var texto by remember { mutableStateOf("") }
@@ -80,7 +98,12 @@ fun TelaDados(lb: Logbook, todas: List<Serie>, recebido: Recebido? = null, onRec
       val p = withContext(Dispatchers.Default) {
         val r = Leitor.ler(t, LocalDate.now(), ordem = ordem)
         val (novas, repetidas) = lb.separarNovas(r.series)
-        Previa(t, r, novas.size, repetidas, arquivo)
+        val backup = lerBackup(t)
+        if (backup != null) {
+          val (novasB, repetidasB) = lb.separarNovas(backup.first)
+          Previa(t, Leitura(backup.first, emptyList(), OrdemData.DIA_MES, false, "Backup do Logbook"),
+              novasB.size, repetidasB, arquivo, backup.second)
+        } else Previa(t, r, novas.size, repetidas, arquivo)
       }
       previa = p
       lendo = false
@@ -114,15 +137,19 @@ fun TelaDados(lb: Logbook, todas: List<Serie>, recebido: Recebido? = null, onRec
       lerDeArquivo(nomeDoArquivo(ctx, uri)) { lerArquivo(ctx, uri) }
     }
   }
-  val salvarArquivo = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+  val salvarArquivo = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
     if (uri != null) {
       runCatching {
-        ctx.contentResolver.openOutputStream(uri, "wt")!!.bufferedWriter().use { it.write(Leitor.escrever(todas)) }
+        val backup = JSONObject().put("logbook", 2).put("series", lb.paraJson()).put("diario", diario.paraJson())
+        ctx.contentResolver.openOutputStream(uri, "wt")!!.bufferedWriter().use { it.write(backup.toString()) }
       }.onSuccess { Toast.makeText(ctx, "Backup salvo (${todas.size} séries)", Toast.LENGTH_LONG).show() }
           .onFailure { Toast.makeText(ctx, "Não consegui salvar o backup", Toast.LENGTH_LONG).show() }
     }
   }
 
+  // Uma lista nova quando muda entre formulário e prévia: evita a lista antiga guardar uma posição
+  // que não existe mais (o Compose quebrava com IndexOutOfBounds ao abrir um arquivo compartilhado).
+  key(previa) {
   LazyColumn(
       Modifier.fillMaxSize(),
       contentPadding = PaddingValues(16.dp),
@@ -162,7 +189,7 @@ fun TelaDados(lb: Logbook, todas: List<Serie>, recebido: Recebido? = null, onRec
           )
           Surface(color = Superficie2, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
             Column(Modifier.padding(12.dp)) {
-              Text("Jeito mais fácil", color = Laranja, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+              Text("Jeito mais fácil", color = Destaque, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
               Text(
                   "No app de arquivos (ou no Discord, WhatsApp, e-mail…), segure o arquivo, toque em " +
                       "Compartilhar e escolha Logbook. O app abre aqui já com a prévia.",
@@ -170,7 +197,7 @@ fun TelaDados(lb: Logbook, todas: List<Serie>, recebido: Recebido? = null, onRec
               )
             }
           }
-          Button(
+          BotaoDegrade(
               onClick = { abrirArquivo.launch(arrayOf("*/*")) },
               enabled = !lendo,
               modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
@@ -208,7 +235,7 @@ fun TelaDados(lb: Logbook, todas: List<Serie>, recebido: Recebido? = null, onRec
           Text("Prévia", color = Texto, fontWeight = FontWeight.Bold, fontSize = 16.sp)
           if (r.series.isEmpty()) {
             Text("Não encontrei nenhuma série. Confira se as linhas estão como “exercício -> 100kg x 8 reps”.",
-                color = Laranja, fontSize = 14.sp, modifier = Modifier.padding(top = 6.dp))
+                color = Destaque, fontSize = 14.sp, modifier = Modifier.padding(top = 6.dp))
           } else {
             Text(
                 "${r.series.size} séries em ${dias.size} dias de treino\n" +
@@ -234,7 +261,7 @@ fun TelaDados(lb: Logbook, todas: List<Serie>, recebido: Recebido? = null, onRec
             Text("Formato: ${r.formato}", color = Cinza, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
           }
           if (r.naoEntendidas.isNotEmpty()) {
-            Text("${r.naoEntendidas.size} linhas ignoradas (não são séries):", color = Laranja, fontSize = 13.sp,
+            Text("${r.naoEntendidas.size} linhas ignoradas (não são séries):", color = Destaque, fontSize = 13.sp,
                 modifier = Modifier.padding(top = 6.dp))
             r.naoEntendidas.take(10).forEach {
               Text("• ${it.take(80)}", color = Cinza, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
@@ -242,12 +269,17 @@ fun TelaDados(lb: Logbook, todas: List<Serie>, recebido: Recebido? = null, onRec
             if (r.naoEntendidas.size > 10) Text("… e mais ${r.naoEntendidas.size - 10}", color = Cinza, fontSize = 12.sp)
           }
           Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(enabled = p.novas > 0 && !lendo, onClick = {
+            BotaoDegrade(enabled = (p.novas > 0 || p.diario != null) && !lendo, onClick = {
               val res = lb.importar(r.series)
-              Toast.makeText(ctx, "${res.adicionadas} séries importadas em ${res.dias} dias", Toast.LENGTH_LONG).show()
+              p.diario?.let { diario.restaurar(it) }
+              Toast.makeText(
+                  ctx,
+                  "${res.adicionadas} séries importadas em ${res.dias} dias" + if (p.diario != null) " · diário restaurado" else "",
+                  Toast.LENGTH_LONG,
+              ).show()
               previa = null
               texto = ""
-            }) { Text(if (p.novas > 0) "Importar ${p.novas}" else "Nada novo") }
+            }) { Text(if (p.diario != null) "Restaurar backup" else if (p.novas > 0) "Importar ${p.novas}" else "Nada novo") }
             OutlinedButton(onClick = { previa = null }) { Text("Voltar") }
           }
         }
@@ -271,11 +303,11 @@ fun TelaDados(lb: Logbook, todas: List<Serie>, recebido: Recebido? = null, onRec
       Cartao {
         Text("Backup", color = Texto, fontWeight = FontWeight.Bold, fontSize = 16.sp)
         Text(
-            "Salva tudo num arquivo .txt no celular (você escolhe a pasta). Para restaurar " +
+            "Salva tudo (séries e diário: peso, sono, comida…) num arquivo no celular. Para restaurar " +
                 "(ex.: celular novo), use “Escolher arquivo do celular” acima com esse arquivo.",
             color = Cinza, fontSize = 13.sp, modifier = Modifier.padding(vertical = 6.dp),
         )
-        Button(onClick = { salvarArquivo.launch("logbook-${LocalDate.now()}.txt") }, enabled = todas.isNotEmpty()) {
+        BotaoDegrade(onClick = { salvarArquivo.launch("logbook-${LocalDate.now()}.json") }, enabled = todas.isNotEmpty() || diario.dias.value.isNotEmpty()) {
           Text("Salvar backup")
         }
       }
@@ -286,8 +318,8 @@ fun TelaDados(lb: Logbook, todas: List<Serie>, recebido: Recebido? = null, onRec
         Text("Apagar tudo", color = Texto, fontWeight = FontWeight.Bold, fontSize = 16.sp)
         Text("Remove todas as séries deste celular. Faça um backup antes.", color = Cinza, fontSize = 13.sp,
             modifier = Modifier.padding(vertical = 6.dp))
-        OutlinedButton(onClick = { confirmandoApagar = true }, enabled = todas.isNotEmpty()) {
-          Text("Apagar todas as séries", color = Vermelho)
+        OutlinedButton(onClick = { confirmandoApagar = true }, enabled = todas.isNotEmpty() || diario.dias.value.isNotEmpty()) {
+          Text("Apagar tudo (séries e diário)", color = Vermelho)
         }
       }
     }
@@ -301,13 +333,15 @@ fun TelaDados(lb: Logbook, todas: List<Serie>, recebido: Recebido? = null, onRec
     }
   }
 
+  }
+
   if (confirmandoApagar) {
     AlertDialog(
         onDismissRequest = { confirmandoApagar = false },
         title = { Text("Apagar tudo?") },
-        text = { Text("As ${todas.size} séries serão apagadas deste celular. Isso não dá para desfazer.") },
+        text = { Text("As ${todas.size} séries e o diário (peso, sono, comida…) serão apagados deste celular. Isso não dá para desfazer.") },
         confirmButton = {
-          TextButton(onClick = { lb.apagarTudo(); confirmandoApagar = false }) { Text("Apagar", color = Vermelho) }
+          TextButton(onClick = { lb.apagarTudo(); diario.apagarTudo(); confirmandoApagar = false }) { Text("Apagar", color = Vermelho) }
         },
         dismissButton = { TextButton(onClick = { confirmandoApagar = false }) { Text("Cancelar") } },
     )

@@ -23,6 +23,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DatePicker
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.OutlinedButton
@@ -37,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,14 +58,6 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 
-@Composable
-fun Cartao(modifier: Modifier = Modifier, onClick: (() -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) {
-  Surface(
-      color = Superficie,
-      shape = RoundedCornerShape(14.dp),
-      modifier = modifier.fillMaxWidth().let { if (onClick != null) it.clickable(onClick = onClick) else it },
-  ) { Column(Modifier.padding(14.dp), content = content) }
-}
 
 /** Nome digitado antes do primeiro número: "bench pr" em "bench pr 90". */
 private fun nomeDigitado(texto: String): String =
@@ -72,6 +66,7 @@ private fun nomeDigitado(texto: String): String =
 @Composable
 fun TelaTreino(
     lb: Logbook,
+    diario: Diario,
     todas: List<Serie>,
     dia: LocalDate,
     onDia: (LocalDate) -> Unit,
@@ -84,6 +79,7 @@ fun TelaTreino(
   var editando by remember { mutableStateOf<Serie?>(null) }
   var escolhendoData by remember { mutableStateOf(false) }
   var colando by remember { mutableStateOf(false) }
+  var pesoFechado by rememberSaveable { mutableStateOf(false) }
   val hoje = LocalDate.now()
 
   val doDia = todas.filter { it.data == dia }.sortedBy { it.id }
@@ -116,6 +112,8 @@ fun TelaTreino(
     }
     val antes = todas
     val novas = lb.adicionar(r.series)
+    // Primeira série de hoje: guarda a hora em que o treino começou (para cruzar com sono e comida).
+    if (dia == LocalDate.now()) diario.marcarTreino(dia, horaAgora())
     erro = null
     campo = TextFieldValue("")
     novas.firstNotNullOfOrNull { recordeBatido(antes.filter { s -> s.data <= dia }, it) }
@@ -154,7 +152,7 @@ fun TelaTreino(
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
         ) {
           Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Registrando em ${dataComSemana(dia)}", color = Laranja, fontSize = 14.sp, modifier = Modifier.weight(1f))
+            Text("Registrando em ${dataComSemana(dia)}", color = Destaque, fontSize = 14.sp, modifier = Modifier.weight(1f))
             TextButton(onClick = { onDia(hoje) }) { Text("Ir para hoje") }
           }
         }
@@ -162,6 +160,11 @@ fun TelaTreino(
     }
 
     if (colando) item { ColarTreino(dia, onFechar = { colando = false }, onAdicionar = ::colar) }
+
+    // Começo da sessão: pede o peso de hoje (some quando você pesa ou fecha).
+    if (dia == hoje && diario.de(dia).pesagens.isEmpty() && !pesoFechado && !colando) {
+      item { PesarHoje(onSalvar = { kg, tipo -> diario.pesar(dia, horaAgora(), kg, tipo) }, onFechar = { pesoFechado = true }) }
+    }
 
     if (todas.isEmpty() && !colando) item { BoasVindas(onImportar) }
 
@@ -184,7 +187,7 @@ fun TelaTreino(
               keyboardActions = KeyboardActions(onDone = { adicionar(campo.text) }),
           )
           Spacer(Modifier.width(8.dp))
-          Button(onClick = { adicionar(campo.text) }, modifier = Modifier.height(56.dp)) {
+          BotaoDegrade(onClick = { adicionar(campo.text) }, modifier = Modifier.height(56.dp)) {
             Text("+", fontSize = 22.sp)
           }
         }
@@ -291,7 +294,7 @@ private fun PreviaExercicio(todas: List<Serie>, exercicio: String, dia: LocalDat
         } else {
           Text("Primeira vez neste exercício", color = Cinza, fontSize = 12.sp)
         }
-        recorde?.let { Text("Recorde: ${fmtSerie(it)} (${dataCurta(it.data)})", color = Laranja, fontSize = 12.sp) }
+        recorde?.let { Text("Recorde: ${fmtSerie(it)} (${dataCurta(it.data)})", color = Destaque, fontSize = 12.sp) }
       }
     }
   }
@@ -361,7 +364,7 @@ private fun BoasVindas(onImportar: () -> Unit) {
     Passo("Treinando agora?", "Digite cada série no campo abaixo, do jeito que você já escreve: squat 160kg x 4")
     Passo("Esqueceu de registrar um dia?", "Toque em “Outro dia”, escolha a data e lance as séries, uma por uma ou todas com “Colar treino”.")
     Passo("Já tem treinos anotados em outro lugar?", "Traga tudo de uma vez de um arquivo do celular (ou do Discord):")
-    Button(onClick = onImportar, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+    BotaoDegrade(onClick = onImportar, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
       Text("Importar registros")
     }
   }
@@ -369,7 +372,7 @@ private fun BoasVindas(onImportar: () -> Unit) {
 
 @Composable
 private fun Passo(titulo: String, texto: String) {
-  Text(titulo, color = Laranja, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.padding(top = 12.dp))
+  Text(titulo, color = Destaque, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.padding(top = 12.dp))
   Text(texto, color = Cinza, fontSize = 13.sp)
 }
 
@@ -388,7 +391,7 @@ private fun ColarTreino(dia: LocalDate, onFechar: () -> Unit, onAdicionar: (Stri
         minLines = 6, maxLines = 14,
         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false),
     )
-    aviso?.let { Text(it, color = Laranja, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp)) }
+    aviso?.let { Text(it, color = Destaque, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp)) }
     Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
       Button(enabled = texto.isNotBlank(), onClick = {
         val r = onAdicionar(texto)
@@ -401,6 +404,46 @@ private fun ColarTreino(dia: LocalDate, onFechar: () -> Unit, onAdicionar: (Stri
         }
       }) { Text("Adicionar") }
       OutlinedButton(onClick = onFechar) { Text("Fechar") }
+    }
+  }
+}
+
+fun horaAgora(): String = java.time.LocalTime.now().let { "%02d:%02d".format(it.hour, it.minute) }
+
+/** Cartão "Quanto você está pesando?" com a escolha em jejum / na sessão. */
+@Composable
+fun PesarHoje(onSalvar: (Double, TipoPesagem) -> Unit, onFechar: (() -> Unit)? = null) {
+  var texto by remember { mutableStateOf("") }
+  var tipo by rememberSaveable { mutableStateOf(TipoPesagem.SESSAO) }
+  val kg = texto.replace(',', '.').toDoubleOrNull()?.takeIf { it in 25.0..350.0 }
+  Cartao {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+      Rotulo("Peso de hoje", Modifier.weight(1f))
+      if (onFechar != null) TextButton(onClick = onFechar) { Text("Agora não", color = Cinza, fontSize = 13.sp) }
+    }
+    Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+      TipoPesagem.entries.forEach { t ->
+        FilterChip(
+            selected = tipo == t, onClick = { tipo = t },
+            label = { Column { Text(t.titulo, fontWeight = FontWeight.SemiBold); Text(t.descricao, fontSize = 11.sp) } },
+            modifier = Modifier.weight(1f),
+        )
+      }
+    }
+    Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+      OutlinedTextField(
+          texto, { texto = it },
+          modifier = Modifier.weight(1f),
+          placeholder = { Text("82.4") },
+          suffix = { Text("kg") },
+          singleLine = true,
+          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+          keyboardActions = KeyboardActions(onDone = { kg?.let { onSalvar(it, tipo); texto = "" } }),
+      )
+      Spacer(Modifier.width(8.dp))
+      BotaoDegrade(onClick = { kg?.let { onSalvar(it, tipo); texto = "" } }, enabled = kg != null, modifier = Modifier.height(56.dp)) {
+        Text("Salvar")
+      }
     }
   }
 }

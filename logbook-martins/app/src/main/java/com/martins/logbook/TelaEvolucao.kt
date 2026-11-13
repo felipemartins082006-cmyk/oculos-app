@@ -34,6 +34,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -47,8 +48,14 @@ import androidx.compose.ui.unit.sp
 import java.time.LocalDate
 
 @Composable
-fun TelaExercicios(todas: List<Serie>, onAbrir: (String) -> Unit) {
+fun TelaExercicios(
+    todas: List<Serie>,
+    dias: Map<LocalDate, Dia>,
+    onAbrir: (String) -> Unit,
+    onAbrirDia: (LocalDate) -> Unit,
+) {
   var busca by rememberSaveable { mutableStateOf("") }
+  var secao by rememberSaveable { mutableIntStateOf(0) }
   val filtro = normalizarNome(busca)
   val lista = remember(todas) { resumos(todas) }.filter { filtro.isEmpty() || filtro in it.exercicio }
 
@@ -58,8 +65,20 @@ fun TelaExercicios(todas: List<Serie>, onAbrir: (String) -> Unit) {
       verticalArrangement = Arrangement.spacedBy(10.dp),
   ) {
     item {
-      Text("Evolução", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Texto)
-      Text("Toque num exercício para ver o gráfico", color = Cinza, fontSize = 14.sp)
+      Rotulo("Evolução")
+      Text(
+          listOf("Seus exercícios", "Peso corporal", "O que mexe no seu treino")[secao],
+          fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Texto,
+      )
+    }
+    item { Segmentos(listOf("Exercícios", "Peso", "Insights"), secao) { secao = it } }
+    if (secao == 1) {
+      conteudoPeso(dias, onAbrirDia)
+      return@LazyColumn
+    }
+    if (secao == 2) {
+      conteudoInsights(todas, dias, onAbrirDia)
+      return@LazyColumn
     }
     item {
       OutlinedTextField(
@@ -80,7 +99,7 @@ fun TelaExercicios(todas: List<Serie>, onAbrir: (String) -> Unit) {
                 color = Cinza, fontSize = 13.sp)
           }
           Column(horizontalAlignment = Alignment.End) {
-            Text(fmtSerie(r.maiorCarga), color = Laranja, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+            Text(fmtSerie(r.maiorCarga), color = Destaque, fontWeight = FontWeight.Bold, fontSize = 15.sp)
             Text("recorde", color = Cinza, fontSize = 11.sp)
           }
         }
@@ -210,7 +229,7 @@ fun TelaExercicio(
         Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
           Periodo.entries.forEach { p ->
             TextButton(onClick = { periodo = p }) {
-              Text(p.titulo, color = if (periodo == p) Laranja else Cinza,
+              Text(p.titulo, color = if (periodo == p) Destaque else Cinza,
                   fontWeight = if (periodo == p) FontWeight.Bold else FontWeight.Normal)
             }
           }
@@ -255,7 +274,7 @@ fun TelaExercicio(
             Text(
                 if (existe) "“${nomeBonito(novo)}” já existe: os dois vão virar um só exercício, com o histórico junto."
                 else "Muda o nome em todas as ${series.size} séries.",
-                color = if (existe) Laranja else Cinza, fontSize = 13.sp,
+                color = if (existe) Destaque else Cinza, fontSize = 13.sp,
             )
           }
         },
@@ -277,7 +296,7 @@ private fun Recorde(titulo: String, valor: String, data: LocalDate) {
   Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
     Column(Modifier.weight(1f)) {
       Text(titulo, color = Cinza, fontSize = 12.sp)
-      Text(valor, color = Laranja, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+      Text(valor, color = Destaque, fontWeight = FontWeight.Bold, fontSize = 15.sp)
     }
     Text(dataCurta(data), color = Cinza, fontSize = 12.sp)
   }

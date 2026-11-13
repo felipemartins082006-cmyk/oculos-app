@@ -17,6 +17,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -49,7 +50,14 @@ private fun passoBonito(faixa: Double, linhas: Int): Double {
  * começa mostrando o último treino.
  */
 @Composable
-fun Grafico(pontos: List<Ponto>, unidade: String, modifier: Modifier = Modifier) {
+fun Grafico(
+    pontos: List<Ponto>,
+    unidade: String,
+    modifier: Modifier = Modifier,
+    /** Uma segunda linha (ex.: média móvel do peso), mais discreta. */
+    extra: List<Ponto> = emptyList(),
+    vazio: String = "Sem treinos neste período.",
+) {
   var sel by remember(pontos) { mutableIntStateOf(pontos.lastIndex) }
   val medidor = rememberTextMeasurer()
   val estiloEixo = TextStyle(color = Cinza, fontSize = 11.sp)
@@ -61,12 +69,13 @@ fun Grafico(pontos: List<Ponto>, unidade: String, modifier: Modifier = Modifier)
       Text(dataComSemana(p.data), color = Cinza, fontSize = 13.sp)
     }
     if (pontos.isEmpty()) {
-      Text("Sem treinos neste período.", color = Cinza, modifier = Modifier.height(220.dp))
+      Text(vazio, color = Cinza, modifier = Modifier.height(220.dp))
       return@Column
     }
 
-    val minV = pontos.minOf { it.valor }
-    val maxV = pontos.maxOf { it.valor }
+    val todos = pontos + extra
+    val minV = todos.minOf { it.valor }
+    val maxV = todos.maxOf { it.valor }
     val (lo, hi) = if (maxV - minV < 1e-6) (minV - 1).coerceAtLeast(0.0) to maxV + 1 else {
       val m = (maxV - minV) * 0.1
       (minV - m).coerceAtLeast(if (minV >= 0) 0.0 else minV - m) to maxV + m
@@ -98,7 +107,7 @@ fun Grafico(pontos: List<Ponto>, unidade: String, modifier: Modifier = Modifier)
 
       grades.forEach { g ->
         val yy = y(g)
-        drawLine(Superficie2, Offset(esq, yy), Offset(size.width - dir, yy), 1.dp.toPx())
+        drawLine(Color(0x14FFFFFF), Offset(esq, yy), Offset(size.width - dir, yy), 1.dp.toPx())
         val t = medidor.measure(fmtPeso(g), estiloEixo)
         drawText(t, topLeft = Offset(esq - t.size.width - 6.dp.toPx(), yy - t.size.height / 2))
       }
@@ -121,17 +130,33 @@ fun Grafico(pontos: List<Ponto>, unidade: String, modifier: Modifier = Modifier)
           lineTo(x(pontos.first().data), base)
           close()
         }
-        drawPath(area, Brush.verticalGradient(listOf(Laranja.copy(alpha = 0.25f), Color.Transparent), topo, base))
-        drawPath(linha, Laranja, style = Stroke(2.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+        drawPath(area, Brush.verticalGradient(listOf(Destaque.copy(alpha = 0.28f), Color.Transparent), topo, base))
+        // Brilho embaixo da linha, depois a linha em degradê.
+        drawPath(linha, Destaque.copy(alpha = 0.18f), style = Stroke(9.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+        drawPath(
+            linha, Brush.horizontalGradient(listOf(DestaqueEscuro, Destaque, Color(0xFFFF8A7A)), esq, size.width - dir),
+            style = Stroke(2.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round),
+        )
+      }
+      if (extra.size > 1) {
+        val media = Path()
+        extra.sortedBy { it.data }.forEachIndexed { i, pt ->
+          if (i == 0) media.moveTo(x(pt.data), y(pt.valor)) else media.lineTo(x(pt.data), y(pt.valor))
+        }
+        drawPath(
+            media, Color(0xB3FFFFFF),
+            style = Stroke(1.5.dp.toPx(), cap = StrokeCap.Round, pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f))),
+        )
       }
       val raio = if (pontos.size > 60) 2.dp.toPx() else 3.5.dp.toPx()
-      pontos.forEach { pt -> drawCircle(Laranja, raio, Offset(x(pt.data), y(pt.valor))) }
+      pontos.forEach { pt -> drawCircle(Destaque, raio, Offset(x(pt.data), y(pt.valor))) }
 
       pontos.getOrNull(sel)?.let { pt ->
         val c = Offset(x(pt.data), y(pt.valor))
         drawLine(Cinza.copy(alpha = 0.5f), Offset(c.x, topo), Offset(c.x, base), 1.dp.toPx())
+        drawCircle(Destaque.copy(alpha = 0.25f), 12.dp.toPx(), c)
         drawCircle(Fundo, 7.dp.toPx(), c)
-        drawCircle(Laranja, 5.dp.toPx(), c)
+        drawCircle(Destaque, 5.dp.toPx(), c)
       }
     }
     Text(unidade, color = Cinza, fontSize = 11.sp)

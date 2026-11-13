@@ -8,6 +8,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.isDialog
@@ -58,6 +59,7 @@ class TelasTest {
   private fun campoPrincipal() = regra.onAllNodes(hasSetTextAction()).onFirst()
 
   @Test fun appComecaVazioEUsuarioInsere() {
+    regra.onNodeWithText("Agora não").performClick() // fecha o cartão "Peso de hoje"
     // 1. App novo: nenhum dado, só as boas-vindas.
     regra.onNodeWithText("Seu logbook está vazio").assertExists()
     foto("1-app-vazio")
@@ -92,7 +94,7 @@ class TelasTest {
     foto("5-importar")
     val discord = File("src/test/resources/exemplo_discord.txt").readText()
     campoPrincipal().performTextInput(discord)
-    regra.onNodeWithText("Ler texto colado").performClick()
+    regra.onNodeWithText("Ler texto colado").performScrollTo().performClick()
     regra.waitUntil(30_000) { regra.onAllNodesWithText("Prévia").fetchSemanticsNodes().isNotEmpty() }
     regra.onNodeWithText("155 séries em 22 dias", substring = true).assertExists()
     foto("6-previa")
@@ -103,7 +105,7 @@ class TelasTest {
 
     // Importar o mesmo texto de novo não duplica nada.
     campoPrincipal().performTextInput(discord)
-    regra.onNodeWithText("Ler texto colado").performClick()
+    regra.onNodeWithText("Ler texto colado").performScrollTo().performClick()
     regra.waitUntil(30_000) { regra.onAllNodesWithText("Prévia").fetchSemanticsNodes().isNotEmpty() }
     regra.onNodeWithText("0 novas", substring = true).assertExists()
     regra.onNodeWithText("Voltar").performClick()

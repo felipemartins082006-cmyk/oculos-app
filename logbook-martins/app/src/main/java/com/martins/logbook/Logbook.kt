@@ -113,6 +113,14 @@ class Logbook(private val context: Context) {
     desfazivel.value = 0
   }
 
+  /** As séries em JSON (para o backup completo). */
+  fun paraJson(): JSONArray = JSONArray().apply {
+    series.value.forEach {
+      put(JSONObject().put("data", it.data.toString()).put("ex", it.exercicio).put("kg", it.peso)
+          .put("reps", it.reps).put("nota", it.nota))
+    }
+  }
+
   private fun chave(d: LocalDate, ex: String, peso: Double, reps: Int) = "$d|$ex|${fmtPeso(peso)}|$reps"
 
   private fun SerieLida.comId(id: Long) = Serie(id, data, exercicio, peso, reps, nota)
@@ -159,6 +167,14 @@ class Logbook(private val context: Context) {
           reps = o.getInt("reps"),
           nota = o.optString("nota"),
       )
+    }
+  }
+
+  companion object {
+    /** Lê as séries de um backup completo. */
+    fun seriesDeJson(arr: JSONArray): List<SerieLida> = (0 until arr.length()).map { i ->
+      val o = arr.getJSONObject(i)
+      SerieLida(LocalDate.parse(o.getString("data")), o.getString("ex"), o.getDouble("kg"), o.getInt("reps"), o.optString("nota"))
     }
   }
 }
