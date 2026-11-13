@@ -39,8 +39,10 @@ lê o que aparece na tela: não usa token, senha nem a API, e não envia nada pa
 
 1. Abra o canal do logbook no Chrome e aperte F12 → Console.
 2. Cole o conteúdo do arquivo e aperte Enter (se o Chrome pedir, digite `allow pasting` antes).
-3. Espere sem mexer na aba; no fim ele baixa o `.txt`. Mande esse arquivo para o celular
-   e use Importar → Escolher arquivo.
+3. Ele rola sozinho até o começo do canal e baixa o `.txt`. Se a rolagem automática parar antes
+   do começo, role para cima com o mouse até a primeira mensagem (o script continua lendo) e
+   digite `logbookSalvar()` no console para baixar o arquivo completo.
+4. Mande o arquivo para o celular e use Importar → Escolher arquivo.
 
 ## O resto
 

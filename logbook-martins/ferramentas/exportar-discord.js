@@ -3,10 +3,14 @@
 // não usa token, senha nem a API do Discord, e não envia nada para lugar nenhum.
 //
 // Como usar: abra o canal do logbook no Chrome, aperte F12, vá em "Console",
-// cole este código e aperte Enter. No fim, baixa "logbook-discord.txt".
-(async () => {
+// cole este código e aperte Enter.
+// - Ele tenta rolar sozinho até o começo do canal e baixa "logbook-discord.txt".
+// - Enquanto roda, ele lê tudo que passa pela tela: se a rolagem automática parar,
+//   role para cima com o mouse até o começo do canal e depois digite logbookSalvar()
+(() => {
   const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
   const doisDigitos = (n) => String(n).padStart(2, '0');
+  const fmt = (d) => `${doisDigitos(d.getDate())}/${doisDigitos(d.getMonth() + 1)}/${d.getFullYear()}`;
   const msgs = new Map();
 
   // O id da mensagem (snowflake) já traz a data e a hora em que ela foi enviada.
@@ -60,45 +64,88 @@
     return null;
   };
 
+  const maisAntiga = () => {
+    let m = null;
+    msgs.forEach((v) => { if (!m || v.ts < m.ts) m = v; });
+    return m ? fmt(new Date(m.ts)) : '-';
+  };
+
+  const salvar = () => {
+    coletar();
+    const ordenadas = [...msgs.values()].filter((m) => m.texto).sort((a, b) => a.ts - b.ts);
+    if (ordenadas.length === 0) {
+      const ol = listaDoChat();
+      console.log('Logbook: nada lido. Diagnóstico para mandar ao Claude:', JSON.stringify({
+        lis: document.querySelectorAll('li[id^="chat-messages-"]').length,
+        lista: ol && (ol.tagName + ' ' + (ol.getAttribute('data-list-id') || '') + ' ' + String(ol.className).slice(0, 60)),
+        conteudos: document.querySelectorAll('[id^="message-content-"]').length,
+      }));
+      return;
+    }
+    const texto = ordenadas.map((m) => `${m.dia}\n${m.texto}`).join('\n\n') + '\n';
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob([texto], { type: 'text/plain;charset=utf-8' }));
+    link.download = 'logbook-discord.txt';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    console.log(`Logbook: arquivo baixado com ${ordenadas.length} mensagens ` +
+        `(${fmt(new Date(ordenadas[0].ts))} a ${fmt(new Date(ordenadas[ordenadas.length - 1].ts))}).`);
+  };
+
   if (mensagensNaTela().length === 0) {
     alert('Não achei mensagens. Abra o canal do logbook (clique nele) e rode de novo.');
     return;
   }
 
-  const rolagem = acharRolagem();
-  console.log('Logbook: rolando até o começo do canal. Não mexa nesta aba até terminar.',
-      rolagem ? '' : '(usando rolagem pela primeira mensagem)');
+  // Lê o tempo todo, inclusive enquanto você rola com o mouse.
+  clearInterval(window.__logbookIntervalo);
+  window.__logbookIntervalo = setInterval(coletar, 200);
+  window.logbookSalvar = salvar;
+  coletar();
 
-  let semNovidade = 0;
-  while (semNovidade < 8) {
-    const antes = msgs.size;
-    coletar();
-    // Sobe até o topo: pelo elemento que rola e, de reserva, levando a mensagem mais antiga à tela.
-    if (rolagem) rolagem.scrollTop = 0;
-    mensagensNaTela()[0]?.scrollIntoView({ block: 'start' });
-    await esperar(1500);
-    coletar();
-    semNovidade = msgs.size === antes ? semNovidade + 1 : 0;
-    console.log(`Logbook: ${msgs.size} mensagens lidas...`);
-  }
+  // Tenta subir de vários jeitos, porque o Discord só carrega as mais antigas
+  // quando percebe a rolagem chegando no topo.
+  const subir = (rolagem) => {
+    const primeira = mensagensNaTela()[0];
+    if (rolagem) {
+      rolagem.scrollTop = Math.max(0, rolagem.scrollTop - rolagem.clientHeight * 2);
+      rolagem.dispatchEvent(new Event('scroll'));
+      rolagem.dispatchEvent(new WheelEvent('wheel', { deltaY: -2000, deltaMode: 0, bubbles: true, cancelable: true }));
+      if (rolagem.scrollTop <= 5) {
+        rolagem.scrollTop = 0;
+        rolagem.dispatchEvent(new Event('scroll'));
+      }
+    }
+    primeira?.scrollIntoView({ block: 'start' });
+    if (primeira) {
+      primeira.dispatchEvent(new WheelEvent('wheel', { deltaY: -2000, deltaMode: 0, bubbles: true, cancelable: true }));
+    }
+  };
 
-  const ordenadas = [...msgs.values()].filter((m) => m.texto).sort((a, b) => a.ts - b.ts);
-  if (ordenadas.length === 0) {
-    const ol = listaDoChat();
-    console.log('Logbook: nada lido. Diagnóstico para mandar ao Claude:', JSON.stringify({
-      lis: document.querySelectorAll('li[id^="chat-messages-"]').length,
-      lista: ol && (ol.tagName + ' ' + (ol.getAttribute('data-list-id') || '') + ' ' + String(ol.className).slice(0, 60)),
-      conteudos: document.querySelectorAll('[id^="message-content-"]').length,
-    }));
-    return;
-  }
-  const texto = ordenadas.map((m) => `${m.dia}\n${m.texto}`).join('\n\n') + '\n';
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(new Blob([texto], { type: 'text/plain;charset=utf-8' }));
-  link.download = 'logbook-discord.txt';
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  const p = ordenadas[0], u = ordenadas[ordenadas.length - 1];
-  console.log(`Logbook: pronto! ${ordenadas.length} mensagens (${p.dia} a ${u.dia}) em logbook-discord.txt`);
+  (async () => {
+    console.log('Logbook: rolando até o começo do canal. Não mexa nesta aba até terminar.');
+    let ultimoTotal = msgs.size;
+    let paradoDesde = Date.now();
+    let ultimoAviso = 0;
+    while (Date.now() - paradoDesde < 25000) {
+      subir(acharRolagem());
+      await esperar(700);
+      if (msgs.size !== ultimoTotal) {
+        ultimoTotal = msgs.size;
+        paradoDesde = Date.now();
+      }
+      if (Date.now() - ultimoAviso > 3000) {
+        console.log(`Logbook: ${msgs.size} mensagens lidas · mais antiga até agora: ${maisAntiga()}`);
+        ultimoAviso = Date.now();
+      }
+    }
+    salvar();
+    console.log(
+        '%cLogbook: a rolagem automática parou na mensagem de ' + maisAntiga() + '.\n' +
+        'Se essa ainda NÃO é a primeira mensagem do canal: role para cima com o mouse até o começo ' +
+        '(o script continua lendo tudo que passa na tela) e depois digite aqui:  logbookSalvar()\n' +
+        'O app não duplica nada, então pode importar o arquivo mais completo por cima.',
+        'font-weight:bold;color:#ff8a3d');
+  })();
 })();
