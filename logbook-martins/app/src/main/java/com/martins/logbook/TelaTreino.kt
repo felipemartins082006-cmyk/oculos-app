@@ -206,7 +206,7 @@ fun TelaTreino(
               verticalAlignment = Alignment.CenterVertically,
           ) {
             Text("${i + 1}", color = Cinza, modifier = Modifier.width(26.dp), fontFamily = FontFamily.Monospace)
-            Text(fmtSerie(s), color = Texto, fontSize = 16.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
+            Text(fmtSerie(s), color = Texto, fontSize = 16.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
             if (s.nota.isNotBlank()) Text(s.nota, color = Cinza, fontSize = 13.sp)
           }
         }

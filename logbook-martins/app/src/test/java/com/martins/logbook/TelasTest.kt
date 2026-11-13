@@ -1,11 +1,8 @@
 package com.martins.logbook
 
 import android.graphics.Bitmap
-import androidx.compose.ui.graphics.asAndroidBitmap
-import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performTextInput
@@ -31,7 +28,9 @@ class TelasTest {
 
   private fun foto(nome: String) {
     regra.waitForIdle()
-    val bmp = regra.onRoot().captureToImage().asAndroidBitmap()
+    val v = regra.activity.window.decorView
+    val bmp = Bitmap.createBitmap(v.width, v.height, Bitmap.Config.ARGB_8888)
+    regra.runOnUiThread { v.draw(android.graphics.Canvas(bmp)) }
     val dir = File("build/telas").apply { mkdirs() }
     File(dir, "$nome.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
   }
