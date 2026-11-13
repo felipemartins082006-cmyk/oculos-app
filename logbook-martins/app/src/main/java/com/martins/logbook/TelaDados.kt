@@ -87,20 +87,31 @@ fun TelaDados(lb: Logbook, todas: List<Serie>, recebido: Recebido? = null, onRec
     }
   }
 
+  /** Abre o arquivo (texto ou PDF) fora da tela principal e mostra a prévia. */
+  fun lerDeArquivo(nome: String?, abrir: () -> String) {
+    lendo = true
+    texto = ""
+    escopo.launch {
+      val t = withContext(Dispatchers.IO) { runCatching(abrir) }
+      t.onSuccess { ler(it, arquivo = nome) }.onFailure {
+        lendo = false
+        Toast.makeText(ctx, "Não consegui abrir o arquivo${nome?.let { n -> " $n" } ?: ""}", Toast.LENGTH_LONG).show()
+      }
+    }
+  }
+
   // Chegou um arquivo pelo "Compartilhar": já mostra a prévia.
   LaunchedEffect(recebido?.id) {
     if (recebido != null) {
       texto = ""
-      ler(recebido.texto, arquivo = recebido.nome ?: "texto compartilhado")
+      lerDeArquivo(recebido.nome ?: "texto compartilhado") { recebido.ler(ctx) }
       onRecebidoLido()
     }
   }
 
   val abrirArquivo = rememberLauncherForActivityResult(EscolherArquivo()) { uri ->
     if (uri != null) {
-      runCatching { lerArquivo(ctx, uri) }
-          .onSuccess { texto = ""; ler(it, arquivo = nomeDoArquivo(ctx, uri)) }
-          .onFailure { Toast.makeText(ctx, "Não consegui abrir o arquivo", Toast.LENGTH_LONG).show() }
+      lerDeArquivo(nomeDoArquivo(ctx, uri)) { lerArquivo(ctx, uri) }
     }
   }
   val salvarArquivo = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
@@ -145,8 +156,8 @@ fun TelaDados(lb: Logbook, todas: List<Serie>, recebido: Recebido? = null, onRec
         Cartao {
           Text("Importar registros", color = Texto, fontWeight = FontWeight.Bold, fontSize = 16.sp)
           Text(
-              "Traga treinos que você já anotou em outro lugar: um arquivo do celular " +
-                  "(Downloads, Arquivos, Drive…), uma exportação do Discord ou um backup deste app.",
+              "Traga treinos que você já anotou em outro lugar: um arquivo do celular (PDF, .txt, " +
+                  ".csv), uma exportação do Discord ou um backup deste app.",
               color = Cinza, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp),
           )
           Surface(color = Superficie2, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {

@@ -31,6 +31,7 @@
                 <data android:mimeType="application/json" />
                 <data android:mimeType="application/csv" />
                 <data android:mimeType="application/vnd.ms-excel" />
+                <data android:mimeType="application/pdf" />
                 <data android:mimeType="application/octet-stream" />
             </intent-filter>
 
@@ -43,6 +44,7 @@
                 <data android:mimeType="text/*" />
                 <data android:mimeType="application/json" />
                 <data android:mimeType="application/csv" />
+                <data android:mimeType="application/pdf" />
             </intent-filter>
         </activity>
     </application>

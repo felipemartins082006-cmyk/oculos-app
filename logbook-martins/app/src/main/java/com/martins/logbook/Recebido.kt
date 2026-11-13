@@ -5,9 +5,21 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.OpenableColumns
+import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
+import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.text.PDFTextStripper
 
 /** Algo que chegou de outro app pelo "Compartilhar" ou "Abrir com": vira uma prévia de importação. */
-data class Recebido(val texto: String, val nome: String?, val id: Long = System.nanoTime())
+data class Recebido(
+    /** Texto compartilhado direto (sem arquivo). */
+    val texto: String?,
+    /** Arquivos compartilhados: lidos em segundo plano (um PDF grande demora). */
+    val arquivos: List<Uri>,
+    val nome: String?,
+    val id: Long = System.nanoTime(),
+) {
+  fun ler(ctx: Context): String = texto ?: arquivos.joinToString("\n\n") { lerArquivo(ctx, it) }
+}
 
 fun nomeDoArquivo(ctx: Context, uri: Uri): String? = runCatching {
   if (uri.scheme == "file") return@runCatching uri.lastPathSegment
@@ -16,8 +28,23 @@ fun nomeDoArquivo(ctx: Context, uri: Uri): String? = runCatching {
   }
 }.getOrNull()
 
-fun lerArquivo(ctx: Context, uri: Uri): String =
-    ctx.contentResolver.openInputStream(uri)!!.bufferedReader().use { it.readText() }
+/** Lê um arquivo de texto (.txt, .csv, .json…) ou o texto de dentro de um PDF. */
+fun lerArquivo(ctx: Context, uri: Uri): String {
+  val bytes = ctx.contentResolver.openInputStream(uri)!!.use { it.readBytes() }
+  return if (ehPdf(bytes)) textoDoPdf(ctx, bytes) else bytes.toString(Charsets.UTF_8)
+}
+
+fun ehPdf(bytes: ByteArray): Boolean =
+    bytes.size > 4 && bytes[0] == '%'.code.toByte() && bytes[1] == 'P'.code.toByte() &&
+        bytes[2] == 'D'.code.toByte() && bytes[3] == 'F'.code.toByte()
+
+/** Texto de um PDF, na ordem em que aparece na página (linha por linha). */
+fun textoDoPdf(ctx: Context, bytes: ByteArray): String {
+  PDFBoxResourceLoader.init(ctx.applicationContext)
+  return PDDocument.load(bytes).use { doc ->
+    PDFTextStripper().apply { sortByPosition = true }.getText(doc)
+  }
+}
 
 @Suppress("DEPRECATION")
 private fun Intent.anexos(): List<Uri> = when (action) {
@@ -44,13 +71,12 @@ fun lerRecebido(ctx: Context, intent: Intent?): Result<Recebido>? {
   return runCatching {
     val arquivos = intent.anexos()
     if (arquivos.isNotEmpty()) {
-      val texto = arquivos.joinToString("\n\n") { lerArquivo(ctx, it) }
       val nomes = arquivos.mapNotNull { nomeDoArquivo(ctx, it) }
-      Recebido(texto, if (nomes.size <= 1) nomes.firstOrNull() else "${nomes.size} arquivos")
+      Recebido(null, arquivos, if (nomes.size <= 1) nomes.firstOrNull() else "${nomes.size} arquivos")
     } else {
       val texto = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
       require(!texto.isNullOrBlank()) { "nada para importar" }
-      Recebido(texto, null)
+      Recebido(texto, emptyList(), null)
     }
   }
 }

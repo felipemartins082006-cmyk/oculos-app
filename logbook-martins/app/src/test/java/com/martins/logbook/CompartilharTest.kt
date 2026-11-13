@@ -48,6 +48,41 @@ class CompartilharTest {
     }
   }
 
+  /** Monta um PDF de verdade (várias páginas) com as linhas do texto. */
+  private fun criarPdf(arquivo: File, texto: String) {
+    com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(ctx)
+    val doc = com.tom_roush.pdfbox.pdmodel.PDDocument()
+    texto.lines().chunked(45).forEach { linhas ->
+      val pagina = com.tom_roush.pdfbox.pdmodel.PDPage()
+      doc.addPage(pagina)
+      com.tom_roush.pdfbox.pdmodel.PDPageContentStream(doc, pagina).use { cs ->
+        cs.beginText()
+        cs.setFont(com.tom_roush.pdfbox.pdmodel.font.PDType1Font.HELVETICA, 11f)
+        cs.setLeading(15f)
+        cs.newLineAtOffset(40f, 750f)
+        linhas.forEach { cs.showText(it); cs.newLine() }
+        cs.endText()
+      }
+    }
+    doc.save(arquivo)
+    doc.close()
+  }
+
+  @Test fun pdfCompartilhado() {
+    val arquivo = File(ctx.cacheDir, "logbook.pdf")
+    criarPdf(arquivo, File("src/test/resources/exemplo_discord.txt").readText())
+    assertTrue(ehPdf(arquivo.readBytes()))
+    val intent = Intent(ctx, MainActivity::class.java)
+        .setAction(Intent.ACTION_SEND)
+        .setType("application/pdf")
+        .putExtra(Intent.EXTRA_STREAM, Uri.fromFile(arquivo))
+    ActivityScenario.launch<MainActivity>(intent).use {
+      esperarPrevia()
+      regra.onNodeWithText("155 séries em 22 dias", substring = true).assertExists()
+      regra.onNodeWithText("Arquivo: logbook.pdf").assertExists()
+    }
+  }
+
   @Test fun abrirComLogbook() {
     val arquivo = File(ctx.cacheDir, "treinos.txt")
     arquivo.writeText("21/7/25\nbench press -> 94kg x 4 reps\nbench press -> 94kg x 4 reps\n")
