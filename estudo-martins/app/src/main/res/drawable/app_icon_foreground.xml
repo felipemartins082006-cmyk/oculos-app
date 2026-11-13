@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ícone: folha de prova com um visto -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:strokeColor="#FFFFFF" android:strokeWidth="5" android:fillColor="#00000000"
+        android:pathData="M38,30 h32 a4,4 0 0 1 4,4 v40 a4,4 0 0 1 -4,4 h-32 a4,4 0 0 1 -4,-4 v-40 a4,4 0 0 1 4,-4 z" />
+    <path android:strokeColor="#FFFFFF" android:strokeWidth="4" android:pathData="M42,42 h24 M42,52 h18" />
+    <path android:strokeColor="#A5D6A7" android:strokeWidth="5" android:fillColor="#00000000"
+        android:pathData="M44,64 l6,6 l12,-12" />
+</vector>
