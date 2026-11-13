@@ -341,9 +341,9 @@ private fun BoasVindas(onImportar: () -> Unit) {
     Text("Seu logbook está vazio", color = Texto, fontWeight = FontWeight.Bold, fontSize = 17.sp)
     Passo("Treinando agora?", "Digite cada série no campo abaixo, do jeito que você já escreve: squat 160kg x 4")
     Passo("Esqueceu de registrar um dia?", "Toque em “Outro dia”, escolha a data e lance as séries, uma por uma ou todas com “Colar treino”.")
-    Passo("Já tem tudo anotado no Discord?", "Traga o histórico inteiro de uma vez:")
+    Passo("Já tem treinos anotados em outro lugar?", "Traga tudo de uma vez de um arquivo do celular (ou do Discord):")
     Button(onClick = onImportar, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-      Text("Importar do Discord")
+      Text("Importar registros")
     }
   }
 }

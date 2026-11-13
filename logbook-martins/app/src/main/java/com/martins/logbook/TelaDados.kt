@@ -1,5 +1,10 @@
 package com.martins.logbook
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.provider.DocumentsContract
+import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -39,7 +44,26 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** O que foi lido, pronto para conferir antes de importar. */
-private class Previa(val texto: String, val leitura: Leitura, val novas: Int, val repetidas: Int)
+private class Previa(val texto: String, val leitura: Leitura, val novas: Int, val repetidas: Int, val arquivo: String?)
+
+/**
+ * Seletor de arquivos do Android (o mesmo do app Arquivos): abre na pasta Downloads,
+ * mas dá para ir em qualquer pasta do celular, cartão de memória, Drive etc.
+ * Mostra todos os arquivos: o app tenta ler qualquer texto (.txt, .csv, .json…).
+ */
+private class EscolherArquivo : ActivityResultContracts.OpenDocument() {
+  override fun createIntent(context: Context, input: Array<String>): Intent =
+      super.createIntent(context, input).putExtra(
+          DocumentsContract.EXTRA_INITIAL_URI,
+          DocumentsContract.buildDocumentUri("com.android.externalstorage.documents", "primary:Download"),
+      )
+}
+
+private fun nomeDoArquivo(ctx: Context, uri: Uri): String? = runCatching {
+  ctx.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+    if (c.moveToFirst()) c.getString(0) else null
+  }
+}.getOrNull()
 
 @Composable
 fun TelaDados(lb: Logbook, todas: List<Serie>) {
@@ -52,23 +76,23 @@ fun TelaDados(lb: Logbook, todas: List<Serie>) {
   val desfazivel = lb.desfazivel.value
 
   /** Lê em segundo plano: um histórico de anos pode ter dezenas de milhares de linhas. */
-  fun ler(t: String, ordem: OrdemData? = null) {
+  fun ler(t: String, ordem: OrdemData? = null, arquivo: String? = null) {
     lendo = true
     escopo.launch {
       val p = withContext(Dispatchers.Default) {
         val r = Leitor.ler(t, LocalDate.now(), ordem = ordem)
         val (novas, repetidas) = lb.separarNovas(r.series)
-        Previa(t, r, novas.size, repetidas)
+        Previa(t, r, novas.size, repetidas, arquivo)
       }
       previa = p
       lendo = false
     }
   }
 
-  val abrirArquivo = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+  val abrirArquivo = rememberLauncherForActivityResult(EscolherArquivo()) { uri ->
     if (uri != null) {
       runCatching { ctx.contentResolver.openInputStream(uri)!!.bufferedReader().use { it.readText() } }
-          .onSuccess { texto = ""; ler(it) }
+          .onSuccess { texto = ""; ler(it, arquivo = nomeDoArquivo(ctx, uri)) }
           .onFailure { Toast.makeText(ctx, "Não consegui abrir o arquivo", Toast.LENGTH_LONG).show() }
     }
   }
@@ -112,15 +136,23 @@ fun TelaDados(lb: Logbook, todas: List<Serie>) {
     if (p == null) {
       item {
         Cartao {
-          Text("Trazer o histórico do Discord", color = Texto, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-          Passo("1", "No Discord, abra o canal onde você anota os treinos.")
-          Passo("2", "Copie as mensagens (com as linhas de data, ex.: “milkinaa — 21/7/25, 7:21”) e cole abaixo. " +
-              "Ou, se exportou o canal (TXT, CSV ou JSON do DiscordChatExporter), escolha o arquivo.")
-          Passo("3", "Confira a prévia e toque em Importar. Pode importar em partes: o que já está no app não entra repetido.")
+          Text("Importar registros", color = Texto, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+          Text(
+              "Traga treinos que você já anotou em outro lugar: um arquivo do celular " +
+                  "(Downloads, Arquivos, Drive…), uma exportação do Discord ou um backup deste app.",
+              color = Cinza, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp),
+          )
+          Button(
+              onClick = { abrirArquivo.launch(arrayOf("*/*")) },
+              enabled = !lendo,
+              modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+          ) { Text("📁  Escolher arquivo do celular") }
+
+          Text("ou cole o texto aqui:", color = Cinza, fontSize = 13.sp, modifier = Modifier.padding(top = 16.dp, bottom = 4.dp))
           OutlinedTextField(
               texto, { texto = it },
-              modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-              placeholder = { Text("milkinaa — 21/7/25, 7:21\nbench press -> 94kg x 4 reps\nbench press -> 94kg x 4 reps") },
+              modifier = Modifier.fillMaxWidth(),
+              placeholder = { Text("21/7/25\nbench press -> 94kg x 4 reps\npulldown -> 38.75kg x 9 reps") },
               minLines = 5, maxLines = 12,
               textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
           )
@@ -129,13 +161,15 @@ fun TelaDados(lb: Logbook, todas: List<Serie>) {
               horizontalArrangement = Arrangement.spacedBy(8.dp),
               verticalAlignment = Alignment.CenterVertically,
           ) {
-            Button(onClick = { ler(texto) }, enabled = texto.isNotBlank() && !lendo) { Text("Ler texto") }
-            OutlinedButton(
-                onClick = { abrirArquivo.launch(arrayOf("text/*", "application/json", "application/octet-stream")) },
-                enabled = !lendo,
-            ) { Text("Escolher arquivo") }
+            OutlinedButton(onClick = { ler(texto) }, enabled = texto.isNotBlank() && !lendo) { Text("Ler texto colado") }
             if (lendo) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
           }
+          Text(
+              "Uma série por linha (“exercício -> 100kg x 8 reps”). Uma linha com data, como 21/7/25, " +
+                  "vale para as séries de baixo. Antes de importar aparece uma prévia, e o que já está " +
+                  "no app não entra repetido.",
+              color = Cinza, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp),
+          )
         }
       }
     } else {
@@ -158,6 +192,9 @@ fun TelaDados(lb: Logbook, todas: List<Serie>) {
                 color = Verde, fontSize = 14.sp, modifier = Modifier.padding(top = 4.dp),
             )
           }
+          p.arquivo?.let {
+            Text("Arquivo: $it", color = Cinza, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+          }
           if (r.formato == "texto") {
             Row(verticalAlignment = Alignment.CenterVertically) {
               Text("Datas lidas como ${r.ordem.titulo}", color = Cinza, fontSize = 13.sp, modifier = Modifier.weight(1f))
@@ -166,7 +203,7 @@ fun TelaDados(lb: Logbook, todas: List<Serie>) {
               }) { Text("Trocar") }
             }
           } else {
-            Text("Arquivo: ${r.formato}", color = Cinza, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+            Text("Formato: ${r.formato}", color = Cinza, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
           }
           if (r.naoEntendidas.isNotEmpty()) {
             Text("${r.naoEntendidas.size} linhas ignoradas (não são séries):", color = Laranja, fontSize = 13.sp,
@@ -206,8 +243,8 @@ fun TelaDados(lb: Logbook, todas: List<Serie>) {
       Cartao {
         Text("Backup", color = Texto, fontWeight = FontWeight.Bold, fontSize = 16.sp)
         Text(
-            "Salva tudo num arquivo .txt no mesmo formato do Discord. Para restaurar (ex.: celular novo), " +
-                "use “Escolher arquivo” acima com esse arquivo.",
+            "Salva tudo num arquivo .txt no celular (você escolhe a pasta). Para restaurar " +
+                "(ex.: celular novo), use “Escolher arquivo do celular” acima com esse arquivo.",
             color = Cinza, fontSize = 13.sp, modifier = Modifier.padding(vertical = 6.dp),
         )
         Button(onClick = { salvarArquivo.launch("logbook-${LocalDate.now()}.txt") }, enabled = todas.isNotEmpty()) {
@@ -238,13 +275,5 @@ fun TelaDados(lb: Logbook, todas: List<Serie>) {
         },
         dismissButton = { TextButton(onClick = { confirmandoApagar = false }) { Text("Cancelar") } },
     )
-  }
-}
-
-@Composable
-private fun Passo(n: String, texto: String) {
-  Row(Modifier.padding(top = 8.dp)) {
-    Text(n, color = Laranja, fontWeight = FontWeight.Bold, modifier = Modifier.padding(end = 10.dp))
-    Text(texto, color = Cinza, fontSize = 13.sp)
   }
 }

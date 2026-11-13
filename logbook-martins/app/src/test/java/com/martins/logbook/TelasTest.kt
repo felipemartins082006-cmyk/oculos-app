@@ -92,7 +92,7 @@ class TelasTest {
     foto("5-importar")
     val discord = File("src/test/resources/exemplo_discord.txt").readText()
     campoPrincipal().performTextInput(discord)
-    regra.onNodeWithText("Ler texto").performClick()
+    regra.onNodeWithText("Ler texto colado").performClick()
     regra.waitUntil(10_000) { regra.onAllNodesWithText("Prévia").fetchSemanticsNodes().isNotEmpty() }
     regra.onNodeWithText("155 séries em 22 dias", substring = true).assertExists()
     foto("6-previa")
@@ -103,7 +103,7 @@ class TelasTest {
 
     // Importar o mesmo texto de novo não duplica nada.
     campoPrincipal().performTextInput(discord)
-    regra.onNodeWithText("Ler texto").performClick()
+    regra.onNodeWithText("Ler texto colado").performClick()
     regra.waitUntil(10_000) { regra.onAllNodesWithText("Prévia").fetchSemanticsNodes().isNotEmpty() }
     regra.onNodeWithText("0 novas", substring = true).assertExists()
     regra.onNodeWithText("Voltar").performClick()
@@ -115,6 +115,36 @@ class TelasTest {
 
     regra.onNodeWithText("Histórico").performClick()
     foto("9-historico")
+  }
+
+  @Test fun importarArquivoDoCelular() {
+    regra.onNodeWithText("Importar").performClick()
+    regra.onNodeWithText("📁  Escolher arquivo do celular").performClick()
+    regra.waitForIdle()
+
+    // Abre o seletor de arquivos do próprio Android, começando em Downloads e mostrando tudo.
+    val pedido = org.robolectric.Shadows.shadowOf(regra.activity).nextStartedActivityForResult
+    assertEquals(android.content.Intent.ACTION_OPEN_DOCUMENT, pedido.intent.action)
+    assertEquals("*/*", pedido.intent.type)
+    assertEquals(
+        "content://com.android.externalstorage.documents/document/primary%3ADownload",
+        pedido.intent.getParcelableExtra<android.net.Uri>(android.provider.DocumentsContract.EXTRA_INITIAL_URI).toString(),
+    )
+
+    // A pessoa escolhe um .txt da pasta Downloads.
+    val arquivo = File(regra.activity.cacheDir, "meu-logbook.txt")
+    arquivo.writeText(File("src/test/resources/exemplo_discord.txt").readText())
+    regra.runOnUiThread {
+      regra.activity.activityResultRegistry.dispatchResult(
+          pedido.requestCode, android.app.Activity.RESULT_OK,
+          android.content.Intent().setData(android.net.Uri.fromFile(arquivo)),
+      )
+    }
+    regra.waitUntil(10_000) { regra.onAllNodesWithText("Prévia").fetchSemanticsNodes().isNotEmpty() }
+    regra.onNodeWithText("155 séries em 22 dias", substring = true).assertExists()
+    regra.onNodeWithText("Importar 155").performClick()
+    regra.waitForIdle()
+    assertTrue(ShadowToast.getTextOfLatestToast().contains("155 séries importadas"))
   }
 
   @Test fun desfazerImportacao() {
