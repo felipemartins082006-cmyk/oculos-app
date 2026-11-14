@@ -35,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -72,6 +73,20 @@ fun TelaDia(diario: Diario, series: List<Serie>, dia: LocalDate, onDia: (LocalDa
         TextButton(onClick = { onDia(dia.plusDays(1)) }, enabled = dia < hoje) {
           Text("›", fontSize = 28.sp, color = if (dia < hoje) Cinza else Color.Transparent)
         }
+      }
+    }
+
+    // Treino ou descanso + coeficiente de eficiência do dia
+    item {
+      val treino = ehDiaDeTreino(dia, series, d)
+      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Segmentos(listOf("🏋 Dia de treino", "😴 Dia de descanso"), if (treino) 0 else if (d.descanso == true) 1 else -1) { i ->
+          diario.alterar(dia) { it.copy(descanso = i == 1) }
+        }
+        if (d.descanso == true && series.any { it.data == dia }) {
+          Text("Este dia tem séries anotadas, então conta como treino.", color = Cinza, fontSize = 12.sp)
+        }
+        CartaoCoeficiente(coeficienteDoDia(dia, series, diario.dias.value))
       }
     }
 
@@ -143,7 +158,12 @@ fun TelaDia(diario: Diario, series: List<Serie>, dia: LocalDate, onDia: (LocalDa
     item {
       Cartao {
         Rotulo("Cabeça e dia")
-        Text("Humor", color = Cinza, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+        Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.Bottom) {
+          Text("Como foi seu dia, de 0 a 10", color = Cinza, fontSize = 12.sp, modifier = Modifier.weight(1f))
+          d.notaDia10?.let { Text("$it/10", color = Destaque, fontWeight = FontWeight.Bold, fontSize = 18.sp) }
+        }
+        NotaDe0a10(d.notaDia10) { v -> diario.alterar(dia) { it.copy(notaDia10 = v) } }
+        Text("Humor", color = Cinza, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
         Escala(
             valor = d.humor, rotulos = listOf("😞", "🙁", "😐", "🙂", "😄"),
             legenda = listOf("Muito mal", "Mal", "Normal", "Bem", "Ótimo"), descricao = "Humor",
@@ -405,5 +425,88 @@ private fun sugerirTipo(hora: String): TipoRefeicao {
     in 15..18 -> TipoRefeicao.LANCHE
     in 19..22 -> TipoRefeicao.JANTAR
     else -> TipoRefeicao.CEIA
+  }
+}
+
+/** 11 bolinhas de 0 a 10; tocar de novo na mesma limpa. */
+@Composable
+private fun NotaDe0a10(valor: Int?, onEscolher: (Int?) -> Unit) {
+  Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+    (0..10).forEach { n ->
+      val sel = valor == n
+      val cheio = valor != null && n <= valor
+      Box(
+          Modifier.weight(1f).height(34.dp).clip(RoundedCornerShape(8.dp))
+              .background(if (cheio) Brush.verticalGradient(listOf(Color(0xFFFF8A7A), DestaqueEscuro)) else Brush.linearGradient(listOf(Superficie, Superficie)))
+              .border(1.dp, if (sel) Color.White else Borda, RoundedCornerShape(8.dp))
+              .clickable { onEscolher(if (sel) null else n) }
+              .semantics { contentDescription = "Nota do dia $n" },
+          contentAlignment = Alignment.Center,
+      ) { Text("$n", color = if (cheio) Color.White else Cinza, fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
+    }
+  }
+}
+
+/** O coeficiente de eficiência do dia, com o que entrou na conta e o que falta preencher. */
+@Composable
+fun CartaoCoeficiente(c: Coeficiente) {
+  var explicar by remember { mutableStateOf(false) }
+  Cartao {
+    Rotulo("Coeficiente de eficiência")
+    if (c.valor == null) {
+      Text(
+          "Preencha pelo menos dois itens (sono, nota do dia, humor, estresse, comida) para calcular.",
+          color = Cinza, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp),
+      )
+    } else {
+      Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(top = 4.dp)) {
+        Text("${c.valor.toInt()}", color = Texto, fontSize = 44.sp, fontWeight = FontWeight.Bold,
+            modifier = Modifier.semantics { contentDescription = "Coeficiente ${c.valor.toInt()}" })
+        Text(" /100  ·  ${faixaCoeficiente(c.valor)}", color = Destaque, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(bottom = 9.dp))
+      }
+      Row(Modifier.fillMaxWidth()) {
+        Column(Modifier.weight(1f)) {
+          Text(c.prontidao?.let { "${it.toInt()}" } ?: "—", color = Texto, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+          Text("prontidão (como você chegou)", color = Cinza, fontSize = 11.sp)
+        }
+        Column(Modifier.weight(1f)) {
+          Text(
+              if (!c.diaDeTreino) "descanso" else c.desempenho?.let { "${it.toInt()}" } ?: "—",
+              color = Texto, fontSize = 18.sp, fontWeight = FontWeight.Bold,
+          )
+          Text(if (c.diaDeTreino) "desempenho (como rendeu)" else "sem treino hoje", color = Cinza, fontSize = 11.sp)
+        }
+      }
+      c.componentes.forEach { k ->
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+          Text(k.nome, color = Texto, fontSize = 12.sp, modifier = Modifier.width(118.dp))
+          Box(Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(50)).background(Superficie2)) {
+            Box(Modifier.fillMaxWidth((k.nota / 100).toFloat().coerceIn(0.02f, 1f)).height(6.dp)
+                .clip(RoundedCornerShape(50)).background(DegradeDestaque))
+          }
+          Text("  ${k.nota.toInt()}", color = Cinza, fontSize = 12.sp, modifier = Modifier.width(34.dp))
+        }
+        Text(k.detalhe, color = Cinza, fontSize = 10.sp, modifier = Modifier.padding(start = 118.dp))
+      }
+    }
+    if (c.faltando.isNotEmpty()) {
+      Text("Para ficar mais preciso, preencha: ${c.faltando.joinToString(", ")}.", color = Cinza, fontSize = 12.sp,
+          modifier = Modifier.padding(top = 8.dp))
+    }
+    TextButton(onClick = { explicar = !explicar }) { Text(if (explicar) "Fechar explicação" else "Como é calculado?") }
+    if (explicar) {
+      Text(
+          "Prontidão: cada item vira uma nota de 0 a 100 e entra com um peso: sono 25 (8h ou mais = 100), " +
+              "qualidade do sono 15, nota do dia 15, alimentação 15 (comer antes do treino), humor 10, estresse 10 " +
+              "(menos é melhor) e recuperação 10 (1–2 dias de descanso antes do treino é o ideal; no dia de descanso " +
+              "conta 100). Só entra o que você preencheu.\n\n" +
+              "Desempenho: o rendimento do treino comparado com as suas últimas sessões dos mesmos exercícios " +
+              "(1RM estimado): 0% = 50, +10% = 100, −10% = 0.\n\n" +
+              "Coeficiente = 60% prontidão + 40% desempenho (no descanso, só a prontidão). É uma primeira versão: " +
+              "os pesos podem ser ajustados com o tempo.",
+          color = Texto, fontSize = 12.sp, lineHeight = 17.sp,
+      )
+    }
   }
 }

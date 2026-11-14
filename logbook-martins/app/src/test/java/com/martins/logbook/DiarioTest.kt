@@ -80,7 +80,7 @@ class DiarioTest {
     abrir().use { cena ->
       regra.onNodeWithText("Dia").performClick()
       campo("7.5").performTextInput("7.5")
-      regra.onNode(hasContentDescription("Qualidade do sono 4")).performClick()
+      rolar(hasContentDescription("Qualidade do sono 4")); regra.onNode(hasContentDescription("Qualidade do sono 4")).performClick()
       rolar(hasContentDescription("Humor 2")); regra.onNode(hasContentDescription("Humor 2")).performClick()
       rolar(hasContentDescription("Estresse 5")); regra.onNode(hasContentDescription("Estresse 5")).performClick()
       campo("Como foi seu dia? Ex.: apresento o TCC amanhã, fiquei ansioso.").performTextInput("Apresento o TCC amanhã")

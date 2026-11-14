@@ -48,6 +48,20 @@ lê o que aparece na tela: não usa token, senha nem a API, e não envia nada pa
    digite `logbookSalvar()` no console para baixar o PDF completo.
 4. Mande o arquivo para o celular e use Importar → Escolher arquivo.
 
+## Coeficiente de eficiência (versão 2.3)
+
+Um número de 0 a 100 por dia (aba Dia, Histórico e Evolução → Insights):
+- **Prontidão** (como você chegou): sono 25, qualidade do sono 15, nota do dia (0–10) 15, alimentação 15
+  (comer antes do treino), humor 10, estresse 10 e recuperação 10 (dias de descanso antes). Só entra o que
+  foi preenchido.
+- **Desempenho** (como rendeu): rendimento vs. as últimas sessões (0% = 50, +10% = 100, −10% = 0).
+- **Coeficiente** = 60% prontidão + 40% desempenho; no dia de descanso, a prontidão.
+
+Os Insights mostram o coeficiente ao longo do tempo e quanto o rendimento muda quando a prontidão sobe.
+Dias de treino e de descanso: marque na aba Dia ou no Treino ("Marcar descanso"). Em Números: músculos
+específicos (quadríceps, posterior, glúteos, lombar, bíceps, tríceps…) com os exercícios de cada um, e um
+calendário das últimas 16 semanas (treino × descanso), tocável.
+
 ## Cronômetro, temporizador e números (versão 2.1)
 
 **Cronômetro do treino:** no alto do Treino de hoje, "⏱ Iniciar treino" (ou a primeira série do dia) liga o

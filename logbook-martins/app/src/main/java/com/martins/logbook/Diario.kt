@@ -59,6 +59,10 @@ data class Dia(
     /** Estresse de 1 (tranquilo) a 5 (muito). */
     val estresse: Int? = null,
     val notaDia: String = "",
+    /** Nota do dia de 0 a 10 ("como foi seu dia: 8/10"). O texto acima é a descrição; esta é o número. */
+    val notaDia10: Int? = null,
+    /** Dia de descanso marcado por você (true), dia de treino (false) ou não marcado (null: decide pelas séries). */
+    val descanso: Boolean? = null,
     val eventos: List<String> = emptyList(),
     val refeicoes: List<Refeicao> = emptyList(),
     /** Hora em que o treino começou ("18:30"): marcada sozinha na primeira série do dia. */
@@ -87,7 +91,7 @@ data class Dia(
   val kcal: Double get() = refeicoes.sumOf { it.kcal }
   val vazio: Boolean
     get() = pesagens.isEmpty() && sonoHoras == null && sonoQualidade == null && sonoNota.isBlank() &&
-        humor == null && estresse == null && notaDia.isBlank() && eventos.isEmpty() && refeicoes.isEmpty() &&
+        humor == null && estresse == null && notaDia.isBlank() && notaDia10 == null && descanso == null && eventos.isEmpty() && refeicoes.isEmpty() &&
         treinoHora == null && treinoInicio == null && treinoFim == null && treinoPausadoEm == null
 
   /** Refeições feitas antes do treino (pelo horário). Sem hora do treino: null. */
@@ -277,6 +281,8 @@ class Diario(context: Context) {
       if (d.sonoNota.isNotBlank()) put("sonoNota", d.sonoNota)
       d.humor?.let { put("humor", it) }
       d.estresse?.let { put("estresse", it) }
+      d.notaDia10?.let { put("nota10", it) }
+      d.descanso?.let { put("descanso", it) }
       if (d.notaDia.isNotBlank()) put("notaDia", d.notaDia)
       if (d.eventos.isNotEmpty()) put("eventos", JSONArray(d.eventos))
       d.treinoHora?.let { put("treinoHora", it) }
@@ -317,6 +323,8 @@ class Diario(context: Context) {
           sonoNota = o.optString("sonoNota"),
           humor = int("humor"),
           estresse = int("estresse"),
+          notaDia10 = int("nota10"),
+          descanso = if (o.has("descanso")) o.getBoolean("descanso") else null,
           notaDia = o.optString("notaDia"),
           eventos = (0 until ev.length()).map { ev.getString(it) },
           refeicoes = (0 until ref.length()).map { i ->

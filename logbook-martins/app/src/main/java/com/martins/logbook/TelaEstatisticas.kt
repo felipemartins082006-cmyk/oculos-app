@@ -19,6 +19,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.foundation.clickable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -86,7 +89,7 @@ fun LazyListScope.conteudoEstatisticas(series: List<Serie>, dias: Map<LocalDate,
         Rotulo("Tempo de treino")
         if (e.treinosCronometrados == 0) {
           Text(
-              "Use o cronômetro no Treino (⏱ Iniciar treino / Finalizar) para ver aqui quanto tempo você treina e descansa.",
+              "Use o cronômetro no Treino (⏱ Iniciar treino / ✓ Concluir treino) para ver aqui quanto tempo você treina e descansa.",
               color = Cinza, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp),
           )
         } else {
@@ -132,6 +135,11 @@ fun LazyListScope.conteudoEstatisticas(series: List<Serie>, dias: Map<LocalDate,
         }
         Text("pela quantidade de séries", color = Cinza, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
       }
+
+      // Músculos específicos (toque para ver os exercícios) e calendário de treino/descanso
+      val desde = periodo.meses?.let { hoje.minusMonths(it).plusDays(1) }
+      CartaoMusculos(series.filter { desde == null || it.data >= desde })
+      CartaoCalendario(series, dias, onAbrirDia)
 
       // Barras: por mês e por dia da semana
       Cartao {
@@ -263,4 +271,106 @@ fun Barras(dados: List<Pair<String, Int>>, modifier: Modifier = Modifier) {
       }
     }
   }
+}
+
+/** Barras por músculo; tocar num músculo mostra quais exercícios contaram. */
+@Composable
+private fun CartaoMusculos(series: List<Serie>) {
+  val trabalho = remember(series) { trabalhoPorMusculo(series) }
+  var aberto by remember { mutableStateOf<Musculo?>(null) }
+  Cartao {
+    Rotulo("Músculos mais treinados")
+    Text("toque num músculo para ver os exercícios · ajudante conta meia série", color = Cinza, fontSize = 11.sp)
+    if (trabalho.isEmpty()) Text("Nenhum exercício reconhecido.", color = Cinza, fontSize = 13.sp)
+    val maximo = trabalho.maxOfOrNull { it.series }?.coerceAtLeast(1.0) ?: 1.0
+    val total = trabalho.sumOf { it.series }.coerceAtLeast(1.0)
+    trabalho.forEach { t ->
+      val sel = aberto == t.musculo
+      Column(
+          Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(10.dp))
+              .clickable { aberto = if (sel) null else t.musculo }
+              .semantics { contentDescription = "Músculo ${t.musculo.titulo}" }
+              .padding(vertical = 2.dp),
+      ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          Text(t.musculo.titulo, color = if (sel) Destaque else Texto, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+              modifier = Modifier.width(130.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+          Box(Modifier.weight(1f).height(10.dp).clip(RoundedCornerShape(50)).background(Superficie2)) {
+            Box(Modifier.fillMaxWidth((t.series / maximo).toFloat().coerceIn(0.02f, 1f)).fillMaxHeight()
+                .clip(RoundedCornerShape(50)).background(DegradeDestaque))
+          }
+          Text("  ${(t.series * 100 / total).toInt()}%", color = Cinza, fontSize = 12.sp, modifier = Modifier.width(44.dp))
+        }
+        if (sel) {
+          t.exercicios.entries.sortedByDescending { it.value }.take(6).forEach { (ex, n) ->
+            Text("• ${nomeBonito(ex)}: ${fmtPeso(n)} séries", color = Cinza, fontSize = 12.sp, modifier = Modifier.padding(start = 12.dp, top = 2.dp))
+          }
+        }
+      }
+    }
+  }
+}
+
+/** Últimas 16 semanas: cada quadrado é um dia (treino, descanso marcado ou sem registro). Toque para abrir. */
+@Composable
+private fun CartaoCalendario(series: List<Serie>, dias: Map<LocalDate, Dia>, onAbrirDia: (LocalDate) -> Unit) {
+  val hoje = LocalDate.now()
+  val semanas = 16
+  val inicio = hoje.with(java.time.DayOfWeek.MONDAY).minusWeeks(semanas - 1L)
+  val volume = remember(series) { series.groupBy { it.data }.mapValues { (_, l) -> l.sumOf { it.volume } } }
+  val maxVol = volume.values.maxOrNull()?.coerceAtLeast(1.0) ?: 1.0
+  val datas = generateSequence(inicio) { it.plusDays(1) }.takeWhile { it <= hoje }.toList()
+  val nTreino = datas.count { ehDiaDeTreino(it, series.filter { s -> s.data == it }, dias[it]) }
+  val nDescanso = datas.count { dias[it]?.descanso == true && volume[it] == null }
+  Cartao {
+    Rotulo("Treino e descanso · 16 semanas")
+    Text("$nTreino dias de treino · $nDescanso de descanso marcados · ${datas.size - nTreino - nDescanso} sem registro",
+        color = Cinza, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+    Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+      Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        listOf("S", "T", "Q", "Q", "S", "S", "D").forEach {
+          Box(Modifier.height(16.dp), contentAlignment = Alignment.Center) { Text(it, color = Cinza, fontSize = 9.sp) }
+        }
+      }
+      (0 until semanas).forEach { w ->
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+          (0 until 7).forEach { dow ->
+            val d = inicio.plusWeeks(w.toLong()).plusDays(dow.toLong())
+            val v = volume[d]
+            val descanso = v == null && dias[d]?.descanso == true
+            val cor = when {
+              d > hoje -> Color.Transparent
+              v != null -> Destaque.copy(alpha = (0.35f + 0.65f * (v / maxVol).toFloat()).coerceIn(0.35f, 1f))
+              dias[d]?.descanso == false -> Destaque.copy(alpha = 0.35f)
+              descanso -> Color(0xFF8C84B8)
+              else -> Superficie2
+            }
+            Box(
+                Modifier.fillMaxWidth().height(16.dp).clip(RoundedCornerShape(4.dp)).background(cor)
+                    .let { if (d <= hoje) it.clickable { onAbrirDia(d) } else it }
+                    .semantics { contentDescription = "Dia ${dataCurta(d)}" },
+            )
+          }
+        }
+      }
+    }
+    Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+      Legenda(Destaque, "treino (mais forte = mais volume)")
+      Spacer(Modifier.width(10.dp))
+      Legenda(Color(0xFF8C84B8), "descanso")
+    }
+    // Descanso entre treinos (dias sem treinar entre um treino e o próximo).
+    val datasTreino = series.map { it.data }.distinct().sorted()
+    val intervalos = datasTreino.zipWithNext { a, b -> java.time.temporal.ChronoUnit.DAYS.between(a, b) - 1 }.filter { it in 0..14 }
+    if (intervalos.isNotEmpty()) {
+      Text("Em média você descansa ${String.format(java.util.Locale.forLanguageTag("pt-BR"), "%.1f", intervalos.average())} dia(s) entre um treino e outro",
+          color = Cinza, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+    }
+  }
+}
+
+@Composable
+private fun Legenda(cor: Color, texto: String) {
+  Box(Modifier.size(10.dp).clip(RoundedCornerShape(3.dp)).background(cor))
+  Text(" $texto", color = Cinza, fontSize = 11.sp)
 }

@@ -230,6 +230,28 @@ fun TelaTreino(
       }
     }
 
+    // Dia sem séries: dá para marcar como descanso (descanso também conta no coeficiente).
+    if (porExercicio.isEmpty() && !colando) {
+      item {
+        val descanso = diario.de(dia).descanso == true
+        Cartao {
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+              Text(if (descanso) "😴 Dia de descanso" else "Não vai treinar ${if (dia == hoje) "hoje" else "neste dia"}?",
+                  color = Texto, fontWeight = FontWeight.SemiBold)
+              Text(if (descanso) "Descansar também conta: entra no coeficiente e nas estatísticas."
+                  else "Marque como descanso: a recuperação também conta.", color = Cinza, fontSize = 12.sp)
+            }
+            if (descanso) {
+              TextButton(onClick = { diario.alterar(dia) { it.copy(descanso = null) } }) { Text("Desfazer") }
+            } else {
+              OutlinedButton(onClick = { diario.alterar(dia) { it.copy(descanso = true) } }) { Text("Marcar descanso") }
+            }
+          }
+        }
+      }
+    }
+
     if (porExercicio.isEmpty() && todas.isNotEmpty()) {
       item {
         Text(

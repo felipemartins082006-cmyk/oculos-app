@@ -137,6 +137,51 @@ fun LazyListScope.conteudoInsights(series: List<Serie>, dias: Map<LocalDate, Dia
   val perf = performancePorDia(series)
   val comp = comparacoes(perf, dias)
   val comDiario = perf.keys.count { dias[it] != null }
+  val ces = coeficientes(series, dias)
+  val relacao = relacaoProntidaoRendimento(series, dias)
+  item {
+    Cartao {
+      Rotulo("Coeficiente de eficiência")
+      if (ces.isEmpty()) {
+        Text(
+            "Ainda sem dados. Preencha a aba Dia (sono, nota do dia, humor, estresse, comida, treino ou descanso) " +
+                "e o coeficiente de cada dia aparece aqui, com a evolução ao longo do tempo.",
+            color = Cinza, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp),
+        )
+      } else {
+        val ultimo = ces.last()
+        val mes = ces.filter { it.data > LocalDate.now().minusDays(30) }.mapNotNull { it.valor }
+        Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(top = 4.dp)) {
+          Text("${ultimo.valor!!.toInt()}", color = Texto, fontSize = 34.sp, fontWeight = FontWeight.Bold)
+          Text("  em ${dataCurta(ultimo.data)} · ${faixaCoeficiente(ultimo.valor)}", color = Destaque, fontSize = 13.sp,
+              modifier = Modifier.padding(bottom = 7.dp))
+          Spacer(Modifier.weight(1f))
+          if (mes.isNotEmpty()) Column(horizontalAlignment = Alignment.End) {
+            Text("média 30 dias", color = Cinza, fontSize = 11.sp)
+            Text("${mes.average().toInt()}", color = Destaque, fontWeight = FontWeight.SemiBold)
+          }
+        }
+        Grafico(
+            ces.map { c -> Ponto(c.data, c.valor!!, "${c.valor.toInt()} · ${if (c.diaDeTreino) "treino" else "descanso"}") },
+            "coeficiente de cada dia (0–100) · tracejado: média dos últimos 7 dias",
+            extra = mediaMovel(ces.map { it.data to it.valor!! }).map { (d, v) -> Ponto(d, v, "") },
+            modifier = Modifier.padding(top = 8.dp),
+        )
+      }
+      Text(
+          when {
+            relacao == null -> "Com pelo menos 5 treinos com diário preenchido, o app mostra quanto a sua prontidão " +
+                "(sono, cabeça, comida, descanso) mexe no seu rendimento."
+            relacao.r >= 0.2 -> "Quando a sua prontidão sobe 10 pontos, o seu rendimento sobe em média " +
+                "${fmtPct(relacao.inclinacao * 10).removePrefix("+")} (relação ${forcaRelacao(relacao.r)}, ${relacao.n} treinos)."
+            relacao.r <= -0.2 -> "Curioso: nos seus registros, prontidão maior veio com rendimento menor " +
+                "(relação ${forcaRelacao(relacao.r)}, ${relacao.n} treinos). Pode ser falta de dados."
+            else -> "Por enquanto a prontidão quase não muda o seu rendimento (relação fraca, ${relacao.n} treinos)."
+          },
+          color = Texto, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp),
+      )
+    }
+  }
   item {
     Cartao {
       Rotulo("Como ler")
@@ -225,4 +270,10 @@ fun CartaoSessao(p: Performance, dia: Dia?, onAbrirDia: (LocalDate) -> Unit) {
       }
     }
   }
+}
+
+private fun forcaRelacao(r: Double): String = when {
+  kotlin.math.abs(r) >= 0.7 -> "forte"
+  kotlin.math.abs(r) >= 0.4 -> "moderada"
+  else -> "fraca"
 }

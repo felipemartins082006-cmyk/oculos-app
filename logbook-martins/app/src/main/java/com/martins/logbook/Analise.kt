@@ -96,6 +96,19 @@ fun comparacoes(perf: Map<LocalDate, Performance>, dias: Map<LocalDate, Dia>, mi
     d.estresse?.let { if (it <= 2) true else if (it >= 4) false else null }
   }
   dividir("Eventos do dia", "Dia tranquilo", "Dia com evento marcado") { d -> d.eventos.isEmpty() }
+
+  // Descanso antes do treino (não precisa de diário: usa as datas dos treinos).
+  val datas = perf.keys.sorted()
+  val comDescanso = mutableListOf<Double>()
+  val seguidos = mutableListOf<Double>()
+  datas.zipWithNext { a, b ->
+    val v = perf.getValue(b).variacao
+    if (b == a.plusDays(1)) seguidos += v else comDescanso += v
+  }
+  if (comDescanso.size >= minimo && seguidos.size >= minimo) {
+    out += Comparacao("Descanso antes do treino", "Com 1+ dia de descanso antes", comDescanso.average(), comDescanso.size,
+        "Treinou no dia seguinte", seguidos.average(), seguidos.size)
+  }
   return out.sortedByDescending { abs(it.diferenca) }
 }
 

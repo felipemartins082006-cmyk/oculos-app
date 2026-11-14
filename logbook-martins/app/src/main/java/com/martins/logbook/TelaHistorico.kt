@@ -67,6 +67,9 @@ fun TelaHistorico(
       Cartao(onClick = { onAbrirDia(d) }) {
         Row {
           Text(dataComSemana(d), fontWeight = FontWeight.Bold, color = Texto, fontSize = 16.sp, modifier = Modifier.weight(1f))
+          coeficienteDoDia(d, todas, diasDiario, perf).valor?.let {
+            Text("CE ${it.toInt()}  ", color = Texto, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+          }
           perf[d]?.let {
             Text(fmtPct(it.variacao) + "  ", color = if (it.variacao >= 0) Verde else Destaque, fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold)
