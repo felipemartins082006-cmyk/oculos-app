@@ -17,13 +17,24 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.time.LocalDate
 
 @Composable
-fun TelaHistorico(todas: List<Serie>, diasDiario: Map<LocalDate, Dia>, onAbrirDia: (LocalDate) -> Unit) {
+fun TelaHistorico(
+    todas: List<Serie>,
+    diasDiario: Map<LocalDate, Dia>,
+    onAbrirDia: (LocalDate) -> Unit,
+    onApagarDia: (LocalDate) -> Unit = {},
+) {
+  var apagando by remember { mutableStateOf<LocalDate?>(null) }
   var busca by rememberSaveable { mutableStateOf("") }
   val filtro = normalizarNome(busca)
   val dias = remember(todas, filtro) {
@@ -61,6 +72,10 @@ fun TelaHistorico(todas: List<Serie>, diasDiario: Map<LocalDate, Dia>, onAbrirDi
                 fontWeight = FontWeight.SemiBold)
           }
           Text("${ss.size} séries", color = Cinza, fontSize = 13.sp)
+          Text(
+              "  🗑", color = Cinza, fontSize = 15.sp,
+              modifier = Modifier.clickable { apagando = d }.semantics { contentDescription = "Apagar treino de ${dataCurta(d)}" },
+          )
         }
         // O contexto do dia (sono, humor, eventos…), quando você preencheu o diário.
         val ctx = contextoDoDia(diasDiario[d])
@@ -76,5 +91,16 @@ fun TelaHistorico(todas: List<Serie>, diasDiario: Map<LocalDate, Dia>, onAbrirDi
         }
       }
     }
+  }
+
+  apagando?.let { d ->
+    val n = todas.count { it.data == d }
+    AlertDialog(
+        onDismissRequest = { apagando = null },
+        title = { Text("Apagar o treino de ${dataComSemana(d)}?") },
+        text = { Text("As $n séries deste dia e o tempo do cronômetro serão apagados. O diário continua. Isso não dá para desfazer.") },
+        confirmButton = { TextButton(onClick = { onApagarDia(d); apagando = null }) { Text("Apagar", color = Vermelho) } },
+        dismissButton = { TextButton(onClick = { apagando = null }) { Text("Cancelar") } },
+    )
   }
 }

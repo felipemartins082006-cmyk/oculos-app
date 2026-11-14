@@ -87,4 +87,17 @@ class EstatisticasTest {
     // Tudo: inclui o treino antigo.
     assertEquals(7, calcularEstatisticas(series, emptyMap(), null, hoje).treinos)
   }
+
+  @Test fun tempoComPausas() {
+    // Começou às 0, pausou de 10 a 15 min, concluiu aos 60 min: 55 min de treino.
+    val m = 60_000L
+    val d = Dia(hoje, treinoInicio = 0, treinoFim = 60 * m, treinoPausaTotal = 5 * m)
+    assertEquals(55 * m, d.tempoTreino())
+    assertTrue(d.sessaoConcluida)
+    // Pausado agora (desde 30 min), olhando aos 40 min: 30 min de treino.
+    val p = Dia(hoje, treinoInicio = 0, treinoPausadoEm = 30 * m)
+    assertEquals(30 * m, p.tempoTreino(agora = 40 * m))
+    assertTrue(p.sessaoPausada)
+    assertEquals(55 * m, duracaoTreino(d, emptyList()))
+  }
 }

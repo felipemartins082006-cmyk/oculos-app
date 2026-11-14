@@ -51,7 +51,13 @@ lê o que aparece na tela: não usa token, senha nem a API, e não envia nada pa
 ## Cronômetro, temporizador e números (versão 2.1)
 
 **Cronômetro do treino:** no alto do Treino de hoje, "⏱ Iniciar treino" (ou a primeira série do dia) liga o
-cronômetro, que continua contando mesmo com o app fechado; "Finalizar" guarda o tempo total. Cada série
+cronômetro, que continua contando mesmo com o app fechado. Botões: ⏸ Pausar / ▶ Retomar (a pausa não
+conta), ✓ Concluir treino (guarda o tempo), ▶ Continuar treino e "Cancelar cronômetro" (pede confirmação e
+apaga o tempo; as séries ficam).
+
+**Apagar e editar:** toque numa série (✎) para editar ou apagar; no ⋮ de cada exercício, apague todas as
+séries dele no dia; "🗑 Apagar treino deste dia" no fim do Treino ou o 🗑 de cada dia no Histórico apaga o
+treino inteiro. Tudo pede confirmação. Cada série
 guarda a hora em que foi anotada, e o app mostra "Descansando 1:32 desde a última série".
 
 **Temporizador:** "⏲ Timer" com atalhos (0:45 a 5:00) ou minutos e segundos à mão; pausar, +15s, zerar.

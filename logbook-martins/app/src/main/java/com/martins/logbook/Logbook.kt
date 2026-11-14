@@ -44,6 +44,13 @@ class Logbook(private val context: Context) {
 
   fun apagar(id: Long) = salvar(series.value.filter { it.id != id })
 
+  /** Apaga todas as séries de um exercício num dia. */
+  fun apagarExercicio(data: LocalDate, exercicio: String) =
+      salvar(series.value.filterNot { it.data == data && it.exercicio == exercicio })
+
+  /** Apaga o treino inteiro de um dia. */
+  fun apagarDia(data: LocalDate) = salvar(series.value.filterNot { it.data == data })
+
   fun apagarTudo() {
     salvar(emptyList())
     esquecerImportacao()

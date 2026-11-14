@@ -12,6 +12,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
@@ -67,9 +68,9 @@ class CronometroTest {
       regra.waitForIdle()
       regra.onNodeWithText("Descansando", substring = true).assertExists()
       foto(cena, "c1-treino-rodando")
-      regra.onNodeWithText("Finalizar").performClick()
+      regra.onNodeWithText("✓ Concluir treino").performClick()
       regra.waitForIdle()
-      regra.onNodeWithText("TREINO DE HOJE").assertExists()
+      regra.onNodeWithText("TREINO CONCLUÍDO").assertExists()
     }
     val d = Diario(ctx).de(hoje)
     assertNotNull(d.treinoInicio)
@@ -149,5 +150,70 @@ class CronometroTest {
       regra.onNodeWithText("Tudo").performClick()
       regra.waitForIdle()
     }
+  }
+
+  @Test fun pausarConcluirContinuarECancelar() {
+    abrir().use { cena ->
+      regra.onNodeWithText("Agora não").performClick()
+      regra.onNodeWithText("⏱ Iniciar treino").performClick()
+      regra.onNodeWithText("⏸ Pausar").performClick()
+      regra.onNodeWithText("CRONÔMETRO PAUSADO").assertExists()
+      assertTrue(Diario(ctx).de(hoje).sessaoPausada)
+      foto(cena, "c8-pausado")
+      regra.onNodeWithText("▶ Retomar").performClick()
+      regra.onNodeWithText("✓ Concluir treino").performClick()
+      regra.onNodeWithText("TREINO CONCLUÍDO").assertExists()
+      assertTrue(Diario(ctx).de(hoje).sessaoConcluida)
+      regra.onNodeWithText("▶ Continuar treino").performClick()
+      regra.onNodeWithText("TREINO EM ANDAMENTO", substring = true).assertExists()
+
+      // Cancelar pede confirmação; "Voltar" não apaga nada.
+      regra.onNodeWithText("Cancelar cronômetro").performClick()
+      regra.onNodeWithText("Deseja mesmo cancelar o cronômetro?").assertExists()
+      regra.onNodeWithText("Voltar").performClick()
+      assertNotNull(Diario(ctx).de(hoje).treinoInicio)
+      regra.onNodeWithText("Cancelar cronômetro").performClick()
+      regra.onAllNodesWithText("Cancelar cronômetro").onLast().performClick() // o botão do aviso
+      regra.waitForIdle()
+      regra.onNodeWithText("⏱ Iniciar treino").assertExists()
+    }
+    assertEquals(null, Diario(ctx).de(hoje).treinoInicio)
+  }
+
+  @Test fun apagarExercicioEDiaNoTreino() {
+    abrir().use {
+      regra.onNodeWithText("Agora não").performClick()
+      val campo = regra.onAllNodes(hasSetTextAction()).onFirst()
+      for (t in listOf("squat 160kg x 4, 4", "bench press 90kg x 5")) { campo.performTextInput(t); campo.performImeAction() }
+      regra.waitForIdle()
+      rolar(hasText("⋮"))
+      regra.onAllNodesWithText("⋮").onFirst().performClick()
+      regra.onNodeWithText("Apagar Squat deste dia").performClick()
+      regra.onNodeWithText("Apagar Squat?").assertExists()
+      regra.onNodeWithText("Apagar").performClick()
+      regra.waitForIdle()
+      assertEquals(listOf("bench press"), Logbook(ctx).series.value.map { it.exercicio })
+
+      rolar(hasText("🗑 Apagar treino deste dia"))
+      regra.onNodeWithText("🗑 Apagar treino deste dia").performClick()
+      regra.onNodeWithText("Apagar o treino de", substring = true).assertExists()
+      regra.onNodeWithText("Apagar").performClick()
+      regra.waitForIdle()
+    }
+    assertTrue(Logbook(ctx).series.value.isEmpty())
+    assertEquals(null, Diario(ctx).de(hoje).treinoInicio)
+  }
+
+  @Test fun apagarDiaNoHistorico() {
+    val lb = Logbook(ctx)
+    val ontem = hoje.minusDays(1)
+    lb.importar(listOf(SerieLida(ontem, "squat", 100.0, 5, ""), SerieLida(hoje.minusDays(3), "squat", 95.0, 5, "")))
+    abrir().use {
+      regra.onNodeWithText("Histórico").performClick()
+      regra.onNode(hasContentDescription("Apagar treino de ${dataCurta(ontem)}")).performClick()
+      regra.onNodeWithText("Apagar").performClick()
+      regra.waitForIdle()
+    }
+    assertEquals(listOf(hoje.minusDays(3)), Logbook(ctx).series.value.map { it.data })
   }
 }

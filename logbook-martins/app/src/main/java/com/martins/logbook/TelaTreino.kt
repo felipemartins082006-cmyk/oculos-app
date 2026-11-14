@@ -3,6 +3,7 @@ package com.martins.logbook
 import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -23,6 +24,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -79,6 +82,7 @@ fun TelaTreino(
   var editando by remember { mutableStateOf<Serie?>(null) }
   var escolhendoData by remember { mutableStateOf(false) }
   var colando by remember { mutableStateOf(false) }
+  var apagando by remember { mutableStateOf<Apagar?>(null) }
   var pesoFechado by rememberSaveable { mutableStateOf(false) }
   val hoje = LocalDate.now()
 
@@ -117,6 +121,8 @@ fun TelaTreino(
     if (ehHoje) {
       diario.marcarTreino(dia, horaAgora())
       if (diario.de(dia).treinoInicio == null) diario.iniciarSessao(dia)
+      // Estava pausado: anotar uma série retoma o cronômetro.
+      if (diario.de(dia).sessaoPausada) diario.retomarSessao(dia)
     }
     erro = null
     campo = TextFieldValue("")
@@ -250,6 +256,17 @@ fun TelaTreino(
             adicionar("${u.exercicio} -> ${if (u.peso == 0.0) "bw" else fmtPeso(u.peso)} x ${u.reps}" +
                 if (u.nota.isNotBlank()) " (${u.nota})" else "")
           }) { Text("+ repetir") }
+          Box {
+            var menu by remember { mutableStateOf(false) }
+            TextButton(onClick = { menu = true }) { Text("⋮", fontSize = 20.sp, color = Cinza) }
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+              DropdownMenuItem(text = { Text("Ver evolução") }, onClick = { menu = false; onAbrirExercicio(ex) })
+              DropdownMenuItem(
+                  text = { Text("Apagar ${nomeBonito(ex)} deste dia", color = Vermelho) },
+                  onClick = { menu = false; apagando = Apagar.Exercicio(ex, ss.size) },
+              )
+            }
+          }
         }
         ss.forEachIndexed { i, s ->
           Row(
@@ -259,10 +276,47 @@ fun TelaTreino(
             Text("${i + 1}", color = Cinza, modifier = Modifier.width(26.dp), fontFamily = FontFamily.Monospace)
             Text(fmtSerie(s), color = Texto, fontSize = 16.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
             if (s.nota.isNotBlank()) Text(s.nota, color = Cinza, fontSize = 13.sp)
+            Text("  ✎", color = Cinza, fontSize = 15.sp)
           }
         }
       }
     }
+
+    if (porExercicio.isNotEmpty()) {
+      item {
+        Column(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+          Text("Toque numa série para editar ou apagar", color = Cinza, fontSize = 12.sp)
+          OutlinedButton(onClick = { apagando = Apagar.Dia }, modifier = Modifier.padding(top = 6.dp)) {
+            Text("🗑 Apagar treino deste dia", color = Vermelho)
+          }
+        }
+      }
+    }
+  }
+
+  apagando?.let { a ->
+    val (titulo, texto) = when (a) {
+      is Apagar.Exercicio -> "Apagar ${nomeBonito(a.exercicio)}?" to
+          "As ${a.series} séries de ${nomeBonito(a.exercicio)} em ${dataCurta(dia)} serão apagadas. Isso não dá para desfazer."
+      is Apagar.Dia -> "Apagar o treino de ${dataCurta(dia)}?" to
+          "Todas as ${doDia.size} séries deste dia e o tempo do cronômetro serão apagados. " +
+              "O diário (peso, sono, comida) continua. Isso não dá para desfazer."
+    }
+    AlertDialog(
+        onDismissRequest = { apagando = null },
+        title = { Text(titulo) },
+        text = { Text(texto) },
+        confirmButton = {
+          TextButton(onClick = {
+            when (a) {
+              is Apagar.Exercicio -> lb.apagarExercicio(dia, a.exercicio)
+              is Apagar.Dia -> { lb.apagarDia(dia); diario.zerarSessao(dia) }
+            }
+            apagando = null
+          }) { Text("Apagar", color = Vermelho) }
+        },
+        dismissButton = { TextButton(onClick = { apagando = null }) { Text("Cancelar") } },
+    )
   }
 
   editando?.let { s ->
@@ -330,7 +384,10 @@ private fun EditarSerie(s: Serie, onSalvar: (Serie) -> Unit, onApagar: () -> Uni
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f))
           }
           OutlinedTextField(nota, { nota = it }, label = { Text("Nota (RIR, cluster…)") }, singleLine = true)
-          TextButton(onClick = onApagar) { Text("Apagar esta série", color = Vermelho) }
+          var certeza by remember { mutableStateOf(false) }
+          TextButton(onClick = { if (certeza) onApagar() else certeza = true }) {
+            Text(if (certeza) "Toque de novo para apagar" else "🗑 Apagar esta série", color = Vermelho)
+          }
         }
       },
       confirmButton = {
@@ -453,4 +510,10 @@ fun PesarHoje(onSalvar: (Double, TipoPesagem) -> Unit, onFechar: (() -> Unit)? =
       }
     }
   }
+}
+
+/** O que está para ser apagado (pede confirmação). */
+private sealed interface Apagar {
+  data class Exercicio(val exercicio: String, val series: Int) : Apagar
+  data object Dia : Apagar
 }

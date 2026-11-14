@@ -65,14 +65,30 @@ data class Dia(
     val treinoHora: String? = null,
     /** Cronômetro da sessão (epoch ms): começa no "Iniciar treino" ou na primeira série do dia. */
     val treinoInicio: Long? = null,
-    /** Quando você tocou em "Finalizar". */
+    /** Quando você tocou em "Concluir". */
     val treinoFim: Long? = null,
+    /** Pausado desde (epoch ms), ou null se não está pausado. */
+    val treinoPausadoEm: Long? = null,
+    /** Tempo total das pausas já encerradas (ms), descontado da duração. */
+    val treinoPausaTotal: Long = 0,
 ) {
+  /** Tempo de treino no cronômetro, sem as pausas. Null se o cronômetro não foi ligado. */
+  fun tempoTreino(agora: Long = System.currentTimeMillis()): Long? {
+    val ini = treinoInicio ?: return null
+    val ate = treinoFim ?: agora
+    val pausaAtual = treinoPausadoEm?.let { maxOf(0, ate - it) } ?: 0
+    return maxOf(0, ate - ini - treinoPausaTotal - pausaAtual)
+  }
+
+  val sessaoRodando: Boolean get() = treinoInicio != null && treinoFim == null && treinoPausadoEm == null
+  val sessaoPausada: Boolean get() = treinoInicio != null && treinoFim == null && treinoPausadoEm != null
+  val sessaoConcluida: Boolean get() = treinoInicio != null && treinoFim != null
+
   val kcal: Double get() = refeicoes.sumOf { it.kcal }
   val vazio: Boolean
     get() = pesagens.isEmpty() && sonoHoras == null && sonoQualidade == null && sonoNota.isBlank() &&
         humor == null && estresse == null && notaDia.isBlank() && eventos.isEmpty() && refeicoes.isEmpty() &&
-        treinoHora == null && treinoInicio == null && treinoFim == null
+        treinoHora == null && treinoInicio == null && treinoFim == null && treinoPausadoEm == null
 
   /** Refeições feitas antes do treino (pelo horário). Sem hora do treino: null. */
   fun refeicoesAntesDoTreino(): List<Refeicao>? = treinoHora?.let { t -> refeicoes.filter { it.hora < t } }
@@ -187,12 +203,35 @@ class Diario(context: Context) {
     else it.copy(treinoInicio = agora, treinoFim = null, treinoHora = it.treinoHora ?: horaDe(agora))
   }
 
+  /** Conclui o treino e guarda o tempo (se estava pausado, a pausa não conta). */
   fun finalizarSessao(data: LocalDate, agora: Long = System.currentTimeMillis()) = alterar(data) {
-    if (it.treinoInicio == null) it else it.copy(treinoFim = agora)
+    if (it.treinoInicio == null) it
+    else it.copy(
+        treinoFim = it.treinoPausadoEm ?: agora,
+        treinoPausaTotal = it.treinoPausaTotal,
+        treinoPausadoEm = null,
+    )
   }
 
-  /** Recomeça (apaga o tempo marcado). */
-  fun zerarSessao(data: LocalDate) = alterar(data) { it.copy(treinoInicio = null, treinoFim = null) }
+  fun pausarSessao(data: LocalDate, agora: Long = System.currentTimeMillis()) = alterar(data) {
+    if (!it.sessaoRodando) it else it.copy(treinoPausadoEm = agora)
+  }
+
+  fun retomarSessao(data: LocalDate, agora: Long = System.currentTimeMillis()) = alterar(data) {
+    val p = it.treinoPausadoEm ?: return@alterar it
+    it.copy(treinoPausadoEm = null, treinoPausaTotal = it.treinoPausaTotal + maxOf(0, agora - p))
+  }
+
+  /** Volta a contar depois de "Concluir" (o tempo entre concluir e continuar vira pausa). */
+  fun continuarSessao(data: LocalDate, agora: Long = System.currentTimeMillis()) = alterar(data) {
+    val f = it.treinoFim ?: return@alterar it
+    it.copy(treinoFim = null, treinoPausaTotal = it.treinoPausaTotal + maxOf(0, agora - f))
+  }
+
+  /** Cancela o cronômetro: apaga o tempo marcado (as séries ficam). */
+  fun zerarSessao(data: LocalDate) = alterar(data) {
+    it.copy(treinoInicio = null, treinoFim = null, treinoPausadoEm = null, treinoPausaTotal = 0)
+  }
 
   /** Para o backup completo e para restaurar. */
   fun paraJson(): JSONObject = JSONObject().apply {
@@ -243,6 +282,8 @@ class Diario(context: Context) {
       d.treinoHora?.let { put("treinoHora", it) }
       d.treinoInicio?.let { put("ini", it) }
       d.treinoFim?.let { put("fim", it) }
+      d.treinoPausadoEm?.let { put("pausadoEm", it) }
+      if (d.treinoPausaTotal > 0) put("pausaTotal", d.treinoPausaTotal)
       if (d.pesagens.isNotEmpty()) put("pesagens", JSONArray().apply {
         d.pesagens.forEach { p -> put(JSONObject().put("id", p.id).put("hora", p.hora).put("kg", p.kg).put("tipo", p.tipo.name)) }
       })
@@ -295,6 +336,8 @@ class Diario(context: Context) {
           treinoHora = if (o.has("treinoHora")) o.getString("treinoHora") else null,
           treinoInicio = if (o.has("ini")) o.getLong("ini") else null,
           treinoFim = if (o.has("fim")) o.getLong("fim") else null,
+          treinoPausadoEm = if (o.has("pausadoEm")) o.getLong("pausadoEm") else null,
+          treinoPausaTotal = o.optLong("pausaTotal", 0),
       )
     }
   }

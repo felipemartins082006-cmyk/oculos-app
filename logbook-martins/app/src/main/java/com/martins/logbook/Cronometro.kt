@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -160,9 +161,7 @@ fun descansos(seriesDoDia: List<Serie>): List<Long> {
 
 /** Duração do treino: pelo cronômetro (iniciar/finalizar) ou, sem ele, da primeira à última série. */
 fun duracaoTreino(dia: Dia?, seriesDoDia: List<Serie>): Long? {
-  val ini = dia?.treinoInicio
-  val fim = dia?.treinoFim
-  if (ini != null && fim != null && fim > ini) return fim - ini
+  if (dia?.sessaoConcluida == true) dia.tempoTreino()?.takeIf { it > 0 }?.let { return it }
   val t = seriesDoDia.mapNotNull { it.momento }.sorted()
   if (t.size >= 2 && t.last() - t.first() >= 5 * 60_000) return t.last() - t.first()
   return null
@@ -174,34 +173,34 @@ fun BarraSessao(diario: Diario, series: List<Serie>, dia: LocalDate) {
   val d = diario.de(dia)
   val agora = agoraAoVivo()
   var timerAberto by remember { mutableStateOf(false) }
+  var confirmandoCancelar by remember { mutableStateOf(false) }
   val doDia = series.filter { it.data == dia }
   val ultima = doDia.mapNotNull { it.momento }.maxOrNull()
-  val rodando = d.treinoInicio != null && d.treinoFim == null
   val restanteTimer = Temporizador.restante(agora)
+  val tempo = d.tempoTreino(agora) ?: 0L
 
   Cartao {
     Row(verticalAlignment = Alignment.CenterVertically) {
       Column(Modifier.weight(1f)) {
         Rotulo(
             when {
-              rodando -> "Treino em andamento · desde ${horaDe(d.treinoInicio!!)}"
-              d.treinoFim != null -> "Treino de hoje"
+              d.sessaoRodando -> "Treino em andamento · desde ${horaDe(d.treinoInicio!!)}"
+              d.sessaoPausada -> "Cronômetro pausado"
+              d.sessaoConcluida -> "Treino concluído"
               else -> "Cronômetro"
             },
         )
-        val tempo = when {
-          rodando -> agora - d.treinoInicio!!
-          d.treinoFim != null -> d.treinoFim - d.treinoInicio!!
-          else -> 0L
-        }
         Text(
-            fmtDuracao(tempo, sempreHoras = true), color = if (rodando) Texto else Cinza,
+            fmtDuracao(tempo, sempreHoras = true), color = if (d.sessaoRodando) Texto else Cinza,
             fontSize = 34.sp, fontWeight = FontWeight.Bold, style = TextStyle(fontFeatureSettings = "tnum"),
         )
-        if (rodando && ultima != null && ultima >= d.treinoInicio!!) {
+        if (d.sessaoRodando && ultima != null && ultima >= d.treinoInicio!!) {
           Text("Descansando ${fmtDuracao(agora - ultima)} desde a última série", color = Destaque, fontSize = 13.sp)
         }
-        if (d.treinoFim != null) {
+        if (d.sessaoPausada) {
+          Text("Pausado há ${fmtDuracao(agora - d.treinoPausadoEm!!)} · a pausa não conta no tempo", color = Cinza, fontSize = 13.sp)
+        }
+        if (d.sessaoConcluida) {
           val desc = descansos(doDia)
           Text(
               "Descanso médio ${if (desc.isEmpty()) "—" else fmtDuracao(desc.average().toLong())} · ${doDia.size} séries",
@@ -210,10 +209,8 @@ fun BarraSessao(diario: Diario, series: List<Serie>, dia: LocalDate) {
         }
       }
       Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        when {
-          rodando -> OutlinedButton(onClick = { diario.finalizarSessao(dia) }) { Text("Finalizar") }
-          d.treinoFim != null -> TextButton(onClick = { diario.alterar(dia) { it.copy(treinoFim = null) } }) { Text("Continuar") }
-          else -> BotaoDegrade(onClick = { diario.iniciarSessao(dia); diario.marcarTreino(dia, horaAgora()) }) {
+        if (d.treinoInicio == null) {
+          BotaoDegrade(onClick = { diario.iniciarSessao(dia); diario.marcarTreino(dia, horaAgora()) }) {
             Text("⏱ Iniciar treino")
           }
         }
@@ -222,7 +219,48 @@ fun BarraSessao(diario: Diario, series: List<Serie>, dia: LocalDate) {
         }
       }
     }
+
+    // Controles do cronômetro: pausar/retomar, concluir, continuar e cancelar (com confirmação).
+    if (d.treinoInicio != null) {
+      Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        when {
+          d.sessaoRodando -> {
+            OutlinedButton(onClick = { diario.pausarSessao(dia) }, modifier = Modifier.weight(1f)) { Text("⏸ Pausar") }
+            BotaoDegrade(onClick = { diario.finalizarSessao(dia) }, modifier = Modifier.weight(1f)) { Text("✓ Concluir treino") }
+          }
+          d.sessaoPausada -> {
+            OutlinedButton(onClick = { diario.retomarSessao(dia) }, modifier = Modifier.weight(1f)) { Text("▶ Retomar") }
+            BotaoDegrade(onClick = { diario.finalizarSessao(dia) }, modifier = Modifier.weight(1f)) { Text("✓ Concluir treino") }
+          }
+          else -> OutlinedButton(onClick = { diario.continuarSessao(dia) }, modifier = Modifier.weight(1f)) {
+            Text("▶ Continuar treino")
+          }
+        }
+      }
+      TextButton(onClick = { confirmandoCancelar = true }, modifier = Modifier.align(Alignment.End)) {
+        Text(if (d.sessaoConcluida) "Apagar o tempo deste treino" else "Cancelar cronômetro", color = Vermelho, fontSize = 13.sp)
+      }
+    }
     if (timerAberto || Temporizador.terminou) PainelTemporizador(agora)
+  }
+
+  if (confirmandoCancelar) {
+    AlertDialog(
+        onDismissRequest = { confirmandoCancelar = false },
+        title = { Text(if (d.sessaoConcluida) "Apagar o tempo do treino?" else "Deseja mesmo cancelar o cronômetro?") },
+        text = {
+          Text(
+              "O tempo marcado (${fmtDuracao(tempo, sempreHoras = true)}) será apagado e não entra nas estatísticas. " +
+                  "As séries que você anotou continuam salvas.",
+          )
+        },
+        confirmButton = {
+          TextButton(onClick = { diario.zerarSessao(dia); confirmandoCancelar = false }) {
+            Text(if (d.sessaoConcluida) "Apagar tempo" else "Cancelar cronômetro", color = Vermelho)
+          }
+        },
+        dismissButton = { TextButton(onClick = { confirmandoCancelar = false }) { Text("Voltar") } },
+    )
   }
 }
 

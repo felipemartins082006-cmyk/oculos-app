@@ -137,7 +137,10 @@ private fun App(lb: Logbook, diario: Diario, recebido: Recebido?, onRecebidoLido
             onImportar = { aba = Aba.DADOS },
         )
         Aba.DIA -> TelaDia(diario, series, dia, onDia = { dia = it }, onAbrirTreino = { aba = Aba.TREINO })
-        Aba.HISTORICO -> TelaHistorico(series, dias, onAbrirDia = abrirDia)
+        Aba.HISTORICO -> TelaHistorico(
+            series, dias, onAbrirDia = abrirDia,
+            onApagarDia = { d -> lb.apagarDia(d); diario.zerarSessao(d) },
+        )
         Aba.EVOLUCAO -> {
           val ex = exercicio
           if (ex == null || series.none { it.exercicio == ex }) {
