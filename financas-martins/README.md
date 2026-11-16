@@ -5,6 +5,17 @@ App de finanças pessoais **só para celular**. Qualquer pessoa usa sem login ne
 É um app web instalável: abra o endereço no celular e toque em **Instalar** (Android/Chrome) ou em
 **Compartilhar → Adicionar à Tela de Início** (iPhone/Safari). Depois ele abre pelo ícone, em tela cheia, como aplicativo.
 
+## Instalar no Android (APK)
+
+O arquivo **`FinancasMartins.apk`** desta pasta é o app pronto. Passe para o celular, abra e toque em
+Instalar (o Android pede para permitir "instalar apps desconhecidos" na primeira vez).
+
+- Não usa internet: o app nem tem permissão de internet. Tudo fica no celular.
+- As bibliotecas de PDF, Excel e gráficos vão dentro do APK.
+- Os dados entram no backup do Google do próprio celular. Em Ajustes também dá para salvar um
+  backup manual (o Android pergunta onde guardar).
+- Versões novas instalam por cima da anterior sem perder os dados (a chave de assinatura é fixa).
+
 ## O que faz
 
 - **Importar extratos** de vários bancos de uma vez: diga quantos bancos você tem, dê o nome de
@@ -30,7 +41,17 @@ App de finanças pessoais **só para celular**. Qualquer pessoa usa sem login ne
 Ao mudar a categoria de um lançamento, o app oferece aplicar a mesma categoria aos outros do
 mesmo estabelecimento e passa a usá-la nas próximas importações.
 
-## Rodar
+## Compilar o APK
+
+O projeto Android fica em `android/`. Ele mostra as telas desta pasta num WebView e, a cada
+compilação, copia `index.html`, `styles.css`, `app.js`, `parsers.js` e `vendor/` para dentro do APK.
+Ou seja: mexeu na versão web, é só compilar de novo.
+
+    cd android && ./gradlew assembleRelease
+
+O APK sai em `android/app/build/outputs/apk/release/app-release.apk`.
+
+## Rodar no navegador (para testar)
 
 São só arquivos estáticos. Abra com qualquer servidor:
 
@@ -44,3 +65,5 @@ e acesse http://localhost:8000. No GitHub Pages, fica em `/financas-martins/`.
 - `manifest.webmanifest`, `sw.js`, `icon-*.png`: instalação na tela inicial e abertura sem internet
 - `app.js`: dados, painel, registro manual, importação e ajustes
 - `parsers.js`: leitura dos extratos (OFX, CSV/TXT, Excel via SheetJS, PDF via pdf.js)
+- `vendor/`: Chart.js, pdf.js e SheetJS embutidos (funciona sem internet)
+- `android/`: projeto do APK (Kotlin + WebView)

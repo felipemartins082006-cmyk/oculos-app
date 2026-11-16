@@ -855,6 +855,8 @@
     ensureBank(name); save(); renderSettings();
   });
   function download(name, content, type) {
+    // dentro do app Android: o próprio Android pergunta onde salvar
+    if (window.Android?.saveFile) { window.Android.saveFile(name, type, content); return; }
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([content], { type }));
     a.download = name; document.body.appendChild(a); a.click(); a.remove();
@@ -917,6 +919,17 @@
     save();
   }
 
+  /* botão voltar do Android: fecha janelas e volta ao Panorama antes de sair */
+  window.appBack = () => {
+    if (!$('#tx-sheet').classList.contains('hidden')) { closeSheet(); return true; }
+    if (!$('#drill-sheet').classList.contains('hidden')) { closeDrill(); return true; }
+    if (ui.view === 'importar' && !$('#import-step2').classList.contains('hidden')) { $('#review-back').click(); return true; }
+    if (ui.monthPick && ui.view === 'panorama') { ui.monthPick = null; renderDashboard(); return true; }
+    if (ui.view !== 'panorama') { go('panorama'); return true; }
+    return false;
+  };
+  window.appSaved = ok => toast(ok ? 'Arquivo salvo.' : 'Não foi possível salvar o arquivo.');
+
   /* ============ toast ============ */
   let toastT;
   function toast(msg) {
@@ -930,7 +943,7 @@
   const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
   const installDismissed = () => { try { return localStorage.getItem(STORE_KEY + ':noinstall') === '1'; } catch (e) { return false; } };
   function showInstall() {
-    if (standalone || installDismissed()) return;
+    if (standalone || window.Android || installDismissed()) return;
     if (installEvt) $('#install').classList.remove('hidden');
     else if (isIOS) {
       $('#install-text').textContent = 'No Safari, toque em Compartilhar e depois em “Adicionar à Tela de Início”.';
@@ -950,6 +963,6 @@
   showInstall();
 
   matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => render());
-  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator && location.protocol === 'https:' && !window.Android) navigator.serviceWorker.register('sw.js').catch(() => {});
   render();
 })();

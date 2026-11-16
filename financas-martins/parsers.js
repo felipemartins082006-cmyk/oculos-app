@@ -1,9 +1,10 @@
 /* Leitura de extratos: OFX, CSV/TXT, Excel (XLS/XLSX) e PDF.
  * Tudo roda no navegador — nenhum arquivo sai do aparelho. */
 const Parsers = (() => {
-  const PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-  const PDFJS_WORKER = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-  const XLSX_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+  // bibliotecas embutidas no app (funcionam sem internet)
+  const PDFJS = 'vendor/pdf.min.js';
+  const PDFJS_WORKER = 'vendor/pdf.worker.min.js';
+  const XLSX_URL = 'vendor/xlsx.full.min.js';
 
   const loaded = {};
   function loadScript(src) {
@@ -11,7 +12,7 @@ const Parsers = (() => {
       loaded[src] = new Promise((resolve, reject) => {
         const s = document.createElement('script');
         s.src = src; s.onload = resolve;
-        s.onerror = () => { delete loaded[src]; reject(new Error('Sem internet para carregar o leitor deste tipo de arquivo.')); };
+        s.onerror = () => { delete loaded[src]; reject(new Error('Não consegui carregar o leitor deste tipo de arquivo.')); };
         document.head.appendChild(s);
       });
     }
