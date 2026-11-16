@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2a78d6">
+<title>Finanças Martins</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%232a78d6'/%3E%3Cpath d='M14 44l12-12 8 8 16-18' stroke='white' stroke-width='6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo" aria-hidden="true"><svg viewBox="0 0 64 64"><path d="M14 44l12-12 8 8 16-18" /></svg></span>
+    <span>Finanças</span>
+  </div>
+  <nav class="tabs" aria-label="Seções">
+    <button data-view="panorama" class="active">Panorama</button>
+    <button data-view="lancamentos">Lançamentos</button>
+    <button data-view="importar">Importar</button>
+    <button data-view="ajustes">Ajustes</button>
+  </nav>
+</header>
+
+<main>
+  <!-- PANORAMA -->
+  <section id="view-panorama" class="view active">
+    <div id="empty-state" class="empty hidden">
+      <h1>Bem-vindo! Vamos montar seu panorama.</h1>
+      <p>Sem login, sem cadastro. Seus dados ficam só neste aparelho.</p>
+      <div class="empty-actions">
+        <button class="big-btn primary" data-go="importar">
+          <strong>Importar extratos</strong><span>PDF, OFX, CSV, TXT ou Excel — de quantos bancos quiser</span>
+        </button>
+        <button class="big-btn" data-action="new">
+          <strong>Registrar um gasto agora</strong><span>Dia e hora são anotados sozinhos</span>
+        </button>
+      </div>
+      <button class="link" id="load-demo">Ver como fica com dados de exemplo</button>
+    </div>
+
+    <div id="dashboard" class="hidden">
+      <div class="filters">
+        <div class="chips" id="period-chips" role="group" aria-label="Período">
+          <button data-period="month">1 mês</button>
+          <button data-period="3m">3 meses</button>
+          <button data-period="6m">6 meses</button>
+          <button data-period="12m">12 meses</button>
+          <button data-period="all">Tudo</button>
+        </div>
+        <select id="bank-filter" aria-label="Conta"></select>
+      </div>
+      <p class="period-label" id="period-label"></p>
+
+      <div class="kpis" id="kpis"></div>
+
+      <div class="card insights-card">
+        <h2>O que chama atenção</h2>
+        <ul id="insights" class="insights"></ul>
+      </div>
+
+      <div class="grid">
+        <div class="card span-2">
+          <div class="card-head">
+            <div>
+              <h2>Evolução do patrimônio</h2>
+              <p class="sub">Saldo das contas + o que você aplicou em investimentos</p>
+            </div>
+            <strong id="patrimonio-now" class="head-value"></strong>
+          </div>
+          <div class="chart-box tall"><canvas id="chart-patrimonio" aria-label="Gráfico da evolução do patrimônio"></canvas></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div><h2>Para onde vai o dinheiro</h2><p class="sub">Toque numa categoria para ver os gastos</p></div>
+          </div>
+          <div id="cat-bars" class="hbars"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div><h2>Entradas × saídas por mês</h2><p class="sub">Toque num mês para filtrar</p></div>
+          </div>
+          <div class="legend"><span><i class="sw s1"></i>Entradas</span><span><i class="sw s2"></i>Saídas</span></div>
+          <div class="chart-box"><canvas id="chart-meses" aria-label="Entradas e saídas por mês"></canvas></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div><h2>Onde você mais gasta</h2><p class="sub">Estabelecimentos e destinos</p></div></div>
+          <ol id="top-merchants" class="ranked"></ol>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div><h2>Gasto por dia da semana</h2><p class="sub">Média por dia</p></div></div>
+          <div class="chart-box"><canvas id="chart-semana" aria-label="Gasto médio por dia da semana"></canvas></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div><h2>Gastos fixos e assinaturas</h2><p class="sub">Cobranças que se repetem todo mês</p></div></div>
+          <ul id="recurring" class="ranked plain"></ul>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div><h2>Por conta</h2><p class="sub">Movimento no período</p></div></div>
+          <div id="by-bank" class="bank-list"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- LANÇAMENTOS -->
+  <section id="view-lancamentos" class="view">
+    <div class="list-tools">
+      <input id="search" type="search" placeholder="Buscar (ex.: ifood, mercado…)" aria-label="Buscar">
+      <select id="f-cat" aria-label="Categoria"></select>
+      <select id="f-type" aria-label="Tipo">
+        <option value="">Entradas e saídas</option>
+        <option value="out">Só saídas</option>
+        <option value="in">Só entradas</option>
+      </select>
+    </div>
+    <div id="active-filter" class="active-filter hidden"></div>
+    <p class="sub" id="list-summary"></p>
+    <div id="tx-list" class="tx-list"></div>
+  </section>
+
+  <!-- IMPORTAR -->
+  <section id="view-importar" class="view">
+    <div id="import-step1">
+      <h1>Importar extratos</h1>
+      <p class="sub">Aceita PDF, OFX, CSV, TXT e Excel. Pode escolher vários arquivos de cada banco (um por mês, por exemplo). Nada é enviado para a internet: a leitura acontece aqui no aparelho.</p>
+
+      <div class="card stepper-card">
+        <label for="bank-count">Quantos bancos você tem?</label>
+        <div class="stepper">
+          <button type="button" id="bank-minus" aria-label="Menos um banco">−</button>
+          <output id="bank-count">1</output>
+          <button type="button" id="bank-plus" aria-label="Mais um banco">+</button>
+        </div>
+      </div>
+
+      <div id="bank-slots" class="bank-slots"></div>
+      <p class="sub" id="files-total"></p>
+      <button class="btn primary wide" id="read-files" disabled>Ler extratos</button>
+    </div>
+
+    <div id="import-step2" class="hidden">
+      <h1>Confira antes de salvar</h1>
+      <p class="sub">Desmarque o que não quiser importar. Se um extrato veio com entradas e saídas trocadas (comum em fatura de cartão), use “Inverter sinais”.</p>
+      <div id="review-files"></div>
+      <div class="sticky-actions">
+        <button class="btn" id="review-back">Voltar</button>
+        <button class="btn primary" id="review-save">Importar</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- AJUSTES -->
+  <section id="view-ajustes" class="view">
+    <h1>Ajustes</h1>
+    <div class="card">
+      <h2>Contas e saldo inicial</h2>
+      <p class="sub">O saldo inicial é quanto havia na conta antes do primeiro lançamento. Ele faz a evolução do patrimônio partir do valor certo.</p>
+      <div id="banks-edit"></div>
+      <button class="btn" id="add-bank">+ Adicionar conta</button>
+    </div>
+    <div class="card">
+      <h2>Seus dados</h2>
+      <p class="sub">Ficam salvos só neste navegador. Faça um backup para levar a outro aparelho.</p>
+      <div class="row-btns">
+        <button class="btn" id="export-json">Baixar backup</button>
+        <label class="btn">Restaurar backup<input type="file" id="import-json" accept=".json,application/json" hidden></label>
+        <button class="btn" id="export-csv">Baixar planilha (CSV)</button>
+        <button class="btn danger" id="clear-all">Apagar tudo</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<button class="fab" data-action="new" aria-label="Registrar lançamento">
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+  <span>Registrar</span>
+</button>
+
+<!-- Sheet de novo lançamento -->
+<div class="sheet-backdrop hidden" id="sheet-backdrop"></div>
+<form class="sheet hidden" id="tx-sheet" autocomplete="off">
+  <div class="sheet-grip"></div>
+  <h2 id="sheet-title">Novo lançamento</h2>
+  <div class="seg" role="radiogroup" aria-label="Tipo">
+    <button type="button" data-type="out" class="active">Gasto</button>
+    <button type="button" data-type="in">Entrada</button>
+  </div>
+  <label class="amount-field">
+    <span>R$</span>
+    <input id="tx-amount" inputmode="decimal" placeholder="0,00" aria-label="Valor" required>
+  </label>
+  <input id="tx-desc" placeholder="O que foi? (ex.: almoço, Uber, mercado)" aria-label="Descrição" maxlength="140">
+  <div class="cat-picker" id="cat-picker" role="radiogroup" aria-label="Categoria"></div>
+  <select id="tx-bank" aria-label="Conta"></select>
+  <div class="when">
+    <span id="when-text"></span>
+    <button type="button" class="link" id="when-edit">alterar</button>
+  </div>
+  <div class="when-inputs hidden" id="when-inputs">
+    <input type="date" id="tx-date" aria-label="Data">
+    <input type="time" id="tx-time" aria-label="Hora">
+  </div>
+  <div class="sheet-actions">
+    <button type="button" class="btn danger hidden" id="tx-delete">Excluir</button>
+    <button type="button" class="btn" id="tx-cancel">Cancelar</button>
+    <button type="submit" class="btn primary">Salvar</button>
+  </div>
+</form>
+
+<!-- Detalhe de categoria -->
+<div class="sheet-backdrop hidden" id="drill-backdrop"></div>
+<div class="sheet hidden" id="drill-sheet">
+  <div class="sheet-grip"></div>
+  <div class="card-head"><div><h2 id="drill-title"></h2><p class="sub" id="drill-sub"></p></div>
+    <button class="btn" id="drill-close">Fechar</button></div>
+  <div class="chart-box"><canvas id="chart-drill"></canvas></div>
+  <div id="drill-list" class="tx-list compact"></div>
+</div>
+
+<div class="toast hidden" id="toast" role="status"></div>
+
+<script src="parsers.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
