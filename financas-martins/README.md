@@ -18,28 +18,25 @@ Instalar (o Android pede para permitir "instalar apps desconhecidos" na primeira
 
 ## O que faz
 
-- **Importar extratos** de vários bancos de uma vez: diga quantos bancos você tem, dê o nome de
-  cada um e escolha um ou mais arquivos por banco (PDF, OFX, CSV, TXT, XLS/XLSX).
-  Antes de salvar, uma tela de conferência mostra tudo o que foi lido: dá para desmarcar linhas,
-  trocar a categoria e inverter os sinais (útil em fatura de cartão). Lançamentos que já existiam
-  vêm desmarcados, para não duplicar.
-  - PDF com senha (comum em banco) pede a senha na hora.
-  - PDF escaneado (imagem) não tem texto e não dá para ler. Nesse caso, exporte OFX ou CSV no app do banco.
-- **Registro manual**: botão "Registrar", digite o valor e o que foi. O dia e a hora são anotados
-  automaticamente, e a categoria é sugerida pela descrição.
-- **Panorama interativo**:
-  - entradas, saídas, quanto sobrou e patrimônio, comparados com o período anterior;
-  - destaques automáticos (maior categoria, gasto médio por dia, maior compra, delivery, tarifas…);
-  - evolução do patrimônio;
-  - para onde vai o dinheiro (toque numa categoria para ver o detalhe mês a mês);
-  - entradas × saídas por mês (toque num mês para filtrar o painel inteiro);
-  - estabelecimentos onde você mais gasta, gasto por dia da semana;
-  - gastos fixos e assinaturas detectados sozinhos;
-  - filtro por período e por conta.
-- **Ajustes**: saldo inicial de cada conta, backup (JSON), exportar planilha (CSV), apagar tudo.
-
-Ao mudar a categoria de um lançamento, o app oferece aplicar a mesma categoria aos outros do
-mesmo estabelecimento e passa a usá-la nas próximas importações.
+- **Importar extratos** de conta corrente, cartão de crédito, vale-refeição e vale-alimentação.
+  Para cada extrato você escolhe a instituição (Nubank, Inter, Santander, Itaú, Bradesco, BB, Caixa,
+  C6, PicPay, Mercado Pago, BTG, VR, Alelo, Ticket, Pluxee, Flash, Caju, iFood Benefícios, Swile ou
+  outra) e o tipo. Cada combinação vira uma conta separada (ex.: "Nubank · Crédito", "VR · VR").
+  - Formatos: PDF, OFX, CSV, TXT, XLS/XLSX. Vários arquivos por conta.
+  - Dica de como baixar o extrato em cada caso e uma planilha modelo para quem não consegue exportar
+    (comum em app de benefício).
+  - Fatura de cartão: as compras viram saídas automaticamente. Extrato com coluna "Tipo"
+    (Débito/Crédito) também é entendido. Quando o extrato traz saldo, o saldo da conta já vem certo.
+  - Tela de conferência antes de salvar, com lançamentos repetidos desmarcados.
+- **Registro manual** com teclado numérico próprio: valor, descrição, categoria e conta. Dia e hora
+  são anotados sozinhos.
+- **Início**: patrimônio total, cartões de cada conta (toque para filtrar), destaques, e gráficos:
+  para onde vai o dinheiro (rosca), gastos por conta (rosca), fixos × variáveis (pizza), quanto você
+  guardou (medidor), de onde vem o dinheiro (pizza), entradas × saídas por mês, patrimônio no tempo,
+  categorias mês a mês, gasto por dia da semana, onde você mais gasta e gastos fixos/assinaturas.
+- **Exportar tudo em um arquivo**: planilha Excel com a aba Resumo, uma aba para cada conta, cartão
+  e vale, e uma aba com todos os lançamentos.
+- **Mais**: contas (nome, tipo, saldo inicial), backup, restaurar, CSV simples, apagar tudo.
 
 ## Compilar o APK
 

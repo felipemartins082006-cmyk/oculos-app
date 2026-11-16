@@ -1,41 +1,97 @@
-/* Finanças Martins — panorama financeiro sem login, dados salvos no aparelho. */
+/* Finanças — panorama financeiro sem login, dados salvos só no celular. */
 (() => {
   'use strict';
 
-  /* ============ constantes ============ */
+  /* =================== constantes =================== */
   const STORE_KEY = 'financas-martins-v1';
-  const BANK_COLORS = {
-    light: ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6', '#e34948'],
-    dark: ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#0ca30c', '#9085e9', '#e66767'],
-  };
-  const COMMON_BANKS = ['Nubank', 'Itaú', 'Bradesco', 'Banco do Brasil', 'Caixa', 'Santander', 'Inter', 'C6 Bank', 'BTG Pactual', 'PicPay', 'Mercado Pago', 'Sicoob', 'Sicredi', 'Neon', 'PagBank', 'XP', 'Carteira (dinheiro)'];
 
-  // neutral: movimentações que não são gasto nem renda (não entram nas estatísticas de gasto)
+  const IC = {
+    food: '<path d="M7 3v8M4 3v5a3 3 0 0 0 6 0V3M7 11v10M17 21V3c-2 1-3 4-3 7v3h3"/>',
+    cart: '<circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.5 12h11L21 7H6"/>',
+    car: '<path d="M3 13l2-6a2 2 0 0 1 2-1h10a2 2 0 0 1 2 1l2 6v4H3zM5 17v2M19 17v2M3 13h18"/>',
+    home: '<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
+    phone: '<rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/>',
+    repeat: '<path d="M17 2l3 3-3 3"/><path d="M4 11V9a4 4 0 0 1 4-4h12M7 22l-3-3 3-3"/><path d="M20 13v2a4 4 0 0 1-4 4H4"/>',
+    health: '<path d="M12 21s-8-5-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 10c0 6-8 11-8 11z"/><path d="M12 9v5M9.5 11.5h5"/>',
+    bag: '<path d="M5 8h14l-1 13H6z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/>',
+    ticket: '<path d="M3 9a2 2 0 0 0 0 6v3a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-3a2 2 0 0 0 0-6V6a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1z"/><path d="M14 6v2M14 11v2M14 16v2"/>',
+    book: '<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2zM4 21V5M8 7h7"/>',
+    percent: '<path d="M19 5L5 19"/><circle cx="7" cy="7" r="2.5"/><circle cx="17" cy="17" r="2.5"/>',
+    swap: '<path d="M7 7h13l-4-4M17 17H4l4 4"/>',
+    dots: '<circle cx="6" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="18" cy="12" r="1.5"/>',
+    wallet: '<path d="M3 7a2 2 0 0 1 2-2h13v4"/><path d="M3 7v11a2 2 0 0 0 2 2h15V9H5a2 2 0 0 1-2-2z"/><circle cx="16" cy="14.5" r="1.2"/>',
+    gift: '<rect x="3" y="8" width="18" height="13" rx="2"/><path d="M12 8v13M3 12h18M12 8S10 3 7.5 4.5 9 8 12 8zm0 0s2-5 4.5-3.5S15 8 12 8z"/>',
+    trend: '<path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/>',
+    card: '<rect x="2" y="5" width="20" height="14" rx="3"/><path d="M2 10h20M6 15h4"/>',
+    bank: '<path d="M3 10l9-6 9 6M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/>',
+    cash: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/>',
+    file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M12 18v-6M9 15l3 3 3-3"/>',
+    trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+  };
+  const svg = k => `<svg viewBox="0 0 24 24">${IC[k] || IC.dots}</svg>`;
+
+  // neutral: não é gasto nem renda (fica fora das estatísticas de gasto)
   const CATS = [
-    { id: 'alimentacao', name: 'Alimentação', ic: '🍔', kw: ['ifood', 'restaurante', 'lanchonete', 'padaria', 'burger', 'pizza', 'mcdonald', 'mc donald', 'bk ', 'subway', 'rappi', 'cafe', 'café', 'bar ', 'sushi', 'acai', 'açaí', 'starbucks', 'outback', 'habib', 'giraffas', 'lanche', 'almoço', 'almoco', 'jantar', 'zé delivery', 'ze delivery', 'cafeteria', 'sorvete', 'churrasc', 'boteco'] },
-    { id: 'mercado', name: 'Mercado', ic: '🛒', kw: ['mercado', 'supermerc', 'carrefour', 'pao de acucar', 'pão de açúcar', 'assai', 'assaí', 'atacad', 'hortifruti', 'sacolao', 'sacolão', 'dia %', 'big bompreco', 'zaffari', 'savegnago', 'sams club', 'makro', 'oba ', 'st marche', 'feira', 'açougue', 'acougue', 'minuto pa', 'hirota'] },
-    { id: 'transporte', name: 'Transporte', ic: '🚗', kw: ['uber', '99app', '99 ', '99pop', 'posto', 'combust', 'gasolina', 'shell', 'ipiranga', 'petrobras', 'br mania', 'estaciona', 'sem parar', 'conectcar', 'veloe', 'metro', 'metrô', 'onibus', 'ônibus', 'cabify', 'pedagio', 'pedágio', 'bilhete unico', 'cptm', 'zul ', 'mecanic', 'oficina', 'ipva', 'detran', 'lavagem', 'indriver'] },
-    { id: 'moradia', name: 'Moradia', ic: '🏠', kw: ['aluguel', 'condominio', 'condomínio', 'energia', 'enel', 'light ', 'cemig', 'copel', 'celesc', 'coelba', 'sabesp', 'cedae', 'copasa', 'agua', 'água', 'comgas', 'comgás', 'iptu', 'quintoandar', 'imobiliaria', 'imobiliária', 'leroy', 'telhanorte', 'material de constr'] },
-    { id: 'contas', name: 'Contas e serviços', ic: '📱', kw: ['vivo', 'claro', 'tim ', 'oi fibra', 'internet', 'net servi', 'telefone', 'celular', 'recarga', 'sky ', 'correios', 'cartorio', 'cartório', 'lavanderia'] },
-    { id: 'assinaturas', name: 'Assinaturas', ic: '🔁', kw: ['netflix', 'spotify', 'prime video', 'amazon prime', 'disney', 'hbo', 'max.com', 'youtube', 'apple.com', 'apple ', 'google one', 'google storage', 'icloud', 'deezer', 'globoplay', 'chatgpt', 'openai', 'claude.ai', 'anthropic', 'paramount', 'crunchyroll', 'xbox game pass', 'playstation plus', 'ps plus', 'microsoft 365', 'adobe', 'canva', 'smart fit', 'smartfit', 'academia', 'gympass', 'wellhub', 'totalpass', 'kindle'] },
-    { id: 'saude', name: 'Saúde', ic: '💊', kw: ['farmacia', 'farmácia', 'drogaria', 'droga raia', 'drogasil', 'raia', 'pague menos', 'panvel', 'pacheco', 'hospital', 'clinica', 'clínica', 'laboratorio', 'laboratório', 'unimed', 'amil', 'bradesco saude', 'sulamerica', 'hapvida', 'dentista', 'odonto', 'medico', 'médico', 'psicolog', 'exame', 'otica', 'ótica'] },
-    { id: 'compras', name: 'Compras', ic: '🛍️', kw: ['amazon', 'mercado livre', 'mercadolivre', 'mercadolibre', 'shopee', 'magalu', 'magazine', 'americanas', 'aliexpress', 'shein', 'renner', 'riachuelo', 'c&a', 'zara', 'centauro', 'netshoes', 'kabum', 'casas bahia', 'ponto frio', 'fast shop', 'decathlon', 'havaianas', 'nike', 'adidas', 'boticario', 'boticário', 'natura', 'sephora', 'temu', 'loja', 'shopping'] },
-    { id: 'lazer', name: 'Lazer e viagens', ic: '🎉', kw: ['cinema', 'cinemark', 'ingresso', 'sympla', 'eventim', 'show', 'steam', 'playstation', 'nintendo', 'xbox', 'viagem', 'hotel', 'airbnb', 'booking', 'decolar', 'latam', 'gol linhas', 'azul linhas', 'azul ', 'passagem', 'teatro', 'parque', 'balada', 'festa'] },
-    { id: 'educacao', name: 'Educação', ic: '📚', kw: ['escola', 'colegio', 'colégio', 'faculdade', 'universidade', 'curso', 'udemy', 'alura', 'coursera', 'livraria', 'livro', 'mensalidade', 'material escolar', 'duolingo'] },
-    { id: 'taxas', name: 'Tarifas e juros', ic: '🏦', kw: ['tarifa', 'iof', 'juros', 'anuidade', 'multa', 'encargo', 'cesta de servi', 'mora'] },
-    { id: 'pessoas', name: 'Pix e transferências', ic: '↗️', kw: ['pix', 'ted', 'doc ', 'transferencia', 'transferência', 'transf'] },
-    { id: 'outros', name: 'Outros gastos', ic: '•' },
-    { id: 'receitas', name: 'Salário e receitas', ic: '💰', income: true, kw: ['salario', 'salário', 'proventos', 'folha', 'pagamento recebido', 'pro labore', 'pró-labore', 'rendimento', 'cashback', 'reembolso', 'estorno', 'freela', 'venda'] },
-    { id: 'invest', name: 'Investimentos', ic: '📈', neutral: true, kw: ['aplicacao', 'aplicação', 'resgate', 'cdb', 'tesouro', 'invest', 'poupanca', 'poupança', 'lci', 'lca', 'corretora', 'caixinha', 'cofrinho', 'renda fixa', 'fundo'] },
-    { id: 'fatura', name: 'Pagamento de fatura', ic: '💳', neutral: true, kw: ['pagamento de fatura', 'pagto fatura', 'pgto fatura', 'fatura cartao', 'fatura cartão', 'pag fatura', 'pagamento fatura', 'pagamento recebido - obrigado'] },
+    { id: 'alimentacao', name: 'Alimentação', ic: 'food', color: '#ff8a4c', kw: ['ifood', 'restaurante', 'lanchonete', 'padaria', 'burger', 'pizza', 'mcdonald', 'mc donald', 'bk ', 'subway', 'rappi', 'cafe', 'café', 'bar ', 'sushi', 'acai', 'açaí', 'starbucks', 'outback', 'habib', 'giraffas', 'lanche', 'almoço', 'almoco', 'jantar', 'zé delivery', 'ze delivery', 'cafeteria', 'sorvete', 'churrasc', 'boteco', 'refeic', 'refeiç', 'self service', 'marmita', 'quilo'] },
+    { id: 'mercado', name: 'Mercado', ic: 'cart', color: '#ffd166', kw: ['mercado', 'supermerc', 'carrefour', 'pao de acucar', 'pão de açúcar', 'assai', 'assaí', 'atacad', 'hortifruti', 'sacolao', 'sacolão', 'big bompreco', 'zaffari', 'savegnago', 'sams club', 'makro', 'oba ', 'st marche', 'feira', 'açougue', 'acougue', 'minuto pa', 'hirota', 'mercearia', 'emporio', 'empório'] },
+    { id: 'transporte', name: 'Transporte', ic: 'car', color: '#3dd6d0', kw: ['uber', '99app', '99 ', '99pop', 'posto', 'combust', 'gasolina', 'shell', 'ipiranga', 'petrobras', 'br mania', 'estaciona', 'sem parar', 'conectcar', 'veloe', 'metro', 'metrô', 'onibus', 'ônibus', 'cabify', 'pedagio', 'pedágio', 'bilhete unico', 'cptm', 'zul ', 'mecanic', 'oficina', 'ipva', 'detran', 'lavagem', 'indriver'] },
+    { id: 'moradia', name: 'Moradia', ic: 'home', color: '#a78bfa', kw: ['aluguel', 'condominio', 'condomínio', 'energia', 'enel', 'light ', 'cemig', 'copel', 'celesc', 'coelba', 'sabesp', 'cedae', 'copasa', 'agua', 'água', 'comgas', 'comgás', 'iptu', 'quintoandar', 'imobiliaria', 'imobiliária', 'leroy', 'telhanorte', 'material de constr'] },
+    { id: 'contas', name: 'Contas e serviços', ic: 'phone', color: '#5aa9ff', kw: ['vivo', 'claro', 'tim ', 'oi fibra', 'internet', 'net servi', 'telefone', 'celular', 'recarga cel', 'sky ', 'correios', 'cartorio', 'cartório', 'lavanderia'] },
+    { id: 'assinaturas', name: 'Assinaturas', ic: 'repeat', color: '#ff7eb6', kw: ['netflix', 'spotify', 'prime video', 'amazon prime', 'disney', 'hbo', 'max.com', 'youtube', 'apple.com', 'apple ', 'google one', 'google storage', 'icloud', 'deezer', 'globoplay', 'chatgpt', 'openai', 'claude.ai', 'anthropic', 'paramount', 'crunchyroll', 'xbox game pass', 'playstation plus', 'ps plus', 'microsoft 365', 'adobe', 'canva', 'smart fit', 'smartfit', 'academia', 'gympass', 'wellhub', 'totalpass', 'kindle'] },
+    { id: 'saude', name: 'Saúde', ic: 'health', color: '#6ee7a8', kw: ['farmacia', 'farmácia', 'drogaria', 'droga raia', 'drogasil', 'raia', 'pague menos', 'panvel', 'pacheco', 'hospital', 'clinica', 'clínica', 'laboratorio', 'laboratório', 'unimed', 'amil', 'bradesco saude', 'sulamerica', 'hapvida', 'dentista', 'odonto', 'medico', 'médico', 'psicolog', 'exame', 'otica', 'ótica'] },
+    { id: 'compras', name: 'Compras', ic: 'bag', color: '#e599f7', kw: ['amazon', 'mercado livre', 'mercadolivre', 'mercadolibre', 'shopee', 'magalu', 'magazine', 'americanas', 'aliexpress', 'shein', 'renner', 'riachuelo', 'c&a', 'zara', 'centauro', 'netshoes', 'kabum', 'casas bahia', 'ponto frio', 'fast shop', 'decathlon', 'havaianas', 'nike', 'adidas', 'boticario', 'boticário', 'natura', 'sephora', 'temu', 'loja', 'shopping'] },
+    { id: 'lazer', name: 'Lazer e viagens', ic: 'ticket', color: '#ffa8a8', kw: ['cinema', 'cinemark', 'ingresso', 'sympla', 'eventim', 'show', 'steam', 'playstation', 'nintendo', 'xbox', 'viagem', 'hotel', 'airbnb', 'booking', 'decolar', 'latam', 'gol linhas', 'azul linhas', 'passagem', 'teatro', 'parque', 'balada', 'festa'] },
+    { id: 'educacao', name: 'Educação', ic: 'book', color: '#b5e655', kw: ['escola', 'colegio', 'colégio', 'faculdade', 'universidade', 'curso', 'udemy', 'alura', 'coursera', 'livraria', 'livro', 'mensalidade', 'material escolar', 'duolingo'] },
+    { id: 'taxas', name: 'Tarifas e juros', ic: 'percent', color: '#ff6b6b', kw: ['tarifa', 'iof', 'juros', 'anuidade', 'multa', 'encargo', 'cesta de servi', 'mora'] },
+    { id: 'pessoas', name: 'Pix e transferências', ic: 'swap', color: '#8fb8ff', kw: ['pix', 'ted', 'doc ', 'transferencia', 'transferência', 'transf'] },
+    { id: 'outros', name: 'Outros gastos', ic: 'dots', color: '#8a90a2' },
+    { id: 'receitas', name: 'Salário e receitas', ic: 'wallet', color: '#d4fc79', income: true, kw: ['salario', 'salário', 'proventos', 'folha', 'pro labore', 'pró-labore', 'rendimento', 'cashback', 'reembolso', 'estorno', 'freela', 'venda'] },
+    { id: 'beneficios', name: 'Benefícios (VR/VA)', ic: 'gift', color: '#5ee49a', income: true, kw: ['recarga', 'credito beneficio', 'crédito benefício', 'disponibiliza', 'beneficio', 'benefício'] },
+    { id: 'invest', name: 'Investimentos', ic: 'trend', color: '#38d9a9', neutral: true, kw: ['aplicacao', 'aplicação', 'resgate', 'cdb', 'tesouro', 'invest', 'poupanca', 'poupança', 'lci', 'lca', 'corretora', 'caixinha', 'cofrinho', 'renda fixa', 'fundo'] },
+    { id: 'fatura', name: 'Pagamento de fatura', ic: 'card', color: '#9aa1b3', neutral: true, kw: ['pagamento de fatura', 'pagto fatura', 'pgto fatura', 'fatura cartao', 'fatura cartão', 'pag fatura', 'pagamento fatura', 'pagamento recebido', 'pgto cartao', 'pagamento cartao', 'pagamento cartão'] },
   ];
   const CAT = Object.fromEntries(CATS.map(c => [c.id, c]));
+
+  const TYPES = {
+    conta: { name: 'Conta corrente', short: 'Conta', ic: 'bank' },
+    credito: { name: 'Cartão de crédito', short: 'Crédito', ic: 'card' },
+    vr: { name: 'Vale-refeição', short: 'VR', ic: 'food' },
+    va: { name: 'Vale-alimentação', short: 'VA', ic: 'cart' },
+    dinheiro: { name: 'Dinheiro', short: 'Dinheiro', ic: 'cash' },
+  };
+
+  const INSTS = [
+    { id: 'nubank', name: 'Nubank', mono: 'Nu', color: '#8a2be2', kind: 'bank' },
+    { id: 'inter', name: 'Inter', mono: 'In', color: '#ff7a00', kind: 'bank' },
+    { id: 'santander', name: 'Santander', mono: 'S', color: '#e1251b', kind: 'bank' },
+    { id: 'itau', name: 'Itaú', mono: 'It', color: '#ec7000', kind: 'bank' },
+    { id: 'bradesco', name: 'Bradesco', mono: 'B', color: '#cc092f', kind: 'bank' },
+    { id: 'bb', name: 'Banco do Brasil', mono: 'BB', color: '#1f4aa8', kind: 'bank' },
+    { id: 'caixa', name: 'Caixa', mono: 'Cx', color: '#1c6fc4', kind: 'bank' },
+    { id: 'c6', name: 'C6 Bank', mono: 'C6', color: '#3a3a3a', kind: 'bank' },
+    { id: 'picpay', name: 'PicPay', mono: 'PP', color: '#1fae55', kind: 'bank' },
+    { id: 'mercadopago', name: 'Mercado Pago', mono: 'MP', color: '#0a9bd6', kind: 'bank' },
+    { id: 'btg', name: 'BTG', mono: 'BT', color: '#16346e', kind: 'bank' },
+    { id: 'outro', name: 'Outro', mono: '+', color: '#4b5263', kind: 'bank' },
+    { id: 'vr', name: 'VR', mono: 'VR', color: '#00a650', kind: 'benefit' },
+    { id: 'alelo', name: 'Alelo', mono: 'Al', color: '#1b7f4a', kind: 'benefit' },
+    { id: 'ticket', name: 'Ticket', mono: 'Tk', color: '#d81b3c', kind: 'benefit' },
+    { id: 'pluxee', name: 'Pluxee', mono: 'Px', color: '#3c3cc8', kind: 'benefit' },
+    { id: 'flash', name: 'Flash', mono: 'Fl', color: '#e5276f', kind: 'benefit' },
+    { id: 'caju', name: 'Caju', mono: 'Cj', color: '#ef5a2a', kind: 'benefit' },
+    { id: 'ifoodben', name: 'iFood Benefícios', mono: 'iF', color: '#d6202e', kind: 'benefit' },
+    { id: 'swile', name: 'Swile', mono: 'Sw', color: '#6a3cf0', kind: 'benefit' },
+    { id: 'carteira', name: 'Carteira', mono: 'R$', color: '#2f7d5b', kind: 'cash' },
+  ];
+  const INST = Object.fromEntries(INSTS.map(i => [i.id, i]));
+
   const MES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
   const MES_LONGO = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
   const SEMANA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
   const SEMANA_LONGO = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+  const PERIODS = { month: 'Este mês', '3m': '3 meses', '6m': '6 meses', '12m': '12 meses', all: 'Tudo' };
 
-  /* ============ utilidades ============ */
+  /* =================== utilidades =================== */
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
   const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -54,47 +110,65 @@
   const todayStr = () => ds(new Date());
   const nowTime = () => { const d = new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
   const addDays = (s, n) => { const d = pd(s); d.setDate(d.getDate() + n); return ds(d); };
-  const monthLabel = k => { const [y, m] = k.split('-'); return `${MES[+m - 1]}/${y.slice(2)}`; };
+  const monthLabel = k => MES[+k.split('-')[1] - 1];
   const dayLabel = s => {
     if (s === todayStr()) return 'Hoje';
     if (s === addDays(todayStr(), -1)) return 'Ontem';
     const d = pd(s);
-    return `${SEMANA_LONGO[d.getDay()]}, ${d.getDate()} de ${MES_LONGO[d.getMonth()]}${d.getFullYear() !== new Date().getFullYear() ? ' de ' + d.getFullYear() : ''}`;
+    const w = SEMANA_LONGO[d.getDay()];
+    return `${w[0].toUpperCase() + w.slice(1)}, ${d.getDate()} de ${MES_LONGO[d.getMonth()]}${d.getFullYear() !== new Date().getFullYear() ? ' de ' + d.getFullYear() : ''}`;
   };
   const shortDate = s => { const d = pd(s); return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${String(d.getFullYear()).slice(2)}`; };
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-  const isDark = () => {
-    const t = document.documentElement.dataset.theme;
-    return t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  const shade = (hex, f) => {
+    const n = parseInt(hex.slice(1), 16);
+    const ch = s => Math.round(((n >> s) & 255) * (1 - f));
+    return `rgb(${ch(16)},${ch(8)},${ch(0)})`;
   };
-  const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  const alpha = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`; };
+  const tile = (catId, cls = '', id = '') => { const c = CAT[catId] || CAT.outros; return `<span class="tile ${cls}" ${id ? `id="${id}"` : ''} style="background:${alpha(c.color, .14)};color:${c.color}">${svg(c.ic)}</span>`; };
 
-  /* ============ dados ============ */
+  /* =================== dados =================== */
   function load() {
     try {
       const raw = localStorage.getItem(STORE_KEY);
-      if (raw) { const d = JSON.parse(raw); d.rules ||= {}; return d; }
+      if (raw) return migrate(JSON.parse(raw));
     } catch (e) { /* armazenamento indisponível */ }
-    return { version: 1, banks: [], txs: [], rules: {} };
+    return { version: 2, banks: [], txs: [], rules: {} };
+  }
+  function migrate(d) {
+    d.rules ||= {}; d.banks ||= []; d.txs ||= [];
+    for (const b of d.banks) {
+      if (!b.type) b.type = /carteira|dinheiro/i.test(b.name) ? 'dinheiro' : 'conta';
+      if (!b.inst) {
+        const n = norm(b.name);
+        b.inst = (INSTS.find(i => i.id !== 'outro' && n.includes(norm(i.name).split(' ')[0])) || (b.type === 'dinheiro' ? INST.carteira : INST.outro)).id;
+        b.name = b.name.replace(/\s*\(dinheiro\)\s*/i, '');
+      }
+    }
+    d.version = 2;
+    return d;
   }
   let db = load();
   function save() {
     try { localStorage.setItem(STORE_KEY, JSON.stringify(db)); }
-    catch (e) { toast('Não consegui salvar neste navegador (modo anônimo?). Baixe um backup em Ajustes.'); }
+    catch (e) { toast('Não consegui salvar. Faça um backup em Mais.'); }
   }
   const bankById = id => db.banks.find(b => b.id === id);
-  const bankColor = id => {
-    const i = db.banks.findIndex(b => b.id === id);
-    const pal = BANK_COLORS[isDark() ? 'dark' : 'light'];
-    return pal[(i < 0 ? 0 : i) % pal.length];
-  };
-  function ensureBank(name) {
-    name = (name || '').trim() || 'Conta';
-    let b = db.banks.find(x => norm(x.name) === norm(name));
-    if (!b) { b = { id: uid(), name, initial: 0 }; db.banks.push(b); }
+  const instOf = b => INST[b?.inst] || INST.outro;
+  const acctColor = b => instOf(b).color;
+  const acctLabel = b => b ? `${b.name} · ${TYPES[b.type]?.short || ''}` : '';
+  const monoText = b => instOf(b).id === 'outro' ? (b?.name || '?').slice(0, 2) : instOf(b).mono;
+  const mono = (b, extra = '', id = '') => `<span class="mono ${extra}" ${id ? `id="${id}"` : ''} style="background:${acctColor(b)}">${esc(monoText(b))}</span>`;
+  function ensureAccount({ name, inst, type }) {
+    name = (name || '').trim() || INST[inst]?.name || 'Conta';
+    type ||= 'conta';
+    let b = db.banks.find(x => norm(x.name) === norm(name) && x.type === type);
+    if (!b) { b = { id: uid(), name, inst: inst || 'outro', type, initial: 0 }; db.banks.push(b); }
     return b;
   }
+  const hasCard = () => db.banks.some(b => b.type === 'credito');
 
   const AGGREGATORS = ['ifood', 'uber', '99app', 'rappi', 'amazon', 'mercadolivre', 'mercado livre', 'shopee', 'netflix', 'spotify', 'apple', 'google', 'paypal', 'aliexpress', 'shein', 'steam', 'airbnb', 'cabify', 'magalu'];
   function merchant(desc) {
@@ -102,59 +176,67 @@
     s = s.replace(/^(compra( no)?( cartao)?( de)?( debito| credito)?( internacional)?|pagamento( de)?( boleto)?|pagto|pgto|pag|pix (enviado|recebido|transf\w*|qr ?code)?( para| de)?|transferencia (enviada|recebida)( pelo pix)?( para| de)?|transf(erencia)?( pix)?( enviada| recebida)?|ted( enviada| recebida)?|doc|deb(ito)?( aut(omatico)?)?|cp|elo|visa|master(card)?|compra aprovada|debito em conta)\b\s*[-:]?\s*/g, '');
     s = s.replace(/\d{2}\/\d{2}(\/\d{2,4})?/g, ' ').replace(/\d{2}:\d{2}/g, ' ');
     s = s.split(/\bcpf\b|\bcnpj\b|•|\*{2,}/)[0];
-    // "pagamento efetuado - imobiliaria": pula pedaços genéricos e fica com o nome
     const GENERIC = /^(efetuad[oa]|enviad[oa]|recebid[oa]|realizad[oa]|aprovad[oa]|agendad[oa]|compra|pagamento|transferencia|pix|ted|doc|debito|credito|boleto|online|no debito|no credito)?$/;
     const parts = s.split(/ - /).map(p => p.replace(/[*_\-–—|#.,;:/\\()]/g, ' ').replace(/\b\d+\b/g, ' ').replace(/\s+/g, ' ').trim());
     s = parts.find(p => !GENERIC.test(p) && !p.split(' ').every(w => GENERIC.test(w))) || parts[0];
-    s = s.replace(/[*_\-–—|#.,;:/\\()]/g, ' ').replace(/\b\d+\b/g, ' ').replace(/\s+/g, ' ').trim();
     if (!s) return 'Outros';
     const agg = AGGREGATORS.find(a => s.startsWith(a));
     const out = agg || s.split(' ').filter(w => w.length > 1 || /\d/.test(w)).slice(0, 3).join(' ') || s;
     return out.replace(/\b\w/g, c => c.toUpperCase());
   }
 
-  function guessCat(desc, amount) {
+  function guessCat(desc, amount, acctType) {
     const key = norm(merchant(desc));
     if (db.rules[key] && CAT[db.rules[key]]) return db.rules[key];
     const s = ' ' + norm(desc) + ' ';
-    const hit = id => CAT[id].kw.some(k => s.includes(norm(k)));
-    if (hit('fatura')) return 'fatura';
+    const hit = id => (CAT[id].kw || []).some(k => s.includes(norm(k)));
+    if (acctType === 'credito' && amount > 0 && /pagamento|pagto|pgto/.test(s)) return 'fatura';
+    if (hit('fatura') && !(acctType === 'credito' && amount < 0)) return 'fatura';
     if (hit('invest')) return 'invest';
-    if (amount > 0) return 'receitas';
+    if (amount > 0) {
+      if (acctType === 'vr' || acctType === 'va' || hit('beneficios')) return 'beneficios';
+      return 'receitas';
+    }
     for (const c of CATS) {
       if (c.income || c.neutral || !c.kw || c.id === 'pessoas') continue;
       if (hit(c.id)) return c.id;
     }
     if (hit('pessoas')) return 'pessoas';
+    if (acctType === 'vr') return 'alimentacao';
+    if (acctType === 'va') return 'mercado';
     return 'outros';
   }
 
-  /* ============ estado de tela ============ */
-  const ui = {
-    view: 'panorama',
-    period: '6m',
-    bank: '',
-    monthPick: null,
-    list: { q: '', cat: '', type: '', month: null, merchant: null, limit: 120 },
-  };
-  try { const p = localStorage.getItem(STORE_KEY + ':period'); if (p) ui.period = p; } catch (e) { /* */ }
+  /* =================== estado e navegação =================== */
+  const ui = { view: 'panorama', period: '6m', bank: '', monthPick: null, list: { q: '', cat: '', type: '', bank: '', merchant: null, limit: 120 } };
+  try { const p = localStorage.getItem(STORE_KEY + ':period'); if (PERIODS[p]) ui.period = p; } catch (e) { /* */ }
   const charts = {};
 
-  /* ============ navegação ============ */
   function go(view) {
     ui.view = view;
-    $$('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+    $$('.dock button[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view));
     $$('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + view));
-    $('.fab').classList.toggle('hidden', view === 'importar' || view === 'ajustes');
     window.scrollTo({ top: 0 });
     render();
+    renderTop();
   }
-  $$('.tabs button').forEach(b => b.addEventListener('click', () => go(b.dataset.view)));
+  function renderTop() {
+    const d = new Date();
+    const wd = SEMANA_LONGO[d.getDay()];
+    $('#top-date').textContent = `${wd[0].toUpperCase() + wd.slice(1)}, ${d.getDate()} de ${MES_LONGO[d.getMonth()]}`;
+    const h = d.getHours();
+    $('#top-title').textContent = { panorama: h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite', lancamentos: 'Extrato', importar: 'Importar extratos', ajustes: 'Mais opções' }[ui.view];
+    $('#period-btn').classList.toggle('hidden', ui.view !== 'panorama' || !db.txs.length);
+    $('#period-btn-label').textContent = ui.monthPick ? MES_LONGO[+ui.monthPick.slice(5) - 1] : PERIODS[ui.period];
+  }
+  $$('.dock button[data-view]').forEach(b => b.addEventListener('click', () => go(b.dataset.view)));
   document.addEventListener('click', e => {
-    const g = e.target.closest('[data-go]'); if (g) go(g.dataset.go);
-    const a = e.target.closest('[data-action="new"]'); if (a) openTxSheet();
+    const g = e.target.closest('[data-go]'); if (g) { go(g.dataset.go); return; }
+    const a = e.target.closest('[data-action]');
+    if (!a) return;
+    if (a.dataset.action === 'new') openTxSheet(null, a.dataset.type);
+    if (a.dataset.action === 'export') exportAll();
   });
-
   function render() {
     if (ui.view === 'panorama') renderDashboard();
     else if (ui.view === 'lancamentos') renderList();
@@ -162,7 +244,7 @@
     else if (ui.view === 'ajustes') renderSettings();
   }
 
-  /* ============ cálculo do período ============ */
+  /* =================== período =================== */
   const scoped = () => db.txs.filter(t => !ui.bank || t.bank === ui.bank);
   function dataBounds(txs) {
     let min = null, max = null;
@@ -170,13 +252,12 @@
     return { min, max };
   }
   function getRange() {
-    const txs = scoped();
-    const { min, max } = dataBounds(txs);
+    const { min, max } = dataBounds(scoped());
     const today = todayStr();
     if (ui.monthPick) {
       const [y, m] = ui.monthPick.split('-').map(Number);
-      const from = `${ui.monthPick}-01`, end = ds(new Date(y, m, 0));
-      return { from, to: end < today ? end : (max && max > today ? max : today), months: 1, picked: true,
+      const end = ds(new Date(y, m, 0));
+      return { from: `${ui.monthPick}-01`, to: end < today ? end : (max && max > today ? max : today), months: 1, picked: true,
         prev: { from: ds(new Date(y, m - 2, 1)), to: ds(new Date(y, m - 1, 0)) } };
     }
     const anchor = max && max > today ? max : (max && max.slice(0, 7) < today.slice(0, 7) ? max : today);
@@ -184,275 +265,326 @@
     const n = { month: 1, '3m': 3, '6m': 6, '12m': 12 }[ui.period];
     if (!n) return { from: min || anchor, to: anchor, months: null, prev: null };
     const from = ds(new Date(a.getFullYear(), a.getMonth() - (n - 1), 1));
-    const endOfMonth = ds(new Date(a.getFullYear(), a.getMonth() + 1, 0));
-    const to = endOfMonth < anchor ? endOfMonth : anchor;
-    const prevFrom = ds(new Date(a.getFullYear(), a.getMonth() - (2 * n - 1), 1));
-    return { from, to, months: n, prev: { from: prevFrom, to: addDays(from, -1) } };
+    const end = ds(new Date(a.getFullYear(), a.getMonth() + 1, 0));
+    return { from, to: end < anchor ? end : anchor, months: n,
+      prev: { from: ds(new Date(a.getFullYear(), a.getMonth() - (2 * n - 1), 1)), to: addDays(from, -1) } };
   }
   const inRange = (t, r) => t.date >= r.from && t.date <= r.to;
   const isNeutral = t => CAT[t.cat]?.neutral;
+  const isSpend = t => t.amount < 0 && !isNeutral(t);
   function totals(txs) {
     let inc = 0, out = 0;
     for (const t of txs) { if (isNeutral(t)) continue; if (t.amount > 0) inc += t.amount; else out -= t.amount; }
     return { inc, out, net: inc - out };
   }
   function monthsIn(r) {
-    const out = []; const a = pd(r.from), b = pd(r.to);
-    const d = new Date(a.getFullYear(), a.getMonth(), 1);
+    const out = []; const b = pd(r.to);
+    const d = new Date(pd(r.from).getFullYear(), pd(r.from).getMonth(), 1);
     while (d <= b) { out.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}`); d.setMonth(d.getMonth() + 1); }
     return out;
   }
   const daysBetween = (a, b) => Math.round((pd(b) - pd(a)) / 86400000) + 1;
+  // patrimônio: investimento só troca o dinheiro de lugar; pagamento de fatura já está nas compras do cartão
+  const countsForWealth = t => t.cat !== 'invest' && !(t.cat === 'fatura' && hasCard());
 
-  /* ============ painel ============ */
-  function chartTheme() {
-    return {
-      text: css('--text'), text2: css('--text-2'), muted: css('--muted'), grid: css('--grid'), axis: css('--axis'),
-      s1: css('--s1'), s2: css('--s2'), s1soft: css('--s1-soft'), surface: css('--surface'),
-    };
+  /* =================== gráficos =================== */
+  if (window.Chart) {
+    Chart.defaults.font.family = 'Jakarta, system-ui, sans-serif';
+    Chart.defaults.font.weight = 600;
+    Chart.defaults.color = '#6c7284';
+    Chart.defaults.borderColor = 'rgba(255,255,255,0.06)';
   }
-  function baseOpts(th) {
-    return {
-      responsive: true, maintainAspectRatio: false, animation: { duration: 350 },
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          backgroundColor: th.text, titleColor: th.surface, bodyColor: th.surface, padding: 10, cornerRadius: 8,
-          displayColors: true, boxPadding: 4, usePointStyle: true,
-          callbacks: { label: c => ` ${c.dataset.label ? c.dataset.label + ': ' : ''}${fmt(c.parsed.y ?? c.parsed)}` },
-        },
-      },
-      scales: {
-        x: { grid: { display: false }, border: { color: th.axis }, ticks: { color: th.muted, maxRotation: 0, autoSkipPadding: 12 } },
-        y: { grid: { color: th.grid }, border: { display: false }, ticks: { color: th.muted, callback: v => fmtShort(v), maxTicksLimit: 5 } },
-      },
-    };
+  const tooltip = {
+    backgroundColor: '#f3f4f7', titleColor: '#0a0b0f', bodyColor: '#0a0b0f', footerColor: '#4b5263',
+    padding: 10, cornerRadius: 12, displayColors: false, titleFont: { weight: 800 }, bodyFont: { weight: 600 },
+  };
+  const axes = () => ({
+    x: { grid: { display: false }, border: { display: false }, ticks: { maxRotation: 0, autoSkipPadding: 10 } },
+    y: { grid: { color: 'rgba(255,255,255,0.05)' }, border: { display: false }, ticks: { callback: v => fmtShort(v), maxTicksLimit: 4 } },
+  });
+  const vGrad = (color, a0 = 0.15) => c => {
+    const { ctx, chartArea } = c.chart;
+    if (!chartArea) return color;
+    const g = ctx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top);
+    g.addColorStop(0, alpha(color, a0)); g.addColorStop(1, color);
+    return g;
+  };
+  const fillGrad = (color, a = 0.35) => c => {
+    const { ctx, chartArea } = c.chart;
+    if (!chartArea) return 'transparent';
+    const g = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+    g.addColorStop(0, alpha(color, a)); g.addColorStop(1, alpha(color, 0));
+    return g;
+  };
+  function setChart(key, canvas, config) {
+    if (!window.Chart) return;
+    if (charts[key]) charts[key].destroy();
+    charts[key] = new Chart(canvas, config);
   }
   const crosshair = {
     id: 'crosshair',
     afterDatasetsDraw(chart) {
       const act = chart.tooltip?.getActiveElements?.();
-      if (!act || !act.length) return;
+      if (!act?.length) return;
       const x = act[0].element.x, { top, bottom } = chart.chartArea, ctx = chart.ctx;
-      ctx.save(); ctx.strokeStyle = css('--axis'); ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+      ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.setLineDash([3, 4]);
       ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, bottom); ctx.stroke(); ctx.restore();
     },
   };
-  function setChart(key, canvas, config) {
-    if (charts[key]) charts[key].destroy();
-    charts[key] = new Chart(canvas, config);
+  function donut(key, canvas, items, { cutout = '72%', onPick, type = 'doughnut' } = {}) {
+    const pie = type === 'pie';
+    setChart(key, canvas, {
+      type,
+      data: { labels: items.map(i => i.name), datasets: [{ data: items.map(i => i.value), backgroundColor: items.map(i => i.color), borderWidth: pie ? 2 : 0, borderColor: '#12141b', spacing: pie ? 0 : 3, borderRadius: pie ? 0 : 8, hoverOffset: 8 }] },
+      options: {
+        responsive: true, maintainAspectRatio: false, cutout: pie ? 0 : cutout, layout: { padding: 6 },
+        animation: { animateRotate: true, duration: 700 },
+        plugins: { legend: { display: false }, tooltip: { ...tooltip, callbacks: { label: c => ` ${fmt(c.parsed)}` } } },
+        onClick: (e, els) => { if (els.length && onPick) onPick(items[els[0].index]); },
+      },
+    });
+  }
+  function legendList(el, items, total, onPick) {
+    el.innerHTML = items.map((it, i) => `<li data-i="${i}"><i style="background:${it.color}"></i><span class="n">${esc(it.name)}</span><span class="p">${pct(total ? it.value / total : 0)}</span><span class="v">${fmt(it.value)}</span></li>`).join('');
+    el.querySelectorAll('li').forEach(li => li.addEventListener('click', () => onPick && onPick(items[+li.dataset.i])));
   }
 
+  /* =================== início =================== */
   function renderDashboard() {
     const has = db.txs.length > 0;
     $('#empty-state').classList.toggle('hidden', has);
     $('#dashboard').classList.toggle('hidden', !has);
+    renderTop();
     if (!has) return;
-    if (typeof Chart === 'undefined') { toast('Sem internet: os gráficos não carregaram.'); }
-
-    // filtros
-    $$('#period-chips button').forEach(b => b.classList.toggle('active', !ui.monthPick && b.dataset.period === ui.period));
-    const bf = $('#bank-filter');
-    bf.innerHTML = `<option value="">Todas as contas</option>` + db.banks.map(b => `<option value="${b.id}">${esc(b.name)}</option>`).join('');
-    bf.value = ui.bank;
-    bf.classList.toggle('hidden', db.banks.length < 2);
 
     const r = getRange();
     const all = scoped();
     const txs = all.filter(t => inRange(t, r));
-    // só compara se havia dados cobrindo o período anterior inteiro
-    const prevCovered = r.prev && dataBounds(all).min <= addDays(r.prev.from, 7);
-    const prevTxs = prevCovered ? all.filter(t => inRange(t, r.prev)) : null;
-    const T = totals(txs), P = prevTxs && prevTxs.length ? totals(prevTxs) : null;
+    const { min } = dataBounds(all);
+    const prevOk = r.prev && min <= addDays(r.prev.from, 7);
+    const T = totals(txs), P = prevOk ? totals(all.filter(t => inRange(t, r.prev))) : null;
 
-    const lbl = `${shortDate(r.from)} a ${shortDate(r.to)} · ${txs.length} lançamento${txs.length === 1 ? '' : 's'}`;
-    $('#period-label').innerHTML = ui.monthPick
-      ? `Mostrando <b>${MES_LONGO[+ui.monthPick.slice(5) - 1]} de ${ui.monthPick.slice(0, 4)}</b> · ${txs.length} lançamentos · <button class="link" id="clear-month">ver período todo</button>`
-      : esc(lbl);
-    $('#clear-month')?.addEventListener('click', () => { ui.monthPick = null; renderDashboard(); });
-
-    // patrimônio
+    // patrimônio dia a dia
     const initial = db.banks.filter(b => !ui.bank || b.id === ui.bank).reduce((s, b) => s + (+b.initial || 0), 0);
     const byDay = {};
-    // aplicação em investimento só troca o dinheiro de lugar: não altera o patrimônio
-    for (const t of all) if (t.cat !== 'invest') byDay[t.date] = (byDay[t.date] || 0) + t.amount;
-    const { min } = dataBounds(all);
-    let bal = initial;
+    for (const t of all) if (countsForWealth(t)) byDay[t.date] = (byDay[t.date] || 0) + t.amount;
+    let bal = initial, startBal = null;
     const series = [];
-    let startBal = null;
     for (let d = min; d <= r.to; d = addDays(d, 1)) {
-      if (d === r.from || (startBal === null && d > r.from)) startBal = bal;
+      if (startBal === null && d >= r.from) startBal = bal;
       bal += byDay[d] || 0;
       if (d >= r.from) series.push({ d, v: Math.round(bal * 100) / 100 });
     }
     if (startBal === null) startBal = bal;
-    const patrimonio = bal;
+    const wealth = bal, wDelta = wealth - startBal;
 
-    // KPIs
-    const delta = (cur, prev, upIsGood) => {
-      if (!P || !prev) return `<div class="delta">&nbsp;</div>`;
-      const ch = (cur - prev) / prev;
-      if (!isFinite(ch)) return `<div class="delta">&nbsp;</div>`;
-      const good = upIsGood ? ch >= 0 : ch <= 0;
-      return `<div class="delta ${Math.abs(ch) < 0.005 ? '' : good ? 'good' : 'bad'}">${ch >= 0 ? '▲' : '▼'} ${pct(Math.abs(ch))} vs. período anterior</div>`;
-    };
-    const savingRate = T.inc > 0 ? T.net / T.inc : null;
-    $('#kpis').innerHTML = `
-      <div class="kpi"><div class="label">Entradas</div><div class="value">${fmt(T.inc)}</div>${delta(T.inc, P?.inc, true)}</div>
-      <div class="kpi"><div class="label">Saídas</div><div class="value">${fmt(T.out)}</div>${delta(T.out, P?.out, false)}</div>
-      <div class="kpi"><div class="label">Sobrou no período</div><div class="value" style="color:${T.net >= 0 ? 'var(--pos)' : 'var(--neg)'}">${fmt(T.net)}</div>
-        <div class="delta">${savingRate !== null ? (savingRate >= 0 ? `Você guardou ${pct(savingRate)} do que entrou` : `Gastou ${pct(-savingRate)} a mais do que entrou`) : '&nbsp;'}</div></div>
-      <div class="kpi"><div class="label">Patrimônio</div><div class="value">${fmt(patrimonio)}</div>
-        <div class="delta ${patrimonio - startBal >= 0 ? 'good' : 'bad'}">${patrimonio - startBal >= 0 ? '▲' : '▼'} ${fmt(Math.abs(patrimonio - startBal))} no período</div></div>`;
-    $('#patrimonio-now').textContent = fmt(patrimonio);
+    // cartão principal
+    const [int, cents] = fmt(wealth).replace('R$', '').trim().split(',');
+    $('#hero-value').innerHTML = `<small>R$</small>${esc(int)}<span style="opacity:.6;font-size:24px">,${esc(cents || '00')}</span>`;
+    $('#hero-delta').textContent = `${wDelta >= 0 ? '▲' : '▼'} ${fmtShort(Math.abs(wDelta))} no período`;
+    $('#hero-in').textContent = fmtShort(T.inc);
+    $('#hero-out').textContent = fmtShort(T.out);
+    $('#hero-net').textContent = fmtShort(T.net);
+    setChart('spark', $('#chart-spark'), {
+      type: 'line',
+      data: { labels: series.map(p => p.d), datasets: [{ data: series.map(p => p.v), borderColor: 'rgba(255,255,255,0.95)', borderWidth: 2.2, pointRadius: 0, tension: 0.35, fill: true, backgroundColor: fillGrad('#ffffff', 0.28) }] },
+      options: { responsive: true, maintainAspectRatio: false, animation: { duration: 800 }, plugins: { legend: { display: false }, tooltip: { enabled: false } }, scales: { x: { display: false }, y: { display: false } }, events: [] },
+    });
 
-    // gasto por dia da semana
-    const wk = [0, 0, 0, 0, 0, 0, 0], wkN = [0, 0, 0, 0, 0, 0, 0];
-    const effFrom = (min > r.from) ? min : r.from;
-    for (let d = effFrom; d <= r.to; d = addDays(d, 1)) wkN[pd(d).getDay()]++;
-    for (const t of txs) if (t.amount < 0 && !isNeutral(t)) wk[pd(t.date).getDay()] -= t.amount;
+    renderAccounts();
+    renderStories({ r, txs, T, P, all });
 
-    const th = chartTheme();
-    if (typeof Chart !== 'undefined') {
-      // linha do patrimônio
-      const ctx = $('#chart-patrimonio').getContext('2d');
-      const grad = ctx.createLinearGradient(0, 0, 0, 260);
-      grad.addColorStop(0, th.s1soft); grad.addColorStop(1, 'rgba(0,0,0,0)');
-      const o = baseOpts(th);
-      o.interaction = { mode: 'index', intersect: false };
-      o.plugins.tooltip.callbacks.title = items => dayLabel(series[items[0].dataIndex].d);
-      o.plugins.tooltip.callbacks.label = c => ` Patrimônio: ${fmt(c.parsed.y)}`;
-      o.plugins.tooltip.displayColors = false;
-      o.scales.x.ticks.maxTicksLimit = 6;
-      setChart('pat', ctx, {
-        type: 'line',
-        data: {
-          labels: series.map(p => { const d = pd(p.d); return `${d.getDate()} ${MES[d.getMonth()]}`; }),
-          datasets: [{ label: 'Patrimônio', data: series.map(p => p.v), borderColor: th.s1, backgroundColor: grad, fill: true, borderWidth: 2, pointRadius: 0, pointHoverRadius: 5, pointHoverBackgroundColor: th.s1, pointHoverBorderColor: th.surface, pointHoverBorderWidth: 2, tension: 0.25 }],
-        },
-        options: o, plugins: [crosshair],
-      });
-
-      // entradas x saídas por mês
-      const months = r.months === 1 && !r.picked ? monthsIn({ from: r.prev ? r.prev.from : r.from, to: r.to }) : monthsIn(r);
-      const mInc = {}, mOut = {};
-      for (const t of all) {
-        if (isNeutral(t)) continue;
-        const k = t.date.slice(0, 7);
-        if (t.amount > 0) mInc[k] = (mInc[k] || 0) + t.amount; else mOut[k] = (mOut[k] || 0) - t.amount;
-      }
-      const mo = baseOpts(th);
-      mo.interaction = { mode: 'index', intersect: false };
-      mo.plugins.tooltip.callbacks.title = items => { const k = months[items[0].dataIndex]; return `${MES_LONGO[+k.slice(5) - 1]} de ${k.slice(0, 4)}`; };
-      mo.plugins.tooltip.callbacks.footer = items => { const k = months[items[0].dataIndex]; const n = (mInc[k] || 0) - (mOut[k] || 0); return `Saldo do mês: ${fmt(n)}`; };
-      mo.onClick = (e, els, chart) => {
-        const pts = chart.getElementsAtEventForMode(e, 'index', { intersect: false }, false);
-        if (!pts.length) return;
-        const k = months[pts[0].index];
-        ui.monthPick = ui.monthPick === k ? null : k;
-        renderDashboard();
-        $('#dashboard').scrollIntoView({ behavior: 'smooth' });
-      };
-      mo.onHover = (e, els) => { e.native.target.style.cursor = els.length ? 'pointer' : 'default'; };
-      const dim = (c, k) => (!ui.monthPick || ui.monthPick === k) ? c : c + '55';
-      setChart('meses', $('#chart-meses'), {
-        type: 'bar',
-        data: {
-          labels: months.map(monthLabel),
-          datasets: [
-            { label: 'Entradas', data: months.map(k => mInc[k] || 0), backgroundColor: months.map(k => dim(th.s1, k)), borderRadius: 4, borderSkipped: 'start', maxBarThickness: 22, categoryPercentage: 0.7, barPercentage: 0.9 },
-            { label: 'Saídas', data: months.map(k => mOut[k] || 0), backgroundColor: months.map(k => dim(th.s2, k)), borderRadius: 4, borderSkipped: 'start', maxBarThickness: 22, categoryPercentage: 0.7, barPercentage: 0.9 },
-          ],
-        },
-        options: mo,
-      });
-
-      const order = [1, 2, 3, 4, 5, 6, 0];
-      const wo = baseOpts(th);
-      wo.plugins.tooltip.displayColors = false;
-      wo.plugins.tooltip.callbacks.title = items => SEMANA_LONGO[order[items[0].dataIndex]];
-      wo.plugins.tooltip.callbacks.label = c => ` Média: ${fmt(c.parsed.y)} por dia`;
-      setChart('semana', $('#chart-semana'), {
-        type: 'bar',
-        data: { labels: order.map(i => SEMANA[i]), datasets: [{ data: order.map(i => wkN[i] ? wk[i] / wkN[i] : 0), backgroundColor: th.s2, borderRadius: 4, borderSkipped: 'start', maxBarThickness: 28 }] },
-        options: wo,
-      });
-    }
-
-    // categorias
+    // categorias (rosca)
     const catTot = {};
-    for (const t of txs) if (t.amount < 0 && !isNeutral(t)) catTot[t.cat] = (catTot[t.cat] || 0) - t.amount;
-    const cats = Object.entries(catTot).sort((a, b) => b[1] - a[1]);
-    const maxCat = cats[0]?.[1] || 1;
-    $('#cat-bars').innerHTML = cats.length ? cats.map(([id, v]) => `
-      <button class="hbar" data-cat="${id}">
-        <span class="ic">${CAT[id]?.ic || '•'}</span>
-        <span class="name">${esc(CAT[id]?.name || id)}</span>
-        <span class="val">${fmt(v)}<span class="pct">${pct(v / T.out)}</span></span>
-        <span class="track"><span class="fill" style="width:${Math.max(2, v / maxCat * 100)}%"></span></span>
-      </button>`).join('') : `<p class="empty-note">Nenhum gasto neste período.</p>`;
-    $$('#cat-bars .hbar').forEach(b => b.addEventListener('click', () => openDrill(b.dataset.cat)));
+    for (const t of txs) if (isSpend(t)) catTot[t.cat] = (catTot[t.cat] || 0) - t.amount;
+    const sorted = Object.entries(catTot).sort((a, b) => b[1] - a[1]);
+    const top = sorted.slice(0, 6).map(([id, v]) => ({ id, name: CAT[id].name, value: v, color: CAT[id].color }));
+    const rest = sorted.slice(6).reduce((s, [, v]) => s + v, 0);
+    if (rest > 0) top.push({ id: null, name: 'Outras', value: rest, color: '#3a3f4d' });
+    $('#cats-total').textContent = fmtShort(T.out);
+    const pickCat = it => { if (it.id) openDrill({ cat: it.id }); else { ui.list = { ...ui.list, type: 'out', cat: '', merchant: null, q: '' }; go('lancamentos'); } };
+    donut('cats', $('#chart-cats'), top.length ? top : [{ name: 'Sem gastos', value: 1, color: '#232733' }], { onPick: top.length ? pickCat : null });
+    legendList($('#cats-legend'), top, T.out, pickCat);
 
-    // estabelecimentos
-    const mer = {};
-    for (const t of txs) {
-      if (t.amount >= 0 || isNeutral(t)) continue;
-      const k = merchant(t.desc);
-      (mer[k] ||= { v: 0, n: 0, cat: t.cat }).v -= t.amount; mer[k].n++;
+    // por conta (rosca)
+    const accTot = {};
+    for (const t of txs) if (isSpend(t)) accTot[t.bank] = (accTot[t.bank] || 0) - t.amount;
+    const accItems = Object.entries(accTot).sort((a, b) => b[1] - a[1]).map(([id, v]) => { const b = bankById(id); return { id, name: acctLabel(b) || 'Sem conta', value: v, color: acctColor(b) }; });
+    $('#card-accts').classList.toggle('hidden', accItems.length < 2);
+    if (accItems.length >= 2) {
+      $('#accts-count').textContent = accItems.length;
+      const pickAcc = it => openDrill({ bank: it.id });
+      donut('accts', $('#chart-accts'), accItems, { onPick: pickAcc, cutout: '64%' });
+      legendList($('#accts-legend'), accItems, T.out, pickAcc);
     }
-    const topM = Object.entries(mer).sort((a, b) => b[1].v - a[1].v).slice(0, 8);
-    $('#top-merchants').innerHTML = topM.length ? topM.map(([k, m]) => `
-      <li data-merchant="${esc(k)}"><div class="grow"><div>${esc(k)}</div><div class="meta">${CAT[m.cat]?.ic || ''} ${m.n} compra${m.n > 1 ? 's' : ''} · média ${fmt(m.v / m.n)}</div></div><span class="v">${fmt(m.v)}</span></li>`).join('')
-      : `<p class="empty-note">Nada por aqui ainda.</p>`;
-    $$('#top-merchants li').forEach(li => li.addEventListener('click', () => {
-      ui.list = { ...ui.list, merchant: li.dataset.merchant, q: '', cat: '', type: '', month: null, limit: 120 };
-      go('lancamentos');
+
+    // fixos x variáveis (pizza)
+    const rec = findRecurring(all);
+    const recSet = new Set(rec.map(x => x.name));
+    let fixed = 0, variable = 0;
+    for (const t of txs) if (isSpend(t)) { if (recSet.has(merchant(t.desc))) fixed -= t.amount; else variable -= t.amount; }
+    const fv = [{ name: 'Fixos', value: fixed, color: '#9db8ff' }, { name: 'Variáveis', value: variable, color: '#ff9a6b' }];
+    donut('fixed', $('#chart-fixed'), fixed + variable ? fv : [{ name: '-', value: 1, color: '#232733' }], { type: 'pie' });
+    $('#fixed-legend').innerHTML = fv.map(i => `<li><i style="background:${i.color}"></i>${i.name}<b>${pct((fixed + variable) ? i.value / (fixed + variable) : 0)}</b></li>`).join('');
+
+    // quanto guardou (medidor)
+    const rate = T.inc > 0 ? T.net / T.inc : 0;
+    const shown = Math.max(0, Math.min(1, rate));
+    const gaugeFill = c => { const { ctx, chartArea } = c.chart; if (!chartArea) return '#5ee49a'; const g = ctx.createLinearGradient(chartArea.left, 0, chartArea.right, 0); g.addColorStop(0, '#5ee49a'); g.addColorStop(1, '#d4fc79'); return g; };
+    setChart('gauge', $('#chart-gauge'), {
+      type: 'doughnut',
+      data: { datasets: [{ data: [shown, 1 - shown], backgroundColor: c => c.dataIndex === 0 ? gaugeFill(c) : '#232733', borderWidth: 0, borderRadius: 10 }] },
+      options: { responsive: true, maintainAspectRatio: false, rotation: -90, circumference: 180, cutout: '78%', plugins: { legend: { display: false }, tooltip: { enabled: false } }, events: [] },
+    });
+    $('#gauge-value').textContent = T.inc > 0 ? pct(rate) : '—';
+    $('#gauge-value').style.color = rate < 0 ? 'var(--out)' : '';
+    $('#gauge-note').textContent = T.inc > 0 ? (T.net >= 0 ? `${fmtShort(T.net)} sobraram` : `${fmtShort(-T.net)} além do que entrou`) : 'Sem entradas no período';
+
+    // de onde vem (pizza)
+    const src = {};
+    for (const t of txs) if (t.amount > 0 && !isNeutral(t)) { const k = merchant(t.desc); src[k] = (src[k] || 0) + t.amount; }
+    const srcSorted = Object.entries(src).sort((a, b) => b[1] - a[1]);
+    const SRC_COLORS = ['#d4fc79', '#5ee49a', '#38d9a9', '#9db8ff', '#c4a8ff'];
+    const srcItems = srcSorted.slice(0, 4).map(([k, v], i) => ({ name: k, value: v, color: SRC_COLORS[i] }));
+    const srcRest = srcSorted.slice(4).reduce((s, [, v]) => s + v, 0);
+    if (srcRest > 0) srcItems.push({ name: 'Outras', value: srcRest, color: '#3a3f4d' });
+    $('#card-sources').classList.toggle('hidden', !srcItems.length);
+    if (srcItems.length) {
+      const pickSrc = it => { if (it.name !== 'Outras') { ui.list = { ...ui.list, merchant: it.name, type: 'in', cat: '', q: '' }; go('lancamentos'); } };
+      donut('sources', $('#chart-sources'), srcItems, { type: 'pie', onPick: pickSrc });
+      legendList($('#sources-legend'), srcItems, T.inc, pickSrc);
+    }
+
+    // entradas e saídas por mês
+    const months = r.months === 1 && !r.picked && r.prev ? monthsIn({ from: r.prev.from, to: r.to }) : monthsIn(r);
+    const mInc = {}, mOut = {};
+    for (const t of all) {
+      if (isNeutral(t)) continue;
+      const k = t.date.slice(0, 7);
+      if (t.amount > 0) mInc[k] = (mInc[k] || 0) + t.amount; else mOut[k] = (mOut[k] || 0) - t.amount;
+    }
+    const lit = k => !ui.monthPick || ui.monthPick === k;
+    setChart('months', $('#chart-months'), {
+      type: 'bar',
+      data: {
+        labels: months.map(monthLabel),
+        datasets: [
+          { label: 'Entradas', data: months.map(k => mInc[k] || 0), backgroundColor: c => lit(months[c.dataIndex]) ? vGrad('#5ee49a')(c) : 'rgba(94,228,154,0.18)', borderRadius: 8, borderSkipped: false, maxBarThickness: 16, categoryPercentage: 0.62, barPercentage: 0.9 },
+          { label: 'Saídas', data: months.map(k => mOut[k] || 0), backgroundColor: c => lit(months[c.dataIndex]) ? vGrad('#ff7a6b')(c) : 'rgba(255,122,107,0.18)', borderRadius: 8, borderSkipped: false, maxBarThickness: 16, categoryPercentage: 0.62, barPercentage: 0.9 },
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { display: false }, tooltip: { ...tooltip, callbacks: {
+          title: it => { const k = months[it[0].dataIndex]; return `${MES_LONGO[+k.slice(5) - 1]} de ${k.slice(0, 4)}`; },
+          label: c => `${c.dataset.label}: ${fmt(c.parsed.y)}`,
+          footer: it => { const k = months[it[0].dataIndex]; return `Saldo: ${fmt((mInc[k] || 0) - (mOut[k] || 0))}`; } } } },
+        scales: axes(),
+        onClick: (e, els, chart) => {
+          const pts = chart.getElementsAtEventForMode(e, 'index', { intersect: false }, false);
+          if (!pts.length) return;
+          const k = months[pts[0].index];
+          ui.monthPick = ui.monthPick === k ? null : k;
+          renderDashboard(); window.scrollTo({ top: 0, behavior: 'smooth' });
+        },
+      },
+    });
+
+    // patrimônio (linha)
+    setChart('wealth', $('#chart-wealth'), {
+      type: 'line',
+      data: { labels: series.map(p => { const d = pd(p.d); return `${d.getDate()} ${MES[d.getMonth()]}`; }), datasets: [{ data: series.map(p => p.v), borderColor: '#d4fc79', borderWidth: 2.4, pointRadius: 0, pointHoverRadius: 6, pointHoverBackgroundColor: '#d4fc79', pointHoverBorderColor: '#12141b', pointHoverBorderWidth: 3, tension: 0.3, fill: true, backgroundColor: fillGrad('#5ee49a', 0.3) }] },
+      options: {
+        responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { display: false }, tooltip: { ...tooltip, callbacks: { title: it => dayLabel(series[it[0].dataIndex].d), label: c => fmt(c.parsed.y) } } },
+        scales: { ...axes(), x: { ...axes().x, ticks: { maxTicksLimit: 5, maxRotation: 0 } } },
+      },
+      plugins: [crosshair],
+    });
+
+    // categorias mês a mês (barras empilhadas)
+    const stackCats = sorted.slice(0, 5).map(([id]) => id);
+    const per = {};
+    for (const t of all) if (isSpend(t)) { const k = t.date.slice(0, 7); const c = stackCats.includes(t.cat) ? t.cat : '_o'; per[k] ||= {}; per[k][c] = (per[k][c] || 0) - t.amount; }
+    const stackSets = [...stackCats, '_o'].map(c => ({
+      label: c === '_o' ? 'Outras' : CAT[c].name,
+      data: months.map(k => per[k]?.[c] || 0),
+      backgroundColor: c === '_o' ? '#3a3f4d' : CAT[c].color,
+      borderColor: '#12141b', borderWidth: { top: 2 }, borderSkipped: false, borderRadius: 4, maxBarThickness: 26,
     }));
+    $('#stack-legend').innerHTML = stackSets.map(s => `<span><i style="background:${s.backgroundColor}"></i>${esc(s.label)}</span>`).join('');
+    setChart('stack', $('#chart-stack'), {
+      type: 'bar', data: { labels: months.map(monthLabel), datasets: stackSets },
+      options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { display: false }, tooltip: { ...tooltip, displayColors: true, boxPadding: 4, usePointStyle: true, callbacks: { label: c => ` ${c.dataset.label}: ${fmt(c.parsed.y)}` }, filter: i => i.parsed.y > 0 } },
+        scales: { x: { ...axes().x, stacked: true }, y: { ...axes().y, stacked: true } } },
+    });
+
+    // dia da semana
+    const wk = [0, 0, 0, 0, 0, 0, 0], wkN = [0, 0, 0, 0, 0, 0, 0];
+    for (let d = min > r.from ? min : r.from; d <= r.to; d = addDays(d, 1)) wkN[pd(d).getDay()]++;
+    for (const t of txs) if (isSpend(t)) wk[pd(t.date).getDay()] -= t.amount;
+    const order = [1, 2, 3, 4, 5, 6, 0];
+    const avg = order.map(i => wkN[i] ? wk[i] / wkN[i] : 0);
+    const maxAvg = Math.max(...avg);
+    setChart('week', $('#chart-week'), {
+      type: 'bar',
+      data: { labels: order.map(i => SEMANA[i]), datasets: [{ data: avg, backgroundColor: c => avg[c.dataIndex] === maxAvg ? vGrad('#ff7a6b', 0.3)(c) : vGrad('#5a6075', 0.3)(c), borderRadius: 10, borderSkipped: false, maxBarThickness: 24 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { ...tooltip, callbacks: { title: it => SEMANA_LONGO[order[it[0].dataIndex]], label: c => `Média: ${fmt(c.parsed.y)} por dia` } } }, scales: axes() },
+    });
+
+    // onde mais gasta
+    const mer = {};
+    for (const t of txs) { if (!isSpend(t)) continue; const k = merchant(t.desc); (mer[k] ||= { v: 0, n: 0, cat: t.cat }).v -= t.amount; mer[k].n++; }
+    const topM = Object.entries(mer).sort((a, b) => b[1].v - a[1].v).slice(0, 7);
+    const maxM = topM[0]?.[1].v || 1;
+    $('#top-merchants').innerHTML = topM.length ? topM.map(([k, m]) => `
+      <li data-merchant="${esc(k)}">${tile(m.cat)}<div class="t"><div>${esc(k)}</div><small>${m.n} ${m.n > 1 ? 'vezes' : 'vez'} · média ${fmt(m.v / m.n)}</small><div class="bar"><i style="width:${m.v / maxM * 100}%"></i></div></div><span class="v">${fmt(m.v)}</span></li>`).join('')
+      : `<p class="empty-note">Nada por aqui ainda.</p>`;
 
     // recorrentes
-    const rec = findRecurring(all);
     const recTotal = rec.reduce((s, x) => s + x.avg, 0);
     $('#recurring').innerHTML = rec.length ? rec.slice(0, 8).map(x => `
-      <li data-merchant="${esc(x.name)}"><span class="ic">${CAT[x.cat]?.ic || '🔁'}</span><div class="grow"><div>${esc(x.name)}</div><div class="meta">${x.months} meses seguidos · todo dia ~${x.day}</div></div><span class="v">${fmt(x.avg)}/mês</span></li>`).join('')
-      + (rec.length ? `<li class="meta" style="cursor:default">Total estimado: <b>&nbsp;${fmt(recTotal)}/mês</b>&nbsp;(${fmt(recTotal * 12)} por ano)</li>` : '')
-      : `<p class="empty-note">Com pelo menos 2 meses de dados eu encontro cobranças que se repetem.</p>`;
-    $$('#recurring li[data-merchant]').forEach(li => li.addEventListener('click', () => {
-      ui.list = { ...ui.list, merchant: li.dataset.merchant, q: '', cat: '', type: '', month: null, limit: 120 };
+      <li data-merchant="${esc(x.name)}">${tile(x.cat)}<div class="t"><div>${esc(x.name)}</div><small>todo dia ~${x.day} · há ${x.months} meses</small></div><span class="v">${fmt(x.avg)}</span></li>`).join('')
+      + `<li class="total"><span>Total por mês</span><b>${fmt(recTotal)} <span style="color:var(--muted);font-weight:600">· ${fmtShort(recTotal * 12)}/ano</span></b></li>`
+      : `<p class="empty-note">Com 2 meses de dados eu encontro as cobranças que se repetem.</p>`;
+    $$('#top-merchants li[data-merchant], #recurring li[data-merchant]').forEach(li => li.addEventListener('click', () => {
+      ui.list = { ...ui.list, merchant: li.dataset.merchant, q: '', cat: '', type: '', limit: 120 };
       go('lancamentos');
     }));
+  }
 
-    // por conta
-    const banks = db.banks.filter(b => !ui.bank || b.id === ui.bank);
-    $('#by-bank').innerHTML = banks.map(b => {
-      const bt = db.txs.filter(t => t.bank === b.id);
-      const now = (+b.initial || 0) + bt.reduce((s, t) => s + t.amount, 0);
-      const tt = totals(bt.filter(t => inRange(t, r)));
-      return `<div class="bank-row"><span class="dot" style="background:${bankColor(b.id)}"></span><b>${esc(b.name)}</b><span class="num">${fmt(now)}</span>
-        <span class="flow">entrou ${fmt(tt.inc)} · saiu ${fmt(tt.out)} no período</span></div>`;
-    }).join('') || `<p class="empty-note">Nenhuma conta.</p>`;
-
-    // insights
-    renderInsights({ r, txs, T, P, cats, rec, recTotal, wk });
+  function renderAccounts() {
+    const strip = $('#acct-strip');
+    const cards = db.banks.map(b => {
+      const now = (+b.initial || 0) + db.txs.filter(t => t.bank === b.id).reduce((s, t) => s + t.amount, 0);
+      const isCard = b.type === 'credito';
+      const c = acctColor(b);
+      return `<button class="acct ${ui.bank && ui.bank !== b.id ? 'dim' : ''} ${ui.bank === b.id ? 'sel' : ''}" data-bank="${b.id}" style="background:linear-gradient(140deg, ${c}, ${shade(c, .55)})">
+        <div class="a-top">${mono(b)}<div style="min-width:0"><div class="a-name">${esc(b.name)}</div><div class="a-type">${TYPES[b.type]?.name || ''}</div></div></div>
+        <div><div class="a-type">${isCard ? 'Fatura em aberto' : 'Saldo'}</div><div class="a-val">${fmt(isCard ? Math.max(0, -now) : now)}</div></div></button>`;
+    }).join('');
+    strip.innerHTML = `<button class="acct all ${ui.bank ? 'dim' : 'sel'}" data-bank="">
+      <div class="a-top"><span class="mono" style="background:var(--bg-4)">${svg('dots')}</span><div class="a-name">Todas</div></div>
+      <div><div class="a-type">${db.banks.length} conta${db.banks.length === 1 ? '' : 's'}</div><div class="a-val">Visão geral</div></div></button>` + cards;
+    strip.querySelectorAll('.acct').forEach(el => el.addEventListener('click', () => {
+      ui.bank = ui.bank === el.dataset.bank ? '' : el.dataset.bank;
+      renderDashboard();
+    }));
+    $('#acct-note').textContent = ui.bank ? 'Toque de novo para ver todas' : 'Toque para filtrar';
   }
 
   function findRecurring(all) {
     const g = {};
-    for (const t of all) {
-      if (t.amount >= 0 || isNeutral(t)) continue;
-      const k = merchant(t.desc);
-      (g[k] ||= []).push(t);
-    }
+    for (const t of all) { if (!isSpend(t)) continue; (g[merchant(t.desc)] ||= []).push(t); }
     const out = [];
     for (const [name, list] of Object.entries(g)) {
       const byMonth = {};
-      list.forEach(t => { const m = t.date.slice(0, 7); (byMonth[m] ||= []).push(t); });
+      list.forEach(t => { (byMonth[t.date.slice(0, 7)] ||= []).push(t); });
       const ms = Object.keys(byMonth).sort();
-      if (ms.length < 2) continue;
-      if (list.length > ms.length * 1.5) continue; // compra frequente, não cobrança fixa
+      if (ms.length < 2 || list.length > ms.length * 1.5) continue;
       const vals = ms.map(m => -byMonth[m].reduce((s, t) => s + t.amount, 0));
-      const mn = Math.min(...vals), mx = Math.max(...vals);
-      if (mx / mn > 1.3) continue;
-      // meses consecutivos até o último
+      if (Math.max(...vals) / Math.min(...vals) > 1.3) continue;
       let streak = 1;
       for (let i = ms.length - 1; i > 0; i--) {
         const [y1, m1] = ms[i - 1].split('-').map(Number), [y2, m2] = ms[i].split('-').map(Number);
@@ -465,218 +597,245 @@
     return out.sort((a, b) => b.avg - a.avg);
   }
 
-  function renderInsights({ r, txs, T, P, cats, rec, recTotal, wk }) {
-    const items = [];
-    if (cats.length) {
-      const [id, v] = cats[0];
-      items.push(['🎯', `Sua maior categoria de gasto é <b>${CAT[id].name}</b>: ${fmt(v)}, ou <b>${pct(v / T.out)}</b> de tudo que saiu.`]);
-    }
-    if (P && P.out > 0 && T.out > 0 && !(r.months == null)) {
-      const ch = (T.out - P.out) / P.out;
-      if (Math.abs(ch) >= 0.03) items.push([ch > 0 ? '📈' : '📉', `Você gastou <b>${pct(Math.abs(ch))} ${ch > 0 ? 'a mais' : 'a menos'}</b> que no período anterior (${fmt(P.out)} → ${fmt(T.out)}).`]);
-    }
+  function renderStories({ r, txs, T, P, all }) {
+    const s = [];
+    const catTot = {};
+    for (const t of txs) if (isSpend(t)) catTot[t.cat] = (catTot[t.cat] || 0) - t.amount;
+    const topCat = Object.entries(catTot).sort((a, b) => b[1] - a[1])[0];
+    if (topCat) s.push(['g1', 'Maior categoria', CAT[topCat[0]].name, `${fmt(topCat[1])} · ${pct(topCat[1] / T.out)} de tudo que saiu`]);
     if (T.out > 0) {
-      const { min } = dataBounds(scoped());
-      const from = min > r.from ? min : r.from;
-      const days = Math.max(1, daysBetween(from, r.to));
-      items.push(['📅', `Em média você gasta <b>${fmt(T.out / days)} por dia</b>, cerca de ${fmt(T.out / days * 30)} por mês.`]);
+      const { min } = dataBounds(all);
+      const days = Math.max(1, daysBetween(min > r.from ? min : r.from, r.to));
+      s.push(['g2', 'Gasto médio', `${fmt(T.out / days)}/dia`, `Cerca de ${fmtShort(T.out / days * 30)} por mês`]);
     }
-    const biggest = txs.filter(t => t.amount < 0 && !isNeutral(t)).sort((a, b) => a.amount - b.amount)[0];
-    if (biggest) items.push(['💸', `Maior gasto único: <b>${fmt(-biggest.amount)}</b> em ${esc(merchant(biggest.desc))} (${shortDate(biggest.date)}).`]);
-    if (rec.length) items.push(['🔁', `Encontrei <b>${rec.length} cobrança${rec.length > 1 ? 's' : ''} fixa${rec.length > 1 ? 's' : ''}</b> somando ${fmt(recTotal)} por mês — ${fmt(recTotal * 12)} por ano.`]);
-    const wkMax = wk.indexOf(Math.max(...wk));
-    if (T.out > 0 && wk[wkMax] > 0) items.push(['🗓️', `<b>${SEMANA_LONGO[wkMax][0].toUpperCase() + SEMANA_LONGO[wkMax].slice(1)}</b> é o dia em que mais sai dinheiro (${pct(wk[wkMax] / T.out)} dos gastos).`]);
-    const fees = txs.filter(t => t.cat === 'taxas').reduce((s, t) => s - t.amount, 0);
-    if (fees > 0) items.push(['🏦', `Você pagou <b>${fmt(fees)}</b> em tarifas, juros e IOF neste período.`]);
-    const food = txs.filter(t => t.cat === 'alimentacao' && t.amount < 0);
-    const delivery = food.filter(t => /ifood|rappi|delivery|ze /i.test(norm(t.desc)));
-    if (delivery.length >= 3) items.push(['🛵', `Foram <b>${delivery.length} pedidos de delivery</b>, total de ${fmt(-delivery.reduce((s, t) => s + t.amount, 0))}.`]);
-    if (T.inc > 0 && T.net < 0) items.push(['⚠️', `Saiu <b>${fmt(-T.net)}</b> a mais do que entrou neste período.`]);
-    else if (T.inc > 0 && T.net / T.inc >= 0.2) items.push(['✅', `Ótimo: você guardou <b>${pct(T.net / T.inc)}</b> do que entrou.`]);
-    $('#insights').innerHTML = items.slice(0, 8).map(([ic, h]) => `<li><span class="ic">${ic}</span><span>${h}</span></li>`).join('') || `<li>Registre alguns gastos para ver os destaques.</li>`;
+    if (P && P.out > 0 && T.out > 0) {
+      const ch = (T.out - P.out) / P.out;
+      if (Math.abs(ch) >= 0.03) s.push([ch > 0 ? 'g5' : 'g6', 'Comparado ao período anterior', `${ch > 0 ? '+' : '−'}${pct(Math.abs(ch))}`, `Você gastou ${ch > 0 ? 'mais' : 'menos'}: ${fmtShort(P.out)} → ${fmtShort(T.out)}`]);
+    }
+    const big = txs.filter(isSpend).sort((a, b) => a.amount - b.amount)[0];
+    if (big) s.push(['g3', 'Maior gasto', fmt(-big.amount), `${merchant(big.desc)} · ${shortDate(big.date)}`]);
+    const vrAcc = db.banks.filter(b => b.type === 'vr' || b.type === 'va').map(b => b.id);
+    const vr = txs.filter(t => vrAcc.includes(t.bank) && isSpend(t));
+    if (vr.length) s.push(['g6', 'Vale-refeição e alimentação', fmt(-vr.reduce((a, t) => a + t.amount, 0)), `gastos em ${vr.length} compras com o benefício`]);
+    const delivery = txs.filter(t => isSpend(t) && /ifood|rappi|delivery|ze delivery/.test(norm(t.desc)));
+    if (delivery.length >= 3) s.push(['g5', 'Delivery', `${delivery.length} pedidos`, `${fmt(-delivery.reduce((a, t) => a + t.amount, 0))} no período`]);
+    const fees = txs.filter(t => t.cat === 'taxas').reduce((a, t) => a - t.amount, 0);
+    if (fees > 0) s.push(['g4', 'Tarifas e juros', fmt(fees), 'pagos ao banco neste período']);
+    $('#stories').innerHTML = s.map(([g, k, b, p]) => `<div class="story ${g}"><span class="kick">${esc(k)}</span><div><div class="big">${esc(b)}</div><p>${esc(p)}</p></div></div>`).join('')
+      || `<div class="story g2"><span class="kick">Dica</span><div><div class="big">Comece</div><p>Registre gastos ou importe um extrato.</p></div></div>`;
   }
 
-  // filtros do painel
-  $('#period-chips').addEventListener('click', e => {
-    const b = e.target.closest('button[data-period]'); if (!b) return;
+  /* =================== período (sheet) =================== */
+  function openPeriod() {
+    $$('#period-list button').forEach(b => b.classList.toggle('on', !ui.monthPick && b.dataset.period === ui.period));
+    $('#period-sheet').classList.remove('hidden'); $('#period-backdrop').classList.remove('hidden');
+  }
+  const closePeriod = () => { $('#period-sheet').classList.add('hidden'); $('#period-backdrop').classList.add('hidden'); };
+  $('#period-btn').addEventListener('click', openPeriod);
+  $('#period-backdrop').addEventListener('click', closePeriod);
+  $('#period-list').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
     ui.period = b.dataset.period; ui.monthPick = null;
     try { localStorage.setItem(STORE_KEY + ':period', ui.period); } catch (err) { /* */ }
-    renderDashboard();
+    closePeriod(); renderDashboard();
   });
-  $('#bank-filter').addEventListener('change', e => { ui.bank = e.target.value; renderDashboard(); });
-  $('#load-demo').addEventListener('click', () => { loadDemo(); toast('Dados de exemplo carregados. Apague em Ajustes quando quiser.'); renderDashboard(); });
 
-  /* ============ detalhe de categoria ============ */
-  function openDrill(catId) {
+  /* =================== detalhe =================== */
+  function openDrill({ cat, bank }) {
     const r = getRange();
-    const all = scoped().filter(t => t.cat === catId && !isNeutral(t) && t.amount < 0);
-    const list = all.filter(t => inRange(t, r)).sort((a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || '')));
+    const base = (bank ? db.txs.filter(t => t.bank === bank) : scoped()).filter(t => isSpend(t) && (!cat || t.cat === cat));
+    const list = base.filter(t => inRange(t, r)).sort((a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || '')));
     const total = -list.reduce((s, t) => s + t.amount, 0);
     const T = totals(scoped().filter(t => inRange(t, r)));
-    $('#drill-title').textContent = `${CAT[catId].ic} ${CAT[catId].name}`;
-    $('#drill-sub').textContent = `${fmt(total)} · ${pct(T.out ? total / T.out : 0)} dos gastos · ${list.length} lançamento${list.length === 1 ? '' : 's'}`;
+    const b = bankById(bank);
+    const color = cat ? CAT[cat].color : acctColor(b);
+    $('#drill-icon').outerHTML = cat ? tile(cat, 'big', 'drill-icon') : mono(b, 'tile big', 'drill-icon');
+    $('#drill-title').textContent = cat ? CAT[cat].name : acctLabel(b);
+    $('#drill-sub').textContent = `${fmt(total)} · ${pct(T.out ? total / T.out : 0)} dos gastos · ${list.length} ${list.length === 1 ? 'lançamento' : 'lançamentos'}`;
     const months = monthsIn(r.months === 1 && !r.picked && r.prev ? { from: r.prev.from, to: r.to } : r);
-    const per = {}; all.forEach(t => { const k = t.date.slice(0, 7); per[k] = (per[k] || 0) - t.amount; });
+    const per = {}; base.forEach(t => { const k = t.date.slice(0, 7); per[k] = (per[k] || 0) - t.amount; });
     $('#drill-sheet').classList.remove('hidden'); $('#drill-backdrop').classList.remove('hidden');
-    if (typeof Chart !== 'undefined') {
-      const th = chartTheme(); const o = baseOpts(th);
-      o.plugins.tooltip.displayColors = false;
-      o.plugins.tooltip.callbacks.title = items => { const k = months[items[0].dataIndex]; return `${MES_LONGO[+k.slice(5) - 1]} de ${k.slice(0, 4)}`; };
-      setChart('drill', $('#chart-drill'), { type: 'bar', data: { labels: months.map(monthLabel), datasets: [{ label: CAT[catId].name, data: months.map(k => per[k] || 0), backgroundColor: th.s2, borderRadius: 4, borderSkipped: 'start', maxBarThickness: 26 }] }, options: o });
-    }
-    $('#drill-list').innerHTML = txRows(list.slice(0, 60));
+    setChart('drill', $('#chart-drill'), {
+      type: 'bar', data: { labels: months.map(monthLabel), datasets: [{ data: months.map(k => per[k] || 0), backgroundColor: vGrad(color, 0.25), borderRadius: 10, borderSkipped: false, maxBarThickness: 26 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { ...tooltip, callbacks: { label: c => fmt(c.parsed.y) } } }, scales: axes() },
+    });
+    $('#drill-list').innerHTML = txRows(list.slice(0, 80));
     bindTxRows($('#drill-list'));
   }
   const closeDrill = () => { $('#drill-sheet').classList.add('hidden'); $('#drill-backdrop').classList.add('hidden'); };
   $('#drill-close').addEventListener('click', closeDrill);
   $('#drill-backdrop').addEventListener('click', closeDrill);
 
-  /* ============ lista de lançamentos ============ */
+  /* =================== extrato =================== */
   function txRows(list, grouped) {
-    let html = '', lastDay = null;
+    let html = '', last = null;
     const dayTot = {};
     if (grouped) list.forEach(t => { dayTot[t.date] = (dayTot[t.date] || 0) + (isNeutral(t) ? 0 : t.amount); });
     for (const t of list) {
-      if (grouped && t.date !== lastDay) {
-        lastDay = t.date;
-        html += `<div class="day-head"><span>${dayLabel(t.date)}</span><span class="num">${fmt(dayTot[t.date])}</span></div>`;
-      }
+      if (grouped && t.date !== last) { last = t.date; html += `<div class="day-head"><span>${dayLabel(t.date)}</span><span>${fmt(dayTot[t.date])}</span></div>`; }
       const c = CAT[t.cat] || CAT.outros; const b = bankById(t.bank);
-      html += `<div class="tx" data-id="${t.id}" tabindex="0" role="button">
-        <span class="ic">${c.ic}</span>
-        <div style="min-width:0"><div class="d">${esc(t.desc)}</div>
-        <div class="m">${grouped ? '' : shortDate(t.date) + ' · '}${t.time ? t.time + ' · ' : ''}${esc(c.name)}${b ? ' · ' + esc(b.name) : ''}${t.source === 'manual' ? ' · manual' : ''}</div></div>
-        <span class="a ${t.amount > 0 ? 'in' : ''}">${t.amount > 0 ? '+' : ''}${fmt(t.amount)}</span></div>`;
+      html += `<div class="tx" data-id="${t.id}" role="button" tabindex="0">${tile(t.cat)}
+        <div class="t"><div class="d">${esc(t.desc)}</div><div class="m">${grouped ? '' : shortDate(t.date) + ' · '}${t.time ? t.time + ' · ' : ''}${esc(c.name)}${b ? ' · ' + esc(acctLabel(b)) : ''}</div></div>
+        <span class="a ${t.amount > 0 ? 'in' : ''}">${t.amount > 0 ? '+' : '−'} ${fmt(Math.abs(t.amount))}</span></div>`;
     }
-    return html || `<p class="empty-note" style="padding:16px">Nenhum lançamento encontrado.</p>`;
+    return html || `<p class="empty-note" style="padding:20px 4px">Nenhum lançamento encontrado.</p>`;
   }
   function bindTxRows(root) {
-    root.querySelectorAll('.tx').forEach(el => {
-      const open = () => { closeDrill(); openTxSheet(db.txs.find(t => t.id === el.dataset.id)); };
-      el.addEventListener('click', open);
-      el.addEventListener('keydown', e => { if (e.key === 'Enter') open(); });
-    });
+    root.querySelectorAll('.tx').forEach(el => el.addEventListener('click', () => { closeDrill(); openTxSheet(db.txs.find(t => t.id === el.dataset.id)); }));
   }
   function renderList() {
     const L = ui.list;
-    const fc = $('#f-cat');
-    fc.innerHTML = `<option value="">Todas as categorias</option>` + CATS.map(c => `<option value="${c.id}">${c.ic} ${c.name}</option>`).join('');
-    fc.value = L.cat; $('#f-type').value = L.type; $('#search').value = L.q;
+    const chip = (key, val, label, extra = '') => `<button class="chip ${L[key] === val ? 'on' : ''}" data-k="${key}" data-v="${esc(val)}">${extra}${esc(label)}</button>`;
+    $('#list-chips').innerHTML = (L.merchant ? `<button class="chip on" data-k="merchant" data-v="">${esc(L.merchant)} ✕</button>` : '')
+      + chip('type', '', 'Tudo') + chip('type', 'out', 'Saídas') + chip('type', 'in', 'Entradas')
+      + db.banks.map(b => chip('bank', b.id, acctLabel(b), `<i style="background:${acctColor(b)}"></i>`)).join('');
+    $('#list-cats').innerHTML = chip('cat', '', 'Todas as categorias') + CATS.filter(c => db.txs.some(t => t.cat === c.id)).map(c => chip('cat', c.id, c.name, `<i style="background:${c.color}"></i>`)).join('');
+    $$('#list-chips .chip, #list-cats .chip').forEach(b => b.addEventListener('click', () => {
+      const k = b.dataset.k, v = b.dataset.v;
+      if (k === 'merchant') L.merchant = null; else L[k] = (L[k] === v && v !== '') ? '' : v;
+      L.limit = 120; renderList();
+    }));
+    $('#search').value = L.q;
     const q = norm(L.q);
-    const list = scoped().filter(t =>
-      (!L.cat || t.cat === L.cat) &&
+    const list = db.txs.filter(t =>
+      (!L.bank || t.bank === L.bank) && (!L.cat || t.cat === L.cat) &&
       (!L.type || (L.type === 'in' ? t.amount > 0 : t.amount < 0)) &&
       (!L.merchant || merchant(t.desc) === L.merchant) &&
       (!q || norm(t.desc).includes(q) || norm(CAT[t.cat]?.name).includes(q) || String(Math.abs(t.amount)).includes(q.replace(',', '.')))
     ).sort((a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || '')));
-    const af = $('#active-filter');
-    af.classList.toggle('hidden', !L.merchant && !ui.bank);
-    af.innerHTML = [L.merchant && `<span class="pill">${esc(L.merchant)} <button data-clear="merchant" aria-label="Limpar">×</button></span>`,
-      ui.bank && `<span class="pill">${esc(bankById(ui.bank)?.name)} <button data-clear="bank" aria-label="Limpar">×</button></span>`].filter(Boolean).join('');
-    af.querySelectorAll('[data-clear]').forEach(b => b.addEventListener('click', () => {
-      if (b.dataset.clear === 'merchant') L.merchant = null; else ui.bank = '';
-      renderList();
-    }));
     const T = totals(list);
-    $('#list-summary').textContent = `${list.length} lançamento${list.length === 1 ? '' : 's'} · entradas ${fmt(T.inc)} · saídas ${fmt(T.out)}`;
+    $('#list-summary').innerHTML = `<div><small>Entradas</small><b style="color:var(--in)">${fmt(T.inc)}</b></div><div><small>Saídas</small><b style="color:var(--out)">${fmt(T.out)}</b></div>`;
     const box = $('#tx-list');
-    box.innerHTML = txRows(list.slice(0, L.limit), true) + (list.length > L.limit ? `<button class="load-more" id="load-more">Mostrar mais (${list.length - L.limit} restantes)</button>` : '');
+    box.innerHTML = txRows(list.slice(0, L.limit), true) + (list.length > L.limit ? `<button class="ghost load-more" id="load-more">Mostrar mais (${list.length - L.limit})</button>` : '');
     bindTxRows(box);
     $('#load-more')?.addEventListener('click', () => { L.limit += 200; renderList(); });
   }
   let searchT;
   $('#search').addEventListener('input', e => { clearTimeout(searchT); searchT = setTimeout(() => { ui.list.q = e.target.value; ui.list.limit = 120; renderList(); }, 150); });
-  $('#f-cat').addEventListener('change', e => { ui.list.cat = e.target.value; renderList(); });
-  $('#f-type').addEventListener('change', e => { ui.list.type = e.target.value; renderList(); });
 
-  /* ============ novo lançamento / edição ============ */
-  const sheet = { editing: null, type: 'out', cat: null, catTouched: false, autoWhen: true };
-  function openTxSheet(tx) {
-    closeDrill();
+  /* =================== novo lançamento (teclado próprio) =================== */
+  const sheet = { editing: null, type: 'out', cat: null, catTouched: false, autoWhen: true, amt: '', bank: null };
+  function amountText() {
+    if (!sheet.amt) return '0';
+    const [i, d] = sheet.amt.split(',');
+    const int = (+i || 0).toLocaleString('pt-BR');
+    return d !== undefined ? `${int},${d}` : int;
+  }
+  function openTxSheet(tx, type) {
+    closeDrill(); closePeriod();
     sheet.editing = tx || null;
-    sheet.type = tx ? (tx.amount > 0 ? 'in' : 'out') : 'out';
+    sheet.type = tx ? (tx.amount > 0 ? 'in' : 'out') : (type || 'out');
     sheet.cat = tx ? tx.cat : null;
     sheet.catTouched = !!tx;
     sheet.autoWhen = !tx;
-    $('#sheet-title').textContent = tx ? 'Editar lançamento' : 'Novo lançamento';
-    $('#tx-amount').value = tx ? Math.abs(tx.amount).toFixed(2).replace('.', ',') : '';
+    sheet.amt = tx ? Math.abs(tx.amount).toFixed(2).replace('.', ',').replace(/,00$/, '') : '';
+    let last = null;
+    try { last = localStorage.getItem(STORE_KEY + ':lastBank'); } catch (e) { /* */ }
+    sheet.bank = tx ? tx.bank : (bankById(last) ? last : (db.banks.find(b => b.type !== 'credito')?.id || db.banks[0]?.id || null));
     $('#tx-desc').value = tx ? tx.desc : '';
     $('#tx-date').value = tx ? tx.date : todayStr();
     $('#tx-time').value = tx ? (tx.time || '') : nowTime();
     $('#when-inputs').classList.add('hidden');
     $('#tx-delete').classList.toggle('hidden', !tx);
-    const sel = $('#tx-bank');
-    const banks = db.banks.length ? db.banks : [{ id: '__new', name: 'Carteira (dinheiro)' }];
-    sel.innerHTML = banks.map(b => `<option value="${b.id}">${esc(b.name)}</option>`).join('');
-    let lastManual = null;
-    try { lastManual = localStorage.getItem(STORE_KEY + ':lastBank'); } catch (e) { /* */ }
-    sel.value = tx ? tx.bank : (banks.some(b => b.id === lastManual) ? lastManual : banks[0].id);
     syncSheet();
     $('#tx-sheet').classList.remove('hidden'); $('#sheet-backdrop').classList.remove('hidden');
-    setTimeout(() => $('#tx-amount').focus(), 60);
   }
   function syncSheet() {
+    const f = $('#tx-sheet');
+    f.classList.toggle('is-in', sheet.type === 'in'); f.classList.toggle('is-out', sheet.type === 'out');
     $$('#tx-sheet .seg button').forEach(b => b.classList.toggle('active', b.dataset.type === sheet.type));
+    $('#amount-text').textContent = amountText();
+    const acctType = bankById(sheet.bank)?.type;
     if (!sheet.catTouched) {
       const d = $('#tx-desc').value;
-      sheet.cat = d.trim() ? guessCat(d, sheet.type === 'in' ? 1 : -1) : (sheet.type === 'in' ? 'receitas' : null);
+      sheet.cat = d.trim() ? guessCat(d, sheet.type === 'in' ? 1 : -1, acctType) : (sheet.type === 'in' ? (acctType === 'vr' || acctType === 'va' ? 'beneficios' : 'receitas') : null);
     }
-    const options = CATS.filter(c => sheet.type === 'in' ? (c.income || c.neutral || c.id === 'pessoas') : !c.income);
-    $('#cat-picker').innerHTML = options.map(c => `<button type="button" data-cat="${c.id}" class="${sheet.cat === c.id ? 'active' : ''}">${c.ic} ${c.name}</button>`).join('');
+    const opts = CATS.filter(c => sheet.type === 'in' ? (c.income || c.neutral || c.id === 'pessoas') : !c.income);
+    if (sheet.cat) opts.sort((a, b) => (b.id === sheet.cat) - (a.id === sheet.cat));
+    $('#cat-picker').innerHTML = opts.map(c => `<button type="button" class="pick ${sheet.cat === c.id ? 'on' : ''}" data-cat="${c.id}">${tile(c.id)}${c.name}</button>`).join('');
+    $('#acct-picker').innerHTML = (db.banks.length ? db.banks : [{ id: '__new', name: 'Carteira', inst: 'carteira', type: 'dinheiro' }]).map(b =>
+      `<button type="button" class="pick ${sheet.bank === b.id || (!sheet.bank && b.id === '__new') ? 'on' : ''}" data-bank="${b.id}">${mono(b)}${esc(acctLabel(b))}</button>`).join('');
     updateWhen();
   }
   function updateWhen() {
     const d = $('#tx-date').value, t = $('#tx-time').value;
-    $('#when-text').textContent = sheet.autoWhen ? `${dayLabel(todayStr())}, ${nowTime()} — registrado automaticamente` : `${d ? dayLabel(d) : ''}${t ? ', ' + t : ''}`;
+    $('#when-text').textContent = sheet.autoWhen ? `Hoje, ${nowTime()} · anotado automaticamente` : `${d ? dayLabel(d) : ''}${t ? ', ' + t : ''}`;
   }
-  $('#tx-sheet .seg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; sheet.type = b.dataset.type; if (sheet.cat && (CAT[sheet.cat].income !== (sheet.type === 'in'))) sheet.catTouched = false; syncSheet(); });
+  $('#keypad').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (navigator.vibrate) navigator.vibrate(8);
+    const k = b.dataset.k === 'back' ? 'back' : b.textContent.trim();
+    let a = sheet.amt;
+    if (k === 'back') a = a.slice(0, -1);
+    else if (k === ',') { if (!a.includes(',')) a = (a || '0') + ','; }
+    else {
+      const [i, d] = a.split(',');
+      if (d !== undefined) { if (d.length < 2) a += k; }
+      else if ((i || '').replace(/^0+/, '').length < 9) a = (a === '0' ? '' : a) + k;
+    }
+    sheet.amt = a;
+    $('#amount-text').textContent = amountText();
+  });
+  $('#tx-sheet .seg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; sheet.type = b.dataset.type; if (sheet.cat && !!CAT[sheet.cat].income !== (sheet.type === 'in')) sheet.catTouched = false; syncSheet(); });
   $('#cat-picker').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; sheet.cat = b.dataset.cat; sheet.catTouched = true; syncSheet(); });
+  $('#acct-picker').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; sheet.bank = b.dataset.bank; syncSheet(); });
   $('#tx-desc').addEventListener('input', () => { if (!sheet.catTouched) syncSheet(); });
   $('#when-edit').addEventListener('click', () => { sheet.autoWhen = false; $('#when-inputs').classList.toggle('hidden'); updateWhen(); });
   $('#tx-date').addEventListener('input', updateWhen); $('#tx-time').addEventListener('input', updateWhen);
   const closeSheet = () => { $('#tx-sheet').classList.add('hidden'); $('#sheet-backdrop').classList.add('hidden'); };
   $('#tx-cancel').addEventListener('click', closeSheet);
   $('#sheet-backdrop').addEventListener('click', closeSheet);
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeSheet(); closeDrill(); } });
   $('#tx-delete').addEventListener('click', () => {
     if (!sheet.editing || !confirm('Excluir este lançamento?')) return;
-    db.txs = db.txs.filter(t => t.id !== sheet.editing.id); save(); closeSheet(); render(); toast('Lançamento excluído.');
+    db.txs = db.txs.filter(t => t.id !== sheet.editing.id); save(); closeSheet(); render(); toast('Lançamento excluído');
   });
   $('#tx-sheet').addEventListener('submit', e => {
     e.preventDefault();
-    const raw = $('#tx-amount').value.trim();
-    const v = Math.abs(Parsers.parseAmount(raw));
-    if (!v || !isFinite(v)) { $('#tx-amount').focus(); toast('Digite o valor.'); return; }
+    const v = Math.abs(Parsers.parseAmount(sheet.amt || '0'));
+    if (!v || !isFinite(v)) {
+      const el = $('#amount-display'); el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake');
+      toast('Digite o valor no teclado'); return;
+    }
     const amount = sheet.type === 'in' ? v : -v;
     const desc = $('#tx-desc').value.trim() || (CAT[sheet.cat]?.name ?? (sheet.type === 'in' ? 'Entrada' : 'Gasto'));
-    let bankId = $('#tx-bank').value;
-    if (bankId === '__new') bankId = ensureBank('Carteira (dinheiro)').id;
+    let bankId = sheet.bank;
+    if (!bankId || bankId === '__new') bankId = ensureAccount({ name: 'Carteira', inst: 'carteira', type: 'dinheiro' }).id;
     try { localStorage.setItem(STORE_KEY + ':lastBank', bankId); } catch (err) { /* */ }
-    const cat = sheet.cat || guessCat(desc, amount);
+    const cat = sheet.cat || guessCat(desc, amount, bankById(bankId)?.type);
     const when = sheet.autoWhen ? { date: todayStr(), time: nowTime() } : { date: $('#tx-date').value || todayStr(), time: $('#tx-time').value || null };
     if (sheet.editing) {
       const t = db.txs.find(x => x.id === sheet.editing.id);
-      const catChanged = t.cat !== cat;
+      const changed = t.cat !== cat;
       Object.assign(t, { amount, desc, bank: bankId, cat, ...when });
-      if (catChanged) {
+      if (changed) {
         const key = merchant(desc);
         const others = db.txs.filter(x => x.id !== t.id && merchant(x.desc) === key && x.cat !== cat && Math.sign(x.amount) === Math.sign(amount));
         db.rules[norm(key)] = cat;
         if (others.length && confirm(`Mudar também os outros ${others.length} lançamento(s) de “${key}” para ${CAT[cat].name}?`)) others.forEach(x => { x.cat = cat; });
       }
-      toast('Lançamento atualizado.');
+      toast('Lançamento atualizado');
     } else {
       db.txs.push({ id: uid(), date: when.date, time: when.time, amount, desc, cat, bank: bankId, source: 'manual', createdAt: new Date().toISOString() });
-      toast(`${sheet.type === 'in' ? 'Entrada' : 'Gasto'} de ${fmt(v)} registrado às ${when.time || ''}.`);
+      toast(`${sheet.type === 'in' ? 'Entrada' : 'Gasto'} de ${fmt(v)} registrado`);
     }
     save(); closeSheet(); render();
   });
 
-  /* ============ importar ============ */
+  /* =================== importar =================== */
+  const TIP_GENERIC = 'Os nomes dos menus mudam um pouco de versão para versão, mas o caminho costuma ser parecido.';
+  function tipFor(inst, type) {
+    const i = INST[inst];
+    if (!i || inst === 'outro') return 'No app ou no site do banco, abra o extrato, escolha o período e procure por “Exportar”, “Compartilhar” ou “Baixar”. Prefira OFX, CSV ou Excel; PDF também funciona.';
+    if (i.kind === 'benefit') return `No app ${i.name}, abra o cartão do benefício e entre em “Extrato”. Se houver opção de exportar ou compartilhar, salve em PDF ou planilha. Se o app não deixar exportar, preencha a planilha modelo (aqui embaixo) ou registre os gastos pelo botão +.`;
+    if (type === 'credito') return `No app ${i.name}, vá em Cartão de crédito › Faturas, abra a fatura do mês e procure “Exportar”, “Baixar PDF” ou “Enviar por e-mail”. Alguns bancos mandam a fatura em CSV por e-mail. Importe uma fatura por mês.`;
+    const extra = { nubank: ' No Nubank, o extrato pode ser pedido pelo app e chega por e-mail (PDF, CSV ou OFX).', santander: ' No Santander, o internet banking costuma oferecer Excel e OFX, além de PDF.', inter: ' No Inter, o extrato costuma poder ser exportado em PDF, CSV ou OFX.' }[inst] || '';
+    return `No app ${i.name}, abra a Conta › Extrato, escolha o período e toque em “Exportar” ou “Compartilhar”. Prefira OFX, CSV ou Excel; PDF também funciona.${extra}`;
+  }
+
   let slots = null;
   function initSlots() {
-    const named = db.banks.filter(b => !/carteira/i.test(b.name));
-    slots = (named.length ? named : [{ name: '' }]).map(b => ({ name: b.name, files: [] }));
+    const accs = db.banks.filter(b => b.type !== 'dinheiro');
+    slots = (accs.length ? accs : [null]).map(b => b ? { inst: b.inst, name: b.name, type: b.type, files: [] } : { inst: '', name: '', type: 'conta', files: [] });
   }
   function renderImport() {
     if (!slots) initSlots();
@@ -685,43 +844,60 @@
   }
   function drawSlots() {
     $('#bank-count').textContent = slots.length;
-    const pal = BANK_COLORS[isDark() ? 'dark' : 'light'];
-    $('#bank-slots').innerHTML = slots.map((s, i) => `
-      <div class="slot" data-i="${i}">
-        <div class="slot-head"><span class="n" style="background:${pal[i % pal.length]}">${i + 1}</span>
-          <input class="slot-name" list="bank-names" placeholder="Nome do banco (ex.: Nubank)" value="${esc(s.name)}" aria-label="Nome do banco ${i + 1}"></div>
-        <label class="drop"><input type="file" multiple accept=".pdf,.ofx,.qfx,.csv,.txt,.xls,.xlsx,.ods,application/pdf,text/csv,text/plain" hidden>
-          <span>📄</span><span><strong>Toque para escolher os arquivos</strong></span><span class="sub">PDF, OFX, CSV, TXT ou Excel · pode escolher vários</span></label>
-        <ul class="files">${s.files.map((f, j) => `<li><span>${esc(f.name)}</span><em>${(f.size / 1024).toFixed(0)} KB</em><button data-rm="${j}" aria-label="Remover">×</button></li>`).join('')}</ul>
-      </div>`).join('') + `<datalist id="bank-names">${COMMON_BANKS.map(b => `<option value="${b}">`).join('')}</datalist>`;
+    const instBtn = (s, i) => `<button type="button" class="inst ${s.inst === i.id ? 'on' : ''}" data-inst="${i.id}"><span class="mono" style="background:${i.color}">${esc(i.mono)}</span><span>${esc(i.name.replace(' Benefícios', ''))}</span></button>`;
+    $('#bank-slots').innerHTML = slots.map((s, n) => {
+      const inst = INST[s.inst];
+      const b = { name: s.name || inst?.name || `${n + 1}`, inst: s.inst || 'outro' };
+      return `<div class="slot" data-i="${n}">
+        <div class="slot-head">${mono(b)}<div class="grow"><b>${esc(s.name || inst?.name || `Conta ${n + 1}`)}</b><small>${TYPES[s.type].name}${s.files.length ? ` · ${s.files.length} arquivo${s.files.length > 1 ? 's' : ''}` : ''}</small></div></div>
+        ${s.inst && !s.picking ? `<button type="button" class="ghost small change-inst" style="margin-top:0">Trocar banco ou benefício</button>` : `
+        <label class="lbl">Banco</label>
+        <div class="inst-grid">${INSTS.filter(i => i.kind === 'bank').map(i => instBtn(s, i)).join('')}</div>
+        <label class="lbl">Vale-refeição / alimentação</label>
+        <div class="inst-grid">${INSTS.filter(i => i.kind === 'benefit').map(i => instBtn(s, i)).join('')}</div>`}
+        ${s.inst === 'outro' ? `<input class="slot-name" style="margin-top:10px" placeholder="Nome (ex.: Sicredi, Neon)" value="${esc(s.name)}">` : ''}
+        <label class="lbl">Tipo de extrato</label>
+        <div class="types">${['conta', 'credito', 'vr', 'va'].map(t => `<button type="button" class="type ${s.type === t ? 'on' : ''}" data-type="${t}">${svg(TYPES[t].ic)}${TYPES[t].name}</button>`).join('')}</div>
+        <details class="tip"><summary>Como baixar este extrato</summary><p>${esc(tipFor(s.inst, s.type))}</p><p style="opacity:.7">${TIP_GENERIC}</p></details>
+        <label class="drop"><input type="file" multiple accept=".pdf,.ofx,.qfx,.csv,.txt,.xls,.xlsx,.ods" hidden>
+          <span class="tile">${svg('file')}</span><span><b>Escolher arquivos</b><small>PDF, OFX, CSV, Excel ou TXT · vários de uma vez</small></span></label>
+        <ul class="files">${s.files.map((f, j) => `<li><span>${esc(f.name)}</span><em>${Math.max(1, Math.round(f.size / 1024))} KB</em><button data-rm="${j}" aria-label="Remover">×</button></li>`).join('')}</ul>
+      </div>`;
+    }).join('');
     $$('#bank-slots .slot').forEach(el => {
       const s = slots[+el.dataset.i];
-      el.querySelector('.slot-name').addEventListener('input', e => { s.name = e.target.value; updateReadBtn(); });
+      el.querySelectorAll('.inst').forEach(b => b.addEventListener('click', () => {
+        const i = INST[b.dataset.inst];
+        s.inst = i.id; s.name = i.id === 'outro' ? '' : i.name; s.picking = false;
+        if (i.kind === 'benefit' && !['vr', 'va'].includes(s.type)) s.type = 'vr';
+        if (i.kind === 'bank' && ['vr', 'va'].includes(s.type)) s.type = 'conta';
+        drawSlots();
+      }));
+      el.querySelector('.change-inst')?.addEventListener('click', () => { s.picking = true; drawSlots(); });
+      el.querySelector('.slot-name')?.addEventListener('input', e => { s.name = e.target.value; updateReadBtn(); });
+      el.querySelectorAll('.type').forEach(b => b.addEventListener('click', () => { s.type = b.dataset.type; drawSlots(); }));
       const input = el.querySelector('input[type=file]');
-      input.addEventListener('change', () => { addFiles(s, input.files); input.value = ''; });
-      const drop = el.querySelector('.drop');
-      drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
-      drop.addEventListener('dragleave', () => drop.classList.remove('over'));
-      drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); addFiles(s, e.dataTransfer.files); });
-      el.querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', () => { s.files.splice(+b.dataset.rm, 1); drawSlots(); }));
+      input.addEventListener('change', () => { for (const f of input.files) if (!s.files.some(x => x.name === f.name && x.size === f.size)) s.files.push(f); input.value = ''; drawSlots(); });
+      el.querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', e => { e.preventDefault(); s.files.splice(+b.dataset.rm, 1); drawSlots(); }));
     });
     updateReadBtn();
   }
-  function addFiles(slot, files) {
-    for (const f of files) if (!slot.files.some(x => x.name === f.name && x.size === f.size)) slot.files.push(f);
-    drawSlots();
-  }
   function updateReadBtn() {
-    const n = slots.reduce((s, x) => s + x.files.length, 0);
-    $('#files-total').textContent = n ? `${n} arquivo${n > 1 ? 's' : ''} de ${slots.filter(s => s.files.length).length} banco${slots.filter(s => s.files.length).length > 1 ? 's' : ''} pronto${n > 1 ? 's' : ''} para ler.` : 'Escolha ao menos um arquivo.';
-    $('#read-files').disabled = !n;
+    const n = slots.reduce((a, x) => a + x.files.length, 0);
+    const missing = slots.some(s => s.files.length && !s.inst);
+    $('#files-total').textContent = !n ? 'Escolha a instituição e os arquivos de cada conta.' : missing ? 'Escolha o banco ou benefício de cada conta com arquivos.' : `${n} arquivo${n > 1 ? 's' : ''} pronto${n > 1 ? 's' : ''} para ler`;
+    $('#read-files').disabled = !n || missing;
   }
-  $('#bank-plus').addEventListener('click', () => { if (slots.length < 12) { slots.push({ name: '', files: [] }); drawSlots(); } });
+  $('#bank-plus').addEventListener('click', () => { if (slots.length < 12) { slots.push({ inst: '', name: '', type: 'conta', files: [] }); drawSlots(); } });
   $('#bank-minus').addEventListener('click', () => {
     if (slots.length <= 1) return;
     const last = slots[slots.length - 1];
-    if (last.files.length && !confirm(`Remover o banco ${slots.length} e seus ${last.files.length} arquivo(s)?`)) return;
+    if (last.files.length && !confirm(`Remover a conta ${slots.length} e seus ${last.files.length} arquivo(s)?`)) return;
     slots.pop(); drawSlots();
+  });
+  $('#template-btn').addEventListener('click', () => {
+    const d = new Date(); const dd = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+    download('planilha-modelo-extrato.csv', '﻿Data;Descrição;Valor\n' + `${dd};Almoço no restaurante;-32,50\n${dd};Mercado;-120,00\n${dd};Recarga do benefício;800,00\n`, 'text/csv');
   });
 
   let review = [];
@@ -729,33 +905,32 @@
     const btn = $('#read-files');
     btn.disabled = true;
     review = [];
+    const keyOf = (acc, t) => `${acc}|${t.date}|${t.amount.toFixed(2)}|${norm(merchant(t.desc))}`;
     const existing = {};
-    const keyOf = (bankName, t) => `${norm(bankName)}|${t.date}|${t.amount.toFixed(2)}|${norm(merchant(t.desc))}`;
-    for (const t of db.txs) { const k = keyOf(bankById(t.bank)?.name, t); existing[k] = (existing[k] || 0) + 1; }
-    const total = slots.reduce((s, x) => s + x.files.length, 0);
+    for (const t of db.txs) { const b = bankById(t.bank); const k = keyOf(`${norm(b?.name)}:${b?.type}`, t); existing[k] = (existing[k] || 0) + 1; }
+    const total = slots.reduce((a, x) => a + x.files.length, 0);
     let done = 0;
     for (const [i, s] of slots.entries()) {
-      const bankName = s.name.trim() || `Banco ${i + 1}`;
+      const name = (s.name || INST[s.inst]?.name || `Conta ${i + 1}`).trim();
+      const accKey = `${norm(name)}:${s.type}`;
       for (const f of s.files) {
         btn.textContent = `Lendo ${++done} de ${total}…`;
-        const entry = { bankName, slot: i, file: f.name, kind: '', txs: [], error: null, balance: null };
+        const entry = { name, inst: s.inst, type: s.type, file: f.name, kind: '', txs: [], error: null, balance: null, opening: null };
         try {
-          const res = await Parsers.parseFile(f, { askPassword: async (name, retry) => prompt(`${retry ? 'Senha incorreta. ' : ''}O PDF “${name}” tem senha (em muitos bancos é parte do CPF). Digite a senha:`) });
-          entry.kind = res.kind; entry.balance = res.balance;
+          const res = await Parsers.parseFile(f, { accountType: s.type, askPassword: async (fname, retry) => prompt(`${retry ? 'Senha incorreta. ' : ''}O PDF “${fname}” tem senha (em muitos bancos são números do CPF). Digite a senha:`) });
+          entry.kind = res.kind; entry.balance = res.balance; entry.opening = res.opening ?? null;
           const seen = {};
           entry.txs = res.transactions.map(t => {
-            const tt = { ...t, desc: t.description, cat: guessCat(t.description, t.amount) };
-            const k = keyOf(bankName, tt);
+            const tt = { ...t, desc: t.description, cat: guessCat(t.description, t.amount, s.type) };
+            const k = keyOf(accKey, tt);
             seen[k] = (seen[k] || 0) + 1;
             tt.dup = (existing[k] || 0) >= seen[k];
             tt.include = !tt.dup;
             return tt;
           });
           for (const [k, n] of Object.entries(seen)) existing[k] = Math.max(existing[k] || 0, n);
-          if (!entry.txs.length) entry.error = 'Não encontrei lançamentos neste arquivo. Se for um PDF, confira se é o extrato (e não um comprovante). Tente exportar em OFX ou CSV pelo app do banco.';
-        } catch (e) {
-          entry.error = e.message || String(e);
-        }
+          if (!entry.txs.length) entry.error = 'Não encontrei lançamentos neste arquivo. Confira se é o extrato (e não um comprovante) ou tente exportar em OFX, CSV ou Excel.';
+        } catch (e) { entry.error = e.message || String(e); }
         review.push(entry);
       }
     }
@@ -765,85 +940,78 @@
 
   function drawReview() {
     $('#import-step1').classList.add('hidden'); $('#import-step2').classList.remove('hidden');
-    window.scrollTo({ top: 0 });
-    const catOpts = sel => CATS.map(c => `<option value="${c.id}" ${c.id === sel ? 'selected' : ''}>${c.ic} ${c.name}</option>`).join('');
+    const catOpts = sel => CATS.map(c => `<option value="${c.id}" ${c.id === sel ? 'selected' : ''}>${c.name}</option>`).join('');
     $('#review-files').innerHTML = review.map((f, fi) => {
       const on = f.txs.filter(t => t.include);
       const T = totals(on);
       const dups = f.txs.filter(t => t.dup).length;
-      return `<div class="card review-file" data-f="${fi}">
-        <div class="card-head"><div><h2>${esc(f.bankName)} · ${esc(f.file)}</h2>
-          <p class="sub">${f.error ? '' : `${f.kind} · ${f.txs.length} lançamentos encontrados · entradas ${fmt(T.inc)} · saídas ${fmt(T.out)}${dups ? ` · ${dups} já existiam (desmarcados)` : ''}`}</p></div>
-          ${f.error ? '' : `<div class="row-btns" style="margin:0"><button class="btn small" data-flip="${fi}">Inverter sinais</button><button class="btn small" data-all="${fi}">${on.length === f.txs.length ? 'Desmarcar todos' : 'Marcar todos'}</button></div>`}</div>
-        ${f.error ? `<p class="err">⚠️ ${esc(f.error)}</p>` : `<div class="review-table">${f.txs.map((t, ti) => `
+      return `<div class="review-file" data-f="${fi}">
+        <div class="slot-head" style="margin:0">${mono({ name: f.name, inst: f.inst })}<div class="grow"><h3>${esc(f.name)} · ${TYPES[f.type].short}</h3><p class="rs" style="margin:0">${esc(f.file)}</p></div></div>
+        ${f.error ? `<p class="err">${esc(f.error)}</p>` : `
+        <p class="rs" style="margin-top:8px">${f.kind} · ${f.txs.length} lançamentos · entrou ${fmt(T.inc)} · saiu ${fmt(T.out)}${dups ? ` · ${dups} já existiam` : ''}</p>
+        <div class="rv-actions"><button class="ghost" data-flip="${fi}">Inverter sinais</button><button class="ghost" data-all="${fi}">${on.length === f.txs.length ? 'Desmarcar todos' : 'Marcar todos'}</button></div>
+        <div class="review-table">${f.txs.map((t, ti) => `
           <div class="rv ${t.include ? '' : 'off'}" data-t="${ti}">
             <input type="checkbox" ${t.include ? 'checked' : ''} aria-label="Importar">
-            <span class="dt num">${shortDate(t.date)}</span>
-            <span class="dsc" title="${esc(t.desc)}">${esc(t.desc)}${t.dup ? '<span class="dup">já importado antes</span>' : ''}</span>
+            <span class="dt">${shortDate(t.date)}</span>
+            <span class="dsc">${esc(t.desc)}${t.dup ? '<span class="dup">já importado antes</span>' : ''}</span>
+            <span class="amt ${t.amount > 0 ? 'in' : ''}">${t.amount > 0 ? '+' : '−'} ${fmt(Math.abs(t.amount))}</span>
             <select aria-label="Categoria">${catOpts(t.cat)}</select>
-            <span class="amt ${t.amount > 0 ? 'in' : ''}">${t.amount > 0 ? '+' : ''}${fmt(t.amount)}</span>
           </div>`).join('')}</div>`}
       </div>`;
     }).join('');
-    const n = review.reduce((s, f) => s + f.txs.filter(t => t.include).length, 0);
+    const n = review.reduce((a, f) => a + f.txs.filter(t => t.include).length, 0);
     $('#review-save').textContent = `Importar ${n} lançamento${n === 1 ? '' : 's'}`;
     $('#review-save').disabled = !n;
     $$('#review-files .review-file').forEach(el => {
       const f = review[+el.dataset.f];
       el.querySelectorAll('.rv').forEach(row => {
         const t = f.txs[+row.dataset.t];
-        row.querySelector('input').addEventListener('change', e => { t.include = e.target.checked; drawReview(); });
+        row.querySelector('input').addEventListener('change', e => { t.include = e.target.checked; const y = window.scrollY; drawReview(); window.scrollTo({ top: y }); });
         row.querySelector('select').addEventListener('change', e => { t.cat = e.target.value; });
       });
     });
-    $$('[data-flip]').forEach(b => b.addEventListener('click', () => {
-      const f = review[+b.dataset.flip];
-      f.txs.forEach(t => { t.amount = -t.amount; t.cat = guessCat(t.desc, t.amount); });
-      drawReview();
-    }));
-    $$('[data-all]').forEach(b => b.addEventListener('click', () => {
-      const f = review[+b.dataset.all]; const all = f.txs.every(t => t.include);
-      f.txs.forEach(t => { t.include = !all; }); drawReview();
-    }));
+    $$('[data-flip]').forEach(b => b.addEventListener('click', () => { const f = review[+b.dataset.flip]; f.txs.forEach(t => { t.amount = -t.amount; t.cat = guessCat(t.desc, t.amount, f.type); }); drawReview(); }));
+    $$('[data-all]').forEach(b => b.addEventListener('click', () => { const f = review[+b.dataset.all]; const all = f.txs.every(t => t.include); f.txs.forEach(t => { t.include = !all; }); drawReview(); }));
   }
+  $('#read-files').addEventListener('click', () => window.scrollTo({ top: 0 }));
   $('#review-back').addEventListener('click', () => { $('#import-step2').classList.add('hidden'); $('#import-step1').classList.remove('hidden'); });
   $('#review-save').addEventListener('click', () => {
     let n = 0;
     for (const f of review) {
       const chosen = f.txs.filter(t => t.include);
       if (!chosen.length) continue;
-      const bank = ensureBank(f.bankName);
-      for (const t of chosen) {
-        db.txs.push({ id: uid(), date: t.date, time: null, amount: t.amount, desc: t.desc, cat: t.cat, bank: bank.id, source: 'import', file: f.file, createdAt: new Date().toISOString() });
-        n++;
-      }
-      // OFX traz o saldo final: usamos para acertar o saldo inicial da conta
-      if (f.balance != null && !(+bank.initial)) {
-        const sum = db.txs.filter(t => t.bank === bank.id).reduce((s, t) => s + t.amount, 0);
-        bank.initial = Math.round((f.balance - sum) * 100) / 100;
+      const acc = ensureAccount({ name: f.name, inst: f.inst, type: f.type });
+      const isNew = !db.txs.some(t => t.bank === acc.id);
+      if (isNew && f.opening != null && !(+acc.initial)) acc.initial = f.opening;
+      for (const t of chosen) { db.txs.push({ id: uid(), date: t.date, time: null, amount: t.amount, desc: t.desc, cat: t.cat, bank: acc.id, source: 'import', file: f.file, createdAt: new Date().toISOString() }); n++; }
+      if (f.balance != null && !(+acc.initial)) {
+        const sum = db.txs.filter(t => t.bank === acc.id).reduce((s, t) => s + t.amount, 0);
+        acc.initial = Math.round((f.balance - sum) * 100) / 100;
       }
     }
-    save();
-    slots = null; review = [];
-    toast(`${n} lançamentos importados.`);
-    ui.monthPick = null;
+    save(); slots = null; review = []; ui.monthPick = null;
+    toast(`${n} lançamentos importados`);
     go('panorama');
   });
 
-  /* ============ ajustes ============ */
+  /* =================== mais / exportar =================== */
   function renderSettings() {
     $('#banks-edit').innerHTML = db.banks.map(b => `
-      <div class="bank-edit" data-id="${b.id}"><span class="dot" style="background:${bankColor(b.id)}"></span>
+      <div class="bank-edit" data-id="${b.id}">${mono(b)}
         <input class="bn" value="${esc(b.name)}" aria-label="Nome da conta">
-        <input class="ib" inputmode="decimal" value="${(+b.initial || 0).toFixed(2).replace('.', ',')}" aria-label="Saldo inicial">
-        <button class="btn small danger" data-del="${b.id}">Excluir</button></div>`).join('') || `<p class="empty-note">Nenhuma conta ainda. Elas aparecem quando você importa extratos ou registra um gasto.</p>`;
+        <button class="del" data-del="${b.id}" aria-label="Excluir conta">${svg('trash')}</button>
+        <div class="meta"><select class="bt" aria-label="Tipo">${Object.entries(TYPES).map(([k, t]) => `<option value="${k}" ${b.type === k ? 'selected' : ''}>${t.name}</option>`).join('')}</select>
+        <input class="ib" inputmode="decimal" value="${(+b.initial || 0).toFixed(2).replace('.', ',')}" aria-label="Saldo inicial"></div>
+      </div>`).join('') || `<p class="empty-note">As contas aparecem quando você importa extratos ou registra um gasto.</p>`;
     $$('#banks-edit .bank-edit').forEach(row => {
       const b = bankById(row.dataset.id);
-      row.querySelector('.bn').addEventListener('change', e => { b.name = e.target.value.trim() || b.name; save(); });
-      row.querySelector('.ib').addEventListener('change', e => { const v = Parsers.parseAmount(e.target.value); b.initial = isNaN(v) ? 0 : v; save(); toast('Saldo inicial salvo.'); });
+      row.querySelector('.bn').addEventListener('change', e => { b.name = e.target.value.trim() || b.name; save(); renderSettings(); });
+      row.querySelector('.bt').addEventListener('change', e => { b.type = e.target.value; save(); toast('Tipo atualizado'); });
+      row.querySelector('.ib').addEventListener('change', e => { const v = Parsers.parseAmount(e.target.value); b.initial = isNaN(v) ? 0 : v; save(); toast('Saldo inicial salvo'); });
       row.querySelector('[data-del]').addEventListener('click', () => {
         const n = db.txs.filter(t => t.bank === b.id).length;
-        if (!confirm(`Excluir a conta “${b.name}”${n ? ` e seus ${n} lançamentos` : ''}?`)) return;
+        if (!confirm(`Excluir “${acctLabel(b)}”${n ? ` e seus ${n} lançamentos` : ''}?`)) return;
         db.txs = db.txs.filter(t => t.bank !== b.id); db.banks = db.banks.filter(x => x.id !== b.id);
         if (ui.bank === b.id) ui.bank = '';
         save(); renderSettings();
@@ -851,21 +1019,96 @@
     });
   }
   $('#add-bank').addEventListener('click', () => {
-    const name = prompt('Nome da conta (ex.: Nubank, Carteira):'); if (!name) return;
-    ensureBank(name); save(); renderSettings();
+    const name = prompt('Nome da conta (ex.: Santander, VR, Carteira):'); if (!name) return;
+    const n = norm(name);
+    const inst = INSTS.find(i => i.id !== 'outro' && n.includes(norm(i.name).split(' ')[0]));
+    ensureAccount({ name, inst: inst?.id || 'outro', type: inst?.kind === 'benefit' ? 'vr' : /carteira|dinheiro/.test(n) ? 'dinheiro' : 'conta' });
+    save(); renderSettings();
   });
+
   function download(name, content, type) {
-    // dentro do app Android: o próprio Android pergunta onde salvar
     if (window.Android?.saveFile) { window.Android.saveFile(name, type, content); return; }
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([content], { type }));
     a.download = name; document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   }
+  function downloadBase64(name, b64, type) {
+    if (window.Android?.saveBase64) { window.Android.saveBase64(name, type, b64); return; }
+    const bin = atob(b64); const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([bytes], { type }));
+    a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
+
+  // Um arquivo só: resumo + uma aba por conta/cartão/vale + todos os lançamentos
+  async function exportAll() {
+    if (!db.txs.length) { toast('Ainda não há lançamentos para exportar'); return; }
+    toast('Montando a planilha…');
+    try { await Parsers.loadXLSX(); } catch (e) { toast('Não consegui carregar o gerador de planilhas'); return; }
+    const X = window.XLSX;
+    const MONEY = '"R$" #,##0.00;[Red]-"R$" #,##0.00';
+    const toDate = s => { const d = pd(s); return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), 12)); };
+    const sheetFrom = (rows, widths, moneyCols = [], dateCols = [], headerRow = 0) => {
+      const ws = X.utils.aoa_to_sheet(rows, { cellDates: true });
+      ws['!cols'] = widths.map(w => ({ wch: w }));
+      const range = X.utils.decode_range(ws['!ref']);
+      for (let R = headerRow + 1; R <= range.e.r; R++) {
+        for (const C of moneyCols) { const c = ws[X.utils.encode_cell({ r: R, c: C })]; if (c && c.t === 'n') c.z = MONEY; }
+        for (const C of dateCols) { const c = ws[X.utils.encode_cell({ r: R, c: C })]; if (c && (c.t === 'd' || c.t === 'n')) c.z = 'dd/mm/yyyy'; }
+      }
+      return ws;
+    };
+    const wb = X.utils.book_new();
+    const now = new Date();
+    const sorted = [...db.txs].sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
+
+    // Resumo
+    const resumo = [[`Finanças · exportado em ${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()} às ${nowTime()}`], [],
+      ['Conta', 'Instituição', 'Tipo', 'Lançamentos', 'Entradas', 'Saídas', 'Saldo atual']];
+    for (const b of db.banks) {
+      const bt = db.txs.filter(t => t.bank === b.id);
+      const inc = bt.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
+      const out = -bt.filter(t => t.amount < 0).reduce((s, t) => s + t.amount, 0);
+      resumo.push([b.name, instOf(b).id === 'outro' ? b.name : instOf(b).name, TYPES[b.type]?.name || '', bt.length, inc, out, (+b.initial || 0) + inc - out]);
+    }
+    resumo.push([], ['Gastos por categoria', '', '', '', 'Total', '% dos gastos']);
+    const catTot = {}; let spent = 0;
+    for (const t of db.txs) if (isSpend(t)) { catTot[t.cat] = (catTot[t.cat] || 0) - t.amount; spent -= t.amount; }
+    Object.entries(catTot).sort((a, b) => b[1] - a[1]).forEach(([c, v]) => resumo.push([CAT[c]?.name || c, '', '', '', v, spent ? `${(v / spent * 100).toFixed(1).replace('.', ',')}%` : '']));
+    X.utils.book_append_sheet(wb, sheetFrom(resumo, [26, 18, 20, 13, 16, 16, 16], [4, 5, 6], [], 2), 'Resumo');
+
+    // Uma aba por conta
+    const used = new Set(['Resumo', 'Todos os lançamentos']);
+    for (const b of db.banks) {
+      const bt = sorted.filter(t => t.bank === b.id);
+      if (!bt.length) continue;
+      let run = +b.initial || 0;
+      const rows = [['Data', 'Hora', 'Descrição', 'Categoria', 'Entrada', 'Saída', 'Valor', 'Saldo']];
+      for (const t of bt) { run += t.amount; rows.push([toDate(t.date), t.time || '', t.desc, CAT[t.cat]?.name || '', t.amount > 0 ? t.amount : '', t.amount < 0 ? -t.amount : '', t.amount, Math.round(run * 100) / 100]); }
+      rows.push([], ['', '', 'Total', '', bt.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0), -bt.filter(t => t.amount < 0).reduce((s, t) => s + t.amount, 0), bt.reduce((s, t) => s + t.amount, 0), '']);
+      let name = `${b.name} - ${TYPES[b.type]?.short || ''}`.replace(/[\\/?*[\]:]/g, ' ').slice(0, 31).trim();
+      let k = 2; while (used.has(name)) name = `${name.slice(0, 28)} ${k++}`;
+      used.add(name);
+      X.utils.book_append_sheet(wb, sheetFrom(rows, [12, 7, 42, 22, 14, 14, 14, 14], [4, 5, 6, 7], [0]), name);
+    }
+
+    // Todos
+    const allRows = [['Data', 'Hora', 'Conta', 'Tipo de conta', 'Descrição', 'Categoria', 'Valor', 'Origem']];
+    for (const t of sorted) { const b = bankById(t.bank); allRows.push([toDate(t.date), t.time || '', b?.name || '', TYPES[b?.type]?.name || '', t.desc, CAT[t.cat]?.name || '', t.amount, t.source === 'manual' ? 'Manual' : 'Extrato']); }
+    X.utils.book_append_sheet(wb, sheetFrom(allRows, [12, 7, 18, 18, 42, 22, 14, 10], [6], [0]), 'Todos os lançamentos');
+
+    const b64 = X.write(wb, { bookType: 'xlsx', type: 'base64', cellDates: true });
+    downloadBase64(`financas-${todayStr()}.xlsx`, b64, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    if (!window.Android) toast('Planilha baixada');
+  }
+
   $('#export-json').addEventListener('click', () => download(`financas-backup-${todayStr()}.json`, JSON.stringify(db, null, 1), 'application/json'));
   $('#export-csv').addEventListener('click', () => {
-    const rows = [['Data', 'Hora', 'Descrição', 'Categoria', 'Conta', 'Valor', 'Origem']].concat(
-      [...db.txs].sort((a, b) => a.date.localeCompare(b.date)).map(t => [t.date, t.time || '', t.desc, CAT[t.cat]?.name || t.cat, bankById(t.bank)?.name || '', t.amount.toFixed(2).replace('.', ','), t.source]));
+    const rows = [['Data', 'Hora', 'Conta', 'Tipo', 'Descrição', 'Categoria', 'Valor']].concat(
+      [...db.txs].sort((a, b) => a.date.localeCompare(b.date)).map(t => { const b = bankById(t.bank); return [shortDate(t.date), t.time || '', b?.name || '', TYPES[b?.type]?.name || '', t.desc, CAT[t.cat]?.name || t.cat, t.amount.toFixed(2).replace('.', ',')]; }));
     download(`financas-${todayStr()}.csv`, '﻿' + rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\n'), 'text/csv');
   });
   $('#import-json').addEventListener('change', async e => {
@@ -874,95 +1117,81 @@
       const d = JSON.parse(await f.text());
       if (!Array.isArray(d.txs) || !Array.isArray(d.banks)) throw new Error();
       if (!confirm(`Restaurar backup com ${d.txs.length} lançamentos? Os dados atuais serão substituídos.`)) return;
-      db = { version: 1, rules: {}, ...d }; save(); toast('Backup restaurado.'); render();
-    } catch (err) { toast('Arquivo de backup inválido.'); }
+      db = migrate(d); save(); toast('Backup restaurado'); render();
+    } catch (err) { toast('Arquivo de backup inválido'); }
     e.target.value = '';
   });
   $('#clear-all').addEventListener('click', () => {
-    if (!confirm('Apagar todos os lançamentos e contas deste aparelho? Isso não pode ser desfeito.')) return;
-    db = { version: 1, banks: [], txs: [], rules: {} }; save(); ui.bank = ''; slots = null; toast('Tudo apagado.'); go('panorama');
+    if (!confirm('Apagar todos os lançamentos e contas deste celular? Não dá para desfazer.')) return;
+    db = { version: 2, banks: [], txs: [], rules: {} }; save(); ui.bank = ''; slots = null; toast('Tudo apagado'); go('panorama');
   });
 
-  /* ============ dados de exemplo ============ */
+  /* =================== dados de exemplo =================== */
   function loadDemo() {
-    let seed = 7;
+    let seed = 11;
     const rnd = () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
     const pick = a => a[Math.floor(rnd() * a.length)];
-    const nu = ensureBank('Nubank'), it = ensureBank('Itaú'), cart = ensureBank('Carteira (dinheiro)');
-    it.initial = 5200; nu.initial = 1450; cart.initial = 150;
-    const add = (date, amount, desc, bank, time) => db.txs.push({ id: uid(), date, time: time || null, amount: Math.round(amount * 100) / 100, desc, cat: guessCat(desc, amount), bank: bank.id, source: time ? 'manual' : 'import', createdAt: new Date().toISOString() });
+    const san = ensureAccount({ name: 'Santander', inst: 'santander', type: 'conta' });
+    const nuc = ensureAccount({ name: 'Nubank', inst: 'nubank', type: 'credito' });
+    const inter = ensureAccount({ name: 'Inter', inst: 'inter', type: 'conta' });
+    const vr = ensureAccount({ name: 'VR', inst: 'vr', type: 'vr' });
+    const cart = ensureAccount({ name: 'Carteira', inst: 'carteira', type: 'dinheiro' });
+    san.initial = 4200; inter.initial = 1800; vr.initial = 120; cart.initial = 150;
+    const add = (date, amount, desc, acc, time) => db.txs.push({ id: uid(), date, time: time || null, amount: Math.round(amount * 100) / 100, desc, cat: guessCat(desc, amount, acc.type), bank: acc.id, source: time ? 'manual' : 'import', createdAt: new Date().toISOString() });
     const end = new Date(); const start = new Date(end.getFullYear(), end.getMonth() - 6, 1);
+    let cardMonth = 0;
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
       const s = ds(d), day = d.getDate(), wd = d.getDay();
-      if (day === 5) add(s, 7400, 'SALARIO EMPRESA XYZ LTDA', it);
-      if (day === 20 && rnd() < 0.6) add(s, 450 + rnd() * 900, 'PIX RECEBIDO - FREELA DESIGN', nu);
-      if (day === 6) add(s, -1850, 'PAGAMENTO ALUGUEL - IMOBILIARIA CENTRO', it);
-      if (day === 6) add(s, -2000, 'APLICACAO CDB LIQUIDEZ', it);
-      if (day === 10) add(s, -(160 + rnd() * 60), 'ENEL DISTRIBUICAO ENERGIA', it);
-      if (day === 12) add(s, -99.9, 'VIVO FIBRA INTERNET', it);
-      if (day === 8) add(s, -55.9, 'NETFLIX.COM', nu);
-      if (day === 9) add(s, -21.9, 'SPOTIFY', nu);
-      if (day === 15) add(s, -119.9, 'SMART FIT MENSALIDADE', nu);
-      if (day === 18) add(s, -12.9, 'APPLE.COM/BILL ICLOUD', nu);
-      if (day === 1 && d.getMonth() % 2 === 0) add(s, -24.5, 'TARIFA PACOTE SERVICOS', it);
-      if (wd === 6 || (wd === 3 && rnd() < 0.3)) add(s, -(110 + rnd() * 170), pick(['SUPERMERCADO EXTRA', 'CARREFOUR HIPER', 'ASSAI ATACADISTA', 'PAO DE ACUCAR']), it);
-      if (rnd() < (wd === 5 || wd === 6 ? 0.55 : 0.25)) add(s, -(35 + rnd() * 70), pick(['IFOOD *RESTAURANTE SABOR', 'IFOOD *PIZZARIA BELLA', 'IFOOD *SUSHI HOUSE', 'IFOOD *BURGER KING']), nu);
-      if (rnd() < 0.35) add(s, -(14 + rnd() * 32), pick(['UBER *TRIP', 'UBER *TRIP', '99APP *CORRIDA']), nu);
-      if (rnd() < 0.05) add(s, -(160 + rnd() * 70), 'POSTO IPIRANGA COMBUSTIVEL', it);
-      if (rnd() < 0.3 && wd > 0 && wd < 6) add(s, -(8 + rnd() * 22), pick(['Café da manhã', 'Padaria', 'Almoço no centro', 'Lanche']), cart, `${pad(8 + Math.floor(rnd() * 10))}:${pad(Math.floor(rnd() * 60))}`);
-      if (rnd() < 0.06) add(s, -(60 + rnd() * 280), pick(['AMAZON MARKETPLACE', 'MERCADO LIVRE', 'SHOPEE', 'RENNER LOJA']), nu);
-      if (rnd() < 0.05) add(s, -(30 + rnd() * 120), pick(['DROGASIL', 'DROGA RAIA']), nu);
-      if (rnd() < 0.04) add(s, -(40 + rnd() * 120), pick(['CINEMARK', 'SYMPLA INGRESSO', 'BAR DO ZE']), nu);
-      if (rnd() < 0.05) add(s, -(50 + rnd() * 250), 'PIX ENVIADO - MARIA SOUZA', it);
-      if (day === 7) add(s, 1500, 'TRANSFERENCIA RECEBIDA - REEMBOLSO EMPRESA', nu);
+      if (day === 5) add(s, 7400, 'SALARIO EMPRESA XYZ LTDA', san);
+      if (day === 1) add(s, 880, 'RECARGA BENEFICIO VR', vr);
+      if (day === 20 && rnd() < 0.6) add(s, 450 + rnd() * 900, 'PIX RECEBIDO - FREELA DESIGN', inter);
+      if (day === 6) add(s, -1850, 'PAGAMENTO ALUGUEL - IMOBILIARIA CENTRO', san);
+      if (day === 6) add(s, -1500, 'APLICACAO CDB LIQUIDEZ', inter);
+      if (day === 10) add(s, -(160 + rnd() * 60), 'ENEL DISTRIBUICAO ENERGIA', san);
+      if (day === 12) add(s, -99.9, 'VIVO FIBRA INTERNET', san);
+      if (day === 1 && d.getMonth() % 2 === 0) add(s, -24.5, 'TARIFA PACOTE SERVICOS', san);
+      if (day === 3 && cardMonth > 0) { add(s, -cardMonth, 'PAGAMENTO DE FATURA NUBANK', san); add(s, cardMonth, 'Pagamento recebido', nuc); cardMonth = 0; }
+      const card = (amt, desc) => { add(s, amt, desc, nuc); cardMonth -= amt; };
+      if (day === 8) card(-55.9, 'NETFLIX.COM');
+      if (day === 9) card(-21.9, 'SPOTIFY');
+      if (day === 15) card(-119.9, 'SMART FIT MENSALIDADE');
+      if (day === 18) card(-12.9, 'APPLE.COM/BILL ICLOUD');
+      if (wd === 6 || (wd === 3 && rnd() < 0.3)) card(-(110 + rnd() * 170), pick(['SUPERMERCADO EXTRA', 'CARREFOUR HIPER', 'ASSAI ATACADISTA', 'PAO DE ACUCAR']));
+      if (wd > 0 && wd < 6 && rnd() < 0.75) add(s, -(26 + rnd() * 18), pick(['RESTAURANTE SABOR CASEIRO', 'SELF SERVICE BOM PRATO', 'LANCHONETE CENTRAL', 'PADARIA REAL']), vr);
+      if (rnd() < (wd === 5 || wd === 6 ? 0.5 : 0.2)) card(-(35 + rnd() * 70), pick(['IFOOD *RESTAURANTE SABOR', 'IFOOD *PIZZARIA BELLA', 'IFOOD *SUSHI HOUSE', 'IFOOD *BURGER KING']));
+      if (rnd() < 0.35) card(-(14 + rnd() * 32), pick(['UBER *TRIP', 'UBER *TRIP', '99APP *CORRIDA']));
+      if (rnd() < 0.05) card(-(160 + rnd() * 70), 'POSTO IPIRANGA COMBUSTIVEL');
+      if (rnd() < 0.2 && wd > 0 && wd < 6) add(s, -(6 + rnd() * 12), pick(['Café', 'Pão de queijo', 'Estacionamento']), cart, `${pad(8 + Math.floor(rnd() * 10))}:${pad(Math.floor(rnd() * 60))}`);
+      if (rnd() < 0.06) card(-(60 + rnd() * 280), pick(['AMAZON MARKETPLACE', 'MERCADO LIVRE', 'SHOPEE', 'RENNER LOJA']));
+      if (rnd() < 0.05) card(-(30 + rnd() * 120), pick(['DROGASIL', 'DROGA RAIA']));
+      if (rnd() < 0.04) card(-(40 + rnd() * 120), pick(['CINEMARK', 'SYMPLA INGRESSO', 'BAR DO ZE']));
+      if (rnd() < 0.05) add(s, -(50 + rnd() * 250), 'PIX ENVIADO - MARIA SOUZA', san);
     }
     save();
   }
+  $('#load-demo').addEventListener('click', () => { loadDemo(); toast('Dados de exemplo carregados'); renderDashboard(); });
 
-  /* botão voltar do Android: fecha janelas e volta ao Panorama antes de sair */
+  /* =================== botão voltar (Android) =================== */
   window.appBack = () => {
     if (!$('#tx-sheet').classList.contains('hidden')) { closeSheet(); return true; }
     if (!$('#drill-sheet').classList.contains('hidden')) { closeDrill(); return true; }
+    if (!$('#period-sheet').classList.contains('hidden')) { closePeriod(); return true; }
     if (ui.view === 'importar' && !$('#import-step2').classList.contains('hidden')) { $('#review-back').click(); return true; }
-    if (ui.monthPick && ui.view === 'panorama') { ui.monthPick = null; renderDashboard(); return true; }
+    if (ui.view === 'panorama' && (ui.monthPick || ui.bank)) { ui.monthPick = null; ui.bank = ''; renderDashboard(); return true; }
     if (ui.view !== 'panorama') { go('panorama'); return true; }
     return false;
   };
-  window.appSaved = ok => toast(ok ? 'Arquivo salvo.' : 'Não foi possível salvar o arquivo.');
+  window.appSaved = ok => toast(ok ? 'Arquivo salvo' : 'Não foi possível salvar o arquivo');
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') window.appBack(); });
 
-  /* ============ toast ============ */
+  /* =================== aviso =================== */
   let toastT;
   function toast(msg) {
     const el = $('#toast'); el.textContent = msg; el.classList.remove('hidden');
-    clearTimeout(toastT); toastT = setTimeout(() => el.classList.add('hidden'), 3200);
+    clearTimeout(toastT); toastT = setTimeout(() => el.classList.add('hidden'), 2800);
   }
 
-  /* instalar na tela inicial */
-  let installEvt = null;
-  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
-  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
-  const installDismissed = () => { try { return localStorage.getItem(STORE_KEY + ':noinstall') === '1'; } catch (e) { return false; } };
-  function showInstall() {
-    if (standalone || window.Android || installDismissed()) return;
-    if (installEvt) $('#install').classList.remove('hidden');
-    else if (isIOS) {
-      $('#install-text').textContent = 'No Safari, toque em Compartilhar e depois em “Adicionar à Tela de Início”.';
-      $('#install-btn').classList.add('hidden');
-      $('#install').classList.remove('hidden');
-    }
-  }
-  window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; showInstall(); });
-  $('#install-btn').addEventListener('click', async () => {
-    if (!installEvt) return;
-    installEvt.prompt(); await installEvt.userChoice; installEvt = null; $('#install').classList.add('hidden');
-  });
-  $('#install-x').addEventListener('click', () => {
-    $('#install').classList.add('hidden');
-    try { localStorage.setItem(STORE_KEY + ':noinstall', '1'); } catch (e) { /* */ }
-  });
-  showInstall();
-
-  matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => render());
   if ('serviceWorker' in navigator && location.protocol === 'https:' && !window.Android) navigator.serviceWorker.register('sw.js').catch(() => {});
-  render();
+  if (document.fonts?.ready) document.fonts.ready.then(() => { if (ui.view === 'panorama' && db.txs.length) renderDashboard(); });
+  go('panorama');
 })();

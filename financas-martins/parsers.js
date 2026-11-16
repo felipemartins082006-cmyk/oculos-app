@@ -87,7 +87,7 @@ const Parsers = (() => {
 
   /* ---------- sinal (entrada x saída) ---------- */
   const NEG_KW = /(compra|pagamento|pgto|pag\b|enviad|envio|saque|tarifa|d[eé]bito|debito|iof|juros|anuidade|boleto|transf.*enviad|pix\s*(env|emit|out)|aplica[cç][aã]o|seguro|parcela)/i;
-  const POS_KW = /(recebid|receb|sal[aá]rio|cr[eé]dito|deposito|dep[oó]sito|rendimento|estorno|reembolso|resgate|devolu|cashback|proventos|ted\s*rec|pix\s*rec)/i;
+  const POS_KW = /(recarga|disponibiliza|credito de beneficio|crédito de benefício|recebid|receb|sal[aá]rio|cr[eé]dito|deposito|dep[oó]sito|rendimento|estorno|reembolso|resgate|devolu|cashback|proventos|ted\s*rec|pix\s*rec)/i;
   const SKIP_RE = /\b(saldo|total|subtotal|resumo|limite dispon|valor m[ií]nimo|pagamento m[ií]nimo)\b/i;
 
   function guessYear(text) {
@@ -96,7 +96,10 @@ const Parsers = (() => {
     const best = Object.entries(c).sort((a, b) => b[1] - a[1])[0];
     return best ? +best[0] : new Date().getFullYear();
   }
+  // dica do tipo de conta escolhido na importação: 'credito' força leitura de fatura; conta/vale desliga
+  let cardHint = null;
   function isCardStatement(text) {
+    if (cardHint !== null) return cardHint;
     const t = text.slice(0, 6000).toLowerCase();
     return /fatura/.test(t) && /(cart[aã]o|vencimento)/.test(t) && !/extrato de conta|conta corrente/.test(t);
   }
@@ -136,8 +139,11 @@ const Parsers = (() => {
   /* Decide entrada/saída quando o extrato não traz sinal */
   function fixSigns(txs, card) {
     if (!txs.length) return txs;
-    if (card) { // fatura de cartão: compras vêm positivas → são saídas
-      txs.forEach(t => { t.amount = -t.amount; });
+    if (card) {
+      // fatura de cartão: quase sempre as compras vêm positivas → são saídas.
+      // Se a maioria já vier negativa, o arquivo já está no formato certo.
+      const pos = txs.filter(t => t.amount > 0).length;
+      if (pos >= txs.length - pos) txs.forEach(t => { t.amount = -t.amount; });
       return txs;
     }
     const hasNeg = txs.some(t => t.amount < 0);
@@ -164,6 +170,7 @@ const Parsers = (() => {
   /* ---------- tabelas (CSV, Excel) ---------- */
   const H = {
     balance: /^(saldo|balance)/i,
+    dc: /^(tipo|d\/c|c\/d|natureza|deb\/cred|débito\/crédito|debito\/credito|operação|operacao)$/i,
     date: /^(data|date|dt\b|dia\b)/i,
     amount: /^(valor|amount|montante|quantia|value|r\$|vlr)/i,
     credit: /(cr[eé]dito|entrada|receita|credit)/i,
@@ -178,6 +185,7 @@ const Parsers = (() => {
       r.forEach((c, j) => {
         if (!c || c.length > 40) return;
         if (H.balance.test(c)) { map.balance ??= j; return; }
+        if (H.dc.test(c)) { map.dc ??= j; return; }
         if (H.date.test(c)) { map.date ??= j; return; }
         if (H.amount.test(c)) { map.amount ??= j; return; }
         if (H.credit.test(c)) { map.credit ??= j; return; }
@@ -210,6 +218,12 @@ const Parsers = (() => {
           amount = c - d;
         }
         if (isNaN(amount) || amount === 0) continue;
+        // coluna "Tipo" com Débito/Crédito: define o sinal
+        if (map.dc != null) {
+          const tp = String(r[map.dc] ?? '').trim().toLowerCase();
+          if (/^(d\b|deb|déb|saída|saida|compra)/.test(tp)) amount = -Math.abs(amount);
+          else if (/^(c\b|cred|créd|entrada|recarga)/.test(tp)) amount = Math.abs(amount);
+        }
         let desc = map.descs.map(j => String(r[j] ?? '').trim()).filter(Boolean).join(' - ');
         if (!desc) desc = r.filter((c, j) => j !== map.date && j !== map.amount && j !== map.balance && isNaN(parseAmount(c)) && !parseDate(c)).join(' ').trim();
         if (SKIP_RE.test(desc) && /^saldo/i.test(desc)) continue;
@@ -219,7 +233,7 @@ const Parsers = (() => {
       // CSV de fatura (ex.: Nubank cartão: date,title,amount — compras positivas)
       const head = hdr.header.join(' ').toLowerCase();
       const cardLike = /title/.test(head) && /amount/.test(head) && !/descri/.test(head);
-      return fixSigns(out, cardLike || isCardStatement(fullText));
+      return fixSigns(out, cardHint !== null ? cardHint : (cardLike || isCardStatement(fullText)));
     }
     // Sem cabeçalho: procura data, valor e texto em cada linha
     for (const r of rows) {
@@ -340,7 +354,11 @@ const Parsers = (() => {
   }
 
   /* ---------- entrada principal ---------- */
-  async function parseFile(file, { askPassword } = {}) {
+  async function parseFile(file, { askPassword, accountType } = {}) {
+    cardHint = accountType === 'credito' ? true : (accountType ? false : null);
+    try { return await parseFileInner(file, askPassword); } finally { cardHint = null; }
+  }
+  async function parseFileInner(file, askPassword) {
     const name = file.name.toLowerCase();
     const ext = name.split('.').pop();
     let result = { transactions: [], balance: null, kind: ext };
@@ -371,6 +389,17 @@ const Parsers = (() => {
         result = { transactions: txs, balance: null, kind: d ? 'CSV' : 'Texto' };
       }
     }
+    // saldo de abertura: quando o extrato traz a coluna de saldo, o saldo antes do 1º lançamento
+    if (result.balance == null && cardHint !== true) {
+      const withBal = result.transactions.filter(t => t.balance != null && !isNaN(t.balance));
+      if (withBal.length >= 2) {
+        const asc = withBal[0].date <= withBal[withBal.length - 1].date;
+        const first = asc ? withBal[0] : withBal[withBal.length - 1];
+        const second = asc ? withBal[1] : withBal[withBal.length - 2];
+        // confere se o saldo bate com os valores antes de confiar nele
+        if (Math.abs(second.balance - first.balance - second.amount) < 0.02) result.opening = Math.round((first.balance - first.amount) * 100) / 100;
+      }
+    }
     result.transactions = result.transactions
       .filter(t => t.date && isFinite(t.amount) && t.amount !== 0)
       .map(t => ({ date: t.date, description: cleanDesc(t.description), amount: Math.round(t.amount * 100) / 100 }));
@@ -381,5 +410,7 @@ const Parsers = (() => {
     return String(s || '').replace(/\s+/g, ' ').replace(/^[-–—:•\s]+|[-–—:•\s]+$/g, '').slice(0, 140) || 'Sem descrição';
   }
 
-  return { parseFile, parseAmount, parseDate, parseLines, parseRows, splitCSVLine, detectDelimiter, parseOFX };
+  const loadXLSX = () => loadScript(XLSX_URL);
+
+  return { loadXLSX, parseFile, parseAmount, parseDate, parseLines, parseRows, splitCSVLine, detectDelimiter, parseOFX };
 })();

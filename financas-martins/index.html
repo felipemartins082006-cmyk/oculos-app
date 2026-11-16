@@ -2,219 +2,249 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#0a0b0f">
+<meta name="color-scheme" content="dark">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Finanças">
-<link rel="apple-touch-icon" href="icon-180.png">
-<title>Finanças Martins</title>
+<title>Finanças</title>
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%232a78d6'/%3E%3Cpath d='M14 44l12-12 8 8 16-18' stroke='white' stroke-width='6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="icon" href="icon.svg">
+<link rel="apple-touch-icon" href="icon-180.png">
 <link rel="stylesheet" href="styles.css">
 <script src="vendor/chart.umd.min.js"></script>
 </head>
 <body>
-<header class="topbar">
-  <div class="brand">
-    <span class="logo" aria-hidden="true"><svg viewBox="0 0 64 64"><path d="M14 44l12-12 8 8 16-18" /></svg></span>
-    <span>Finanças</span>
+<div class="glow" aria-hidden="true"></div>
+
+<header class="top">
+  <div>
+    <p class="top-date" id="top-date"></p>
+    <h1 class="top-title" id="top-title">Olá</h1>
   </div>
+  <button class="period-pill" id="period-btn" aria-label="Período">
+    <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
+    <span id="period-btn-label">6 meses</span>
+  </button>
 </header>
-<nav class="tabs" aria-label="Seções">
-  <button data-view="panorama" class="active"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V10M10 19V5M16 19v-7M22 19H2"/></svg>Panorama</button>
-  <button data-view="lancamentos"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg>Lançamentos</button>
-  <button data-view="importar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 21h16"/></svg>Importar</button>
-  <button data-view="ajustes"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>Ajustes</button>
-</nav>
 
 <main>
-  <!-- PANORAMA -->
+  <!-- ============ INÍCIO ============ -->
   <section id="view-panorama" class="view active">
     <div id="empty-state" class="empty hidden">
-      <h1>Bem-vindo! Vamos montar seu panorama.</h1>
-      <p>Sem login, sem cadastro. Seus dados ficam só neste aparelho.</p>
-      <div class="empty-actions">
-        <button class="big-btn primary" data-go="importar">
-          <strong>Importar extratos</strong><span>PDF, OFX, CSV, TXT ou Excel — de quantos bancos quiser</span>
-        </button>
-        <button class="big-btn" data-action="new">
-          <strong>Registrar um gasto agora</strong><span>Dia e hora são anotados sozinhos</span>
-        </button>
+      <div class="empty-art" aria-hidden="true">
+        <div class="ring r1"></div><div class="ring r2"></div><div class="ring r3"></div>
+        <svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg>
       </div>
-      <button class="link" id="load-demo">Ver como fica com dados de exemplo</button>
-    </div>
-
-    <div id="install" class="install hidden">
-      <span style="font-size:24px">📲</span>
-      <div class="grow"><b>Instale na tela inicial</b><span id="install-text">Abre como aplicativo, em tela cheia.</span></div>
-      <button class="btn small primary" id="install-btn">Instalar</button>
-      <button class="x" id="install-x" aria-label="Agora não">×</button>
+      <h2>Seu dinheiro, num lugar só</h2>
+      <p>Junte os extratos da conta, do cartão e do vale-refeição e veja para onde vai cada real. Sem login, sem cadastro: tudo fica só no seu celular.</p>
+      <button class="cta" data-go="importar">Importar extratos</button>
+      <button class="ghost" data-action="new">Registrar um gasto agora</button>
+      <button class="link" id="load-demo">Ver com dados de exemplo</button>
     </div>
 
     <div id="dashboard" class="hidden">
-      <div class="filters">
-        <div class="chips" id="period-chips" role="group" aria-label="Período">
-          <button data-period="month">1 mês</button>
-          <button data-period="3m">3 meses</button>
-          <button data-period="6m">6 meses</button>
-          <button data-period="12m">12 meses</button>
-          <button data-period="all">Tudo</button>
+      <!-- cartão principal -->
+      <div class="hero" id="hero">
+        <div class="hero-head">
+          <span class="hero-label">Patrimônio total</span>
+          <span class="chip-delta" id="hero-delta"></span>
         </div>
-        <select id="bank-filter" aria-label="Conta"></select>
-      </div>
-      <p class="period-label" id="period-label"></p>
-
-      <div class="kpis" id="kpis"></div>
-
-      <div class="card insights-card">
-        <h2>O que chama atenção</h2>
-        <ul id="insights" class="insights"></ul>
+        <div class="hero-value" id="hero-value"></div>
+        <div class="hero-spark"><canvas id="chart-spark" aria-label="Evolução do patrimônio"></canvas></div>
+        <div class="hero-row">
+          <div><span class="dot in"></span><small>Entrou</small><b id="hero-in"></b></div>
+          <div><span class="dot out"></span><small>Saiu</small><b id="hero-out"></b></div>
+          <div><span class="dot net"></span><small>Sobrou</small><b id="hero-net"></b></div>
+        </div>
       </div>
 
-      <div class="grid">
-        <div class="card span-2">
-          <div class="card-head">
-            <div>
-              <h2>Evolução do patrimônio</h2>
-              <p class="sub">Saldo das contas + o que você aplicou em investimentos</p>
-            </div>
-            <strong id="patrimonio-now" class="head-value"></strong>
-          </div>
-          <div class="chart-box tall"><canvas id="chart-patrimonio" aria-label="Gráfico da evolução do patrimônio"></canvas></div>
-        </div>
+      <div class="quick">
+        <button data-action="new" data-type="out"><span class="q-ic out"><svg viewBox="0 0 24 24"><path d="M12 5v14M19 12l-7 7-7-7"/></svg></span>Gasto</button>
+        <button data-action="new" data-type="in"><span class="q-ic in"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></span>Entrada</button>
+        <button data-go="importar"><span class="q-ic"><svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M12 18v-6M9 15l3 3 3-3"/></svg></span>Importar</button>
+        <button data-action="export"><span class="q-ic"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M9 21V9"/></svg></span>Exportar</button>
+      </div>
 
-        <div class="card">
-          <div class="card-head">
-            <div><h2>Para onde vai o dinheiro</h2><p class="sub">Toque numa categoria para ver os gastos</p></div>
-          </div>
-          <div id="cat-bars" class="hbars"></div>
-        </div>
+      <div class="sec-head"><h3>Contas e cartões</h3><span class="sec-note" id="acct-note">Toque para filtrar</span></div>
+      <div class="acct-strip" id="acct-strip"></div>
 
-        <div class="card">
-          <div class="card-head">
-            <div><h2>Entradas × saídas por mês</h2><p class="sub">Toque num mês para filtrar</p></div>
-          </div>
-          <div class="legend"><span><i class="sw s1"></i>Entradas</span><span><i class="sw s2"></i>Saídas</span></div>
-          <div class="chart-box"><canvas id="chart-meses" aria-label="Entradas e saídas por mês"></canvas></div>
-        </div>
+      <div class="sec-head"><h3>Destaques</h3></div>
+      <div class="stories" id="stories"></div>
 
-        <div class="card">
-          <div class="card-head"><div><h2>Onde você mais gasta</h2><p class="sub">Estabelecimentos e destinos</p></div></div>
-          <ol id="top-merchants" class="ranked"></ol>
+      <div class="card">
+        <div class="card-head"><div><h3>Para onde vai o dinheiro</h3><p>Toque numa fatia ou categoria</p></div></div>
+        <div class="donut-wrap">
+          <div class="donut"><canvas id="chart-cats"></canvas><div class="donut-center"><small>Gastos</small><b id="cats-total"></b></div></div>
+          <ul class="legend-list" id="cats-legend"></ul>
         </div>
+      </div>
 
-        <div class="card">
-          <div class="card-head"><div><h2>Gasto por dia da semana</h2><p class="sub">Média por dia</p></div></div>
-          <div class="chart-box"><canvas id="chart-semana" aria-label="Gasto médio por dia da semana"></canvas></div>
+      <div class="card" id="card-accts">
+        <div class="card-head"><div><h3>Gastos por conta</h3><p>Quanto saiu de cada conta, cartão e vale</p></div></div>
+        <div class="donut-wrap">
+          <div class="donut"><canvas id="chart-accts"></canvas><div class="donut-center"><small>Contas</small><b id="accts-count"></b></div></div>
+          <ul class="legend-list" id="accts-legend"></ul>
         </div>
+      </div>
 
-        <div class="card">
-          <div class="card-head"><div><h2>Gastos fixos e assinaturas</h2><p class="sub">Cobranças que se repetem todo mês</p></div></div>
-          <ul id="recurring" class="ranked plain"></ul>
+      <div class="duo">
+        <div class="card mini">
+          <h3>Fixos × variáveis</h3>
+          <div class="pie-sm"><canvas id="chart-fixed"></canvas></div>
+          <ul class="legend-mini" id="fixed-legend"></ul>
         </div>
+        <div class="card mini">
+          <h3>Quanto você guardou</h3>
+          <div class="gauge"><canvas id="chart-gauge"></canvas><div class="gauge-center"><b id="gauge-value"></b><small>do que entrou</small></div></div>
+          <p class="mini-note" id="gauge-note"></p>
+        </div>
+      </div>
 
-        <div class="card">
-          <div class="card-head"><div><h2>Por conta</h2><p class="sub">Movimento no período</p></div></div>
-          <div id="by-bank" class="bank-list"></div>
+      <div class="card" id="card-sources">
+        <div class="card-head"><div><h3>De onde vem o dinheiro</h3><p>Entradas por origem</p></div></div>
+        <div class="donut-wrap">
+          <div class="donut pie"><canvas id="chart-sources"></canvas></div>
+          <ul class="legend-list" id="sources-legend"></ul>
         </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><div><h3>Entradas e saídas</h3><p>Toque num mês para ver só ele</p></div></div>
+        <div class="legend-inline"><span><i style="background:var(--in)"></i>Entradas</span><span><i style="background:var(--out)"></i>Saídas</span></div>
+        <div class="chart-box"><canvas id="chart-months"></canvas></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><div><h3>Patrimônio no tempo</h3><p>Contas + investimentos − cartão em aberto</p></div></div>
+        <div class="chart-box tall"><canvas id="chart-wealth"></canvas></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><div><h3>Categorias mês a mês</h3><p>As maiores categorias de gasto</p></div></div>
+        <div class="legend-inline wrap" id="stack-legend"></div>
+        <div class="chart-box"><canvas id="chart-stack"></canvas></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><div><h3>Dia da semana</h3><p>Gasto médio em cada dia</p></div></div>
+        <div class="chart-box short"><canvas id="chart-week"></canvas></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><div><h3>Onde você mais gasta</h3><p>Lojas, apps e pessoas</p></div></div>
+        <ol class="rank" id="top-merchants"></ol>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><div><h3>Gastos fixos e assinaturas</h3><p>Cobranças que se repetem todo mês</p></div></div>
+        <ul class="rank plain" id="recurring"></ul>
       </div>
     </div>
   </section>
 
-  <!-- LANÇAMENTOS -->
+  <!-- ============ EXTRATO ============ -->
   <section id="view-lancamentos" class="view">
-    <div class="list-tools">
-      <input id="search" type="search" placeholder="Buscar (ex.: ifood, mercado…)" aria-label="Buscar">
-      <select id="f-cat" aria-label="Categoria"></select>
-      <select id="f-type" aria-label="Tipo">
-        <option value="">Entradas e saídas</option>
-        <option value="out">Só saídas</option>
-        <option value="in">Só entradas</option>
-      </select>
+    <div class="search">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input id="search" type="search" placeholder="Buscar lançamento" aria-label="Buscar">
     </div>
-    <div id="active-filter" class="active-filter hidden"></div>
-    <p class="sub" id="list-summary"></p>
+    <div class="chips" id="list-chips"></div>
+    <div class="chips" id="list-cats"></div>
+    <div class="list-sum" id="list-summary"></div>
     <div id="tx-list" class="tx-list"></div>
   </section>
 
-  <!-- IMPORTAR -->
+  <!-- ============ IMPORTAR ============ -->
   <section id="view-importar" class="view">
     <div id="import-step1">
-      <h1>Importar extratos</h1>
-      <p class="sub">Baixe o extrato no app do seu banco (PDF, OFX, CSV ou Excel) e escolha aqui. Pode escolher vários arquivos de cada banco. Nada é enviado para a internet: a leitura acontece no próprio celular.</p>
+      <p class="page-sub">Conta corrente, cartão de crédito, vale-refeição ou vale-alimentação. Escolha a instituição, o tipo e os arquivos. A leitura acontece no próprio celular.</p>
 
-      <div class="card stepper-card">
-        <label for="bank-count">Quantos bancos você tem?</label>
+      <div class="stepper-card">
+        <div><b>Quantas contas e cartões?</b><small>Cada um é um extrato separado</small></div>
         <div class="stepper">
-          <button type="button" id="bank-minus" aria-label="Menos um banco">−</button>
+          <button type="button" id="bank-minus" aria-label="Menos uma">−</button>
           <output id="bank-count">1</output>
-          <button type="button" id="bank-plus" aria-label="Mais um banco">+</button>
+          <button type="button" id="bank-plus" aria-label="Mais uma">+</button>
         </div>
       </div>
 
-      <div id="bank-slots" class="bank-slots"></div>
-      <p class="sub" id="files-total"></p>
-      <button class="btn primary wide" id="read-files" disabled>Ler extratos</button>
+      <div id="bank-slots" class="slots"></div>
+      <p class="page-sub center" id="files-total"></p>
+      <button class="cta" id="read-files" disabled>Ler extratos</button>
+
+      <div class="formats">
+        <b>Formatos aceitos</b>
+        <div class="fmt-row"><span>PDF</span><span>OFX</span><span>CSV</span><span>Excel</span><span>TXT</span></div>
+        <p>O app do benefício não deixa exportar? Preencha a <button class="link inline" id="template-btn">planilha modelo</button> e importe, ou registre os gastos pelo botão <b>+</b>.</p>
+      </div>
     </div>
 
     <div id="import-step2" class="hidden">
-      <h1>Confira antes de salvar</h1>
-      <p class="sub">Desmarque o que não quiser importar. Se um extrato veio com entradas e saídas trocadas (comum em fatura de cartão), use “Inverter sinais”.</p>
+      <h2 class="page-title">Confira antes de salvar</h2>
+      <p class="page-sub">Desmarque o que não quiser. Entradas e saídas trocadas? Use “Inverter sinais”.</p>
       <div id="review-files"></div>
       <div class="sticky-actions">
-        <button class="btn" id="review-back">Voltar</button>
-        <button class="btn primary" id="review-save">Importar</button>
+        <button class="ghost" id="review-back">Voltar</button>
+        <button class="cta" id="review-save">Importar</button>
       </div>
     </div>
   </section>
 
-  <!-- AJUSTES -->
+  <!-- ============ MAIS ============ -->
   <section id="view-ajustes" class="view">
-    <h1>Ajustes</h1>
+
+    <button class="export-card" data-action="export">
+      <span class="ex-ic"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M9 21V9"/></svg></span>
+      <span class="grow"><b>Exportar tudo em um arquivo</b><small>Planilha Excel com uma aba para cada conta, cartão e vale, mais o resumo</small></span>
+      <svg class="chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+    </button>
+
     <div class="card">
-      <h2>Contas e saldo inicial</h2>
-      <p class="sub">O saldo inicial é quanto havia na conta antes do primeiro lançamento. Ele faz a evolução do patrimônio partir do valor certo.</p>
+      <div class="card-head"><div><h3>Contas e cartões</h3><p>Saldo inicial é quanto havia antes do primeiro lançamento</p></div></div>
       <div id="banks-edit"></div>
-      <button class="btn" id="add-bank">+ Adicionar conta</button>
+      <button class="ghost small" id="add-bank">+ Adicionar conta</button>
     </div>
+
     <div class="card">
-      <h2>Seus dados</h2>
-      <p class="sub">Ficam salvos só neste navegador. Faça um backup para levar a outro aparelho.</p>
-      <div class="row-btns">
-        <button class="btn" id="export-json">Baixar backup</button>
-        <label class="btn">Restaurar backup<input type="file" id="import-json" accept=".json,application/json" hidden></label>
-        <button class="btn" id="export-csv">Baixar planilha (CSV)</button>
-        <button class="btn danger" id="clear-all">Apagar tudo</button>
+      <div class="card-head"><div><h3>Seus dados</h3><p>Ficam salvos só neste celular</p></div></div>
+      <div class="menu">
+        <button id="export-json"><span>Salvar backup</span><small>Arquivo para restaurar em outro celular</small></button>
+        <label><span>Restaurar backup</span><small>Substitui os dados atuais</small><input type="file" id="import-json" accept=".json,application/json" hidden></label>
+        <button id="export-csv"><span>Planilha simples (CSV)</span><small>Todos os lançamentos numa tabela só</small></button>
+        <button id="clear-all" class="danger"><span>Apagar tudo</span><small>Não dá para desfazer</small></button>
       </div>
     </div>
   </section>
 </main>
 
-<button class="fab" data-action="new" aria-label="Registrar lançamento">
-  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-  <span>Registrar</span>
-</button>
+<nav class="dock" aria-label="Seções">
+  <button data-view="panorama" class="active"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg><span>Início</span></button>
+  <button data-view="lancamentos"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1"/><circle cx="3.5" cy="12" r="1"/><circle cx="3.5" cy="18" r="1"/></svg><span>Extrato</span></button>
+  <button class="dock-add" data-action="new" aria-label="Registrar"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+  <button data-view="importar"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 21h16"/></svg><span>Importar</span></button>
+  <button data-view="ajustes"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg><span>Mais</span></button>
+</nav>
 
-<!-- Sheet de novo lançamento -->
-<div class="sheet-backdrop hidden" id="sheet-backdrop"></div>
+<!-- Novo lançamento: teclado próprio -->
+<div class="backdrop hidden" id="sheet-backdrop"></div>
 <form class="sheet hidden" id="tx-sheet" autocomplete="off">
-  <div class="sheet-grip"></div>
-  <h2 id="sheet-title">Novo lançamento</h2>
-  <div class="seg" role="radiogroup" aria-label="Tipo">
-    <button type="button" data-type="out" class="active">Gasto</button>
-    <button type="button" data-type="in">Entrada</button>
+  <div class="grip"></div>
+  <div class="sheet-top">
+    <div class="seg" role="radiogroup" aria-label="Tipo">
+      <button type="button" data-type="out" class="active">Gasto</button>
+      <button type="button" data-type="in">Entrada</button>
+    </div>
+    <button type="button" class="icon-x" id="tx-cancel" aria-label="Fechar"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
   </div>
-  <label class="amount-field">
-    <span>R$</span>
-    <input id="tx-amount" inputmode="decimal" placeholder="0,00" aria-label="Valor" required>
-  </label>
-  <input id="tx-desc" placeholder="O que foi? (ex.: almoço, Uber, mercado)" aria-label="Descrição" maxlength="140">
-  <div class="cat-picker" id="cat-picker" role="radiogroup" aria-label="Categoria"></div>
-  <select id="tx-bank" aria-label="Conta"></select>
+  <div class="amount" id="amount-display"><small>R$</small><span id="amount-text">0</span></div>
+  <input id="tx-desc" class="desc" placeholder="O que foi? ex.: almoço, Uber, mercado" aria-label="Descrição" maxlength="140">
+  <div class="pick-row" id="cat-picker" role="radiogroup" aria-label="Categoria"></div>
+  <div class="pick-row accts" id="acct-picker" role="radiogroup" aria-label="Conta"></div>
   <div class="when">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
     <span id="when-text"></span>
     <button type="button" class="link" id="when-edit">alterar</button>
   </div>
@@ -222,21 +252,44 @@
     <input type="date" id="tx-date" aria-label="Data">
     <input type="time" id="tx-time" aria-label="Hora">
   </div>
+  <div class="keypad" id="keypad">
+    <button type="button">1</button><button type="button">2</button><button type="button">3</button>
+    <button type="button">4</button><button type="button">5</button><button type="button">6</button>
+    <button type="button">7</button><button type="button">8</button><button type="button">9</button>
+    <button type="button">,</button><button type="button">0</button>
+    <button type="button" data-k="back" aria-label="Apagar"><svg viewBox="0 0 24 24"><path d="M21 5H9l-6 7 6 7h12a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1zM12 9l6 6M18 9l-6 6"/></svg></button>
+  </div>
   <div class="sheet-actions">
-    <button type="button" class="btn danger hidden" id="tx-delete">Excluir</button>
-    <button type="button" class="btn" id="tx-cancel">Cancelar</button>
-    <button type="submit" class="btn primary">Salvar</button>
+    <button type="button" class="ghost danger hidden" id="tx-delete">Excluir</button>
+    <button type="submit" class="cta" id="tx-save">Salvar</button>
   </div>
 </form>
 
-<!-- Detalhe de categoria -->
-<div class="sheet-backdrop hidden" id="drill-backdrop"></div>
+<!-- Detalhe de categoria / conta -->
+<div class="backdrop hidden" id="drill-backdrop"></div>
 <div class="sheet hidden" id="drill-sheet">
-  <div class="sheet-grip"></div>
-  <div class="card-head"><div><h2 id="drill-title"></h2><p class="sub" id="drill-sub"></p></div>
-    <button class="btn" id="drill-close">Fechar</button></div>
-  <div class="chart-box"><canvas id="chart-drill"></canvas></div>
-  <div id="drill-list" class="tx-list compact"></div>
+  <div class="grip"></div>
+  <div class="drill-head">
+    <span class="tile big" id="drill-icon"></span>
+    <div class="grow"><h3 id="drill-title"></h3><p id="drill-sub"></p></div>
+    <button type="button" class="icon-x" id="drill-close" aria-label="Fechar"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <div class="chart-box short"><canvas id="chart-drill"></canvas></div>
+  <div id="drill-list" class="tx-list flat"></div>
+</div>
+
+<!-- Período -->
+<div class="backdrop hidden" id="period-backdrop"></div>
+<div class="sheet hidden" id="period-sheet">
+  <div class="grip"></div>
+  <h3 class="sheet-title">Período</h3>
+  <div class="radio-list" id="period-list">
+    <button data-period="month">Este mês</button>
+    <button data-period="3m">Últimos 3 meses</button>
+    <button data-period="6m">Últimos 6 meses</button>
+    <button data-period="12m">Últimos 12 meses</button>
+    <button data-period="all">Desde o começo</button>
+  </div>
 </div>
 
 <div class="toast hidden" id="toast" role="status"></div>

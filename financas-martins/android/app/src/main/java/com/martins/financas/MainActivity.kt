@@ -1,7 +1,8 @@
 package com.martins.financas
 
 import android.annotation.SuppressLint
-import android.content.res.Configuration
+import android.graphics.Color
+import android.os.Build
 import android.net.Uri
 import android.os.Bundle
 import android.view.ViewGroup
@@ -15,10 +16,14 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import android.util.Base64
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.webkit.WebViewAssetLoader
 
 /**
@@ -38,7 +43,7 @@ class MainActivity : ComponentActivity() {
       }
 
   // Salvar backup / planilha: o Android pergunta onde guardar
-  private var pendingContent: String? = null
+  private var pendingContent: ByteArray? = null
   private var pendingMime = "application/octet-stream"
   private val createDoc =
       registerForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
@@ -47,9 +52,7 @@ class MainActivity : ComponentActivity() {
         if (uri == null || content == null) return@registerForActivityResult
         val ok =
             runCatching {
-                  contentResolver.openOutputStream(uri)!!.use {
-                    it.write(content.toByteArray(Charsets.UTF_8))
-                  }
+                  contentResolver.openOutputStream(uri)!!.use { it.write(content) }
                 }
                 .isSuccess
         web.evaluateJavascript("window.appSaved && appSaved($ok)", null)
@@ -58,13 +61,19 @@ class MainActivity : ComponentActivity() {
   @SuppressLint("SetJavaScriptEnabled")
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
-    enableEdgeToEdge()
+    // App sempre escuro: ícones claros na barra de status
+    enableEdgeToEdge(
+        statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+        navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+    )
+    if (Build.VERSION.SDK_INT >= 29) window.isNavigationBarContrastEnforced = false
 
     web = WebView(this)
     web.layoutParams =
         ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
     web.setBackgroundColor(getColor(R.color.page))
     setContentView(web)
+    hideNavigationBar()
 
     // Barras do sistema e teclado: a página fica sempre na área visível
     ViewCompat.setOnApplyWindowInsetsListener(web) { v, insets ->
@@ -157,21 +166,41 @@ class MainActivity : ComponentActivity() {
     else web.loadUrl("https://${WebViewAssetLoader.DEFAULT_DOMAIN}/assets/web/index.html")
   }
 
+  // Esconde a barra de navegação do Android (voltar / início / recentes).
+  // Ela reaparece por um instante ao deslizar o dedo a partir da borda de baixo.
+  private fun hideNavigationBar() {
+    WindowCompat.getInsetsController(window, window.decorView).apply {
+      systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+      hide(WindowInsetsCompat.Type.navigationBars())
+      isAppearanceLightStatusBars = false
+    }
+  }
+
+  override fun onWindowFocusChanged(hasFocus: Boolean) {
+    super.onWindowFocusChanged(hasFocus)
+    if (hasFocus) hideNavigationBar()
+  }
+
   override fun onSaveInstanceState(outState: Bundle) {
     super.onSaveInstanceState(outState)
     web.saveState(outState)
   }
 
-  override fun onConfigurationChanged(newConfig: Configuration) {
-    super.onConfigurationChanged(newConfig)
-    web.setBackgroundColor(getColor(R.color.page))
-  }
-
   inner class Bridge {
     @JavascriptInterface
     fun saveFile(name: String, mime: String, content: String) {
+      save(name, mime, content.toByteArray(Charsets.UTF_8))
+    }
+
+    // Planilha Excel (binária) vem da página em base64
+    @JavascriptInterface
+    fun saveBase64(name: String, mime: String, base64: String) {
+      save(name, mime, Base64.decode(base64, Base64.DEFAULT))
+    }
+
+    private fun save(name: String, mime: String, bytes: ByteArray) {
       runOnUiThread {
-        pendingContent = content
+        pendingContent = bytes
         pendingMime = mime
         createDoc.launch(name)
       }
