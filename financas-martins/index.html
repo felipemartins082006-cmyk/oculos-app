@@ -245,6 +245,22 @@
     </div>
 
     <div class="card">
+      <div class="card-head"><div><h3>Formas de pagamento</h3><p>As opções que aparecem quando você registra um gasto. Ligue só as que você usa e crie as suas.</p></div></div>
+      <div id="methods-edit"></div>
+      <form class="method-new" id="method-new" autocomplete="off">
+        <input id="method-new-name" placeholder="Nova forma (ex.: Contracheque, Ticket)" maxlength="30">
+        <select id="method-new-bank" aria-label="Pergunta qual conta">
+          <option value="">Não pergunta banco</option>
+          <option value="conta">Pergunta o banco (conta)</option>
+          <option value="credito">Pergunta o cartão de crédito</option>
+          <option value="vr">Pergunta o vale-refeição</option>
+          <option value="va">Pergunta o vale-alimentação</option>
+        </select>
+        <button class="cta" type="submit">Adicionar</button>
+      </form>
+    </div>
+
+    <div class="card">
       <div class="card-head"><div><h3>Contas e cartões</h3><p>Saldo inicial é quanto havia antes do primeiro lançamento</p></div></div>
       <div id="banks-edit"></div>
       <button class="ghost small" id="add-bank">+ Adicionar conta</button>
@@ -314,7 +330,12 @@
   <div class="amount" id="amount-display"><small>R$</small><span id="amount-text">0</span></div>
   <input id="tx-desc" class="desc" placeholder="O que foi? ex.: almoço, Uber, mercado" aria-label="Descrição" maxlength="140">
   <div class="pick-row" id="cat-picker" role="radiogroup" aria-label="Categoria"></div>
-  <div class="pick-row accts" id="acct-picker" role="radiogroup" aria-label="Conta"></div>
+  <div class="pay-block">
+    <span class="pay-lbl" id="method-lbl">Como você pagou?</span>
+    <div class="pick-row" id="method-picker" role="radiogroup" aria-label="Forma de pagamento"></div>
+    <span class="pay-lbl" id="bank-lbl">De qual banco?</span>
+    <div class="pick-row accts" id="acct-picker" role="radiogroup" aria-label="Banco ou cartão"></div>
+  </div>
   <div class="pocket-pick hidden" id="pocket-pick"><span id="pocket-pick-lbl">Sai do saldo</span><div class="pick-row" id="pocket-picker"></div></div>
   <div class="when">
     <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>

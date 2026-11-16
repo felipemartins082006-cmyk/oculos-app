@@ -30,6 +30,8 @@
     power: '<path d="M12 3v8"/><path d="M6.3 7.3a8 8 0 1 0 11.4 0"/>',
     edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/>',
     sliders: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
+    pix: '<path d="M12 3l9 9-9 9-9-9z"/><path d="M8.5 12h7"/>',
+    receipt: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
     trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
   };
   const svg = k => `<svg viewBox="0 0 24 24">${IC[k] || IC.dots}</svg>`;
@@ -140,7 +142,7 @@
   const SPACES_KEY = STORE_KEY + ':spaces';
   const SPACE_COLORS = ['#5ee49a', '#ff7eb6', '#9db8ff', '#ffd166', '#ff8a4c', '#c4a8ff', '#3dd6d0'];
   const spaceKey = id => id === 'main' ? STORE_KEY : `${STORE_KEY}:ws:${id}`;
-  const emptyDb = () => ({ version: 2, banks: [], txs: [], rules: {}, incomes: [] });
+  const emptyDb = () => ({ version: 2, banks: [], txs: [], rules: {}, incomes: [], methods: { off: [], custom: [] } });
   function loadSpaces() {
     try { const s = JSON.parse(localStorage.getItem(SPACES_KEY)); if (s?.list?.length) return s; } catch (e) { /* */ }
     return { active: 'main', list: [{ id: 'main', name: 'Meu painel', color: SPACE_COLORS[0] }] };
@@ -158,6 +160,7 @@
   }
   function migrate(d) {
     d.rules ||= {}; d.banks ||= []; d.txs ||= []; d.incomes ||= [];
+    d.methods ||= { off: [], custom: [] };
     for (const b of d.banks) {
       if (!b.type) b.type = /carteira|dinheiro/i.test(b.name) ? 'dinheiro' : 'conta';
       if (!b.inst) {
@@ -188,6 +191,26 @@
     return b;
   }
   const hasCard = () => db.banks.some(b => b.type === 'credito');
+
+  // Formas de pagamento: a lista padrão + as que você criar. Cada uma diz de que tipo de conta ela sai.
+  const BASE_METHODS = [
+    { id: 'pix', name: 'Pix', ic: 'pix', bank: 'conta' },
+    { id: 'debito', name: 'Débito', ic: 'card', bank: 'conta' },
+    { id: 'credito', name: 'Crédito', ic: 'card', bank: 'credito' },
+    { id: 'dinheiro', name: 'Dinheiro', ic: 'cash', bank: 'dinheiro' },
+    { id: 'vr', name: 'Vale-refeição', ic: 'food', bank: 'vr' },
+    { id: 'va', name: 'Vale-alimentação', ic: 'cart', bank: 'va' },
+    { id: 'boleto', name: 'Boleto', ic: 'receipt', bank: 'conta' },
+    { id: 'transfer', name: 'TED / transferência', ic: 'swap', bank: 'conta' },
+    { id: 'folha', name: 'Desconto em folha', ic: 'wallet', bank: null },
+  ];
+  const BANK_ASK = { conta: 'De qual banco?', credito: 'Qual cartão de crédito?', vr: 'Qual vale-refeição?', va: 'Qual vale-alimentação?', dinheiro: 'Onde estava o dinheiro?' };
+  const methodsCfg = () => (db.methods ||= { off: [], custom: [] });
+  const allMethods = () => BASE_METHODS.concat(methodsCfg().custom.map(m => ({ ...m, ic: 'dots', custom: true })));
+  const enabledMethods = () => allMethods().filter(m => !methodsCfg().off.includes(m.id));
+  const methodById = id => allMethods().find(m => m.id === id);
+  const methodFromBank = b => ({ credito: 'credito', vr: 'vr', va: 'va', dinheiro: 'dinheiro', conta: 'debito' }[b?.type] || null);
+  const banksFor = m => !m?.bank ? [] : db.banks.filter(b => b.type === m.bank);
 
   const AGGREGATORS = ['ifood', 'uber', '99app', 'rappi', 'amazon', 'mercadolivre', 'mercado livre', 'shopee', 'netflix', 'spotify', 'apple', 'google', 'paypal', 'aliexpress', 'shein', 'steam', 'airbnb', 'cabify', 'magalu'];
   function merchant(desc) {
@@ -750,7 +773,7 @@
       if (grouped && t.date !== last) { last = t.date; html += `<div class="day-head"><span>${dayLabel(t.date)}</span><span>${fmt(dayTot[t.date])}</span></div>`; }
       const c = CAT[t.cat] || CAT.outros; const b = bankById(t.bank);
       html += `<div class="tx ${t.off ? 'off' : ''} ${t.virtual ? 'auto' : ''} ${sel.ids.has(t.id) ? 'sel' : ''}" data-id="${t.id}" role="button" tabindex="0"><span class="check">${svg('ok')}</span>${tile(t.cat)}
-        <div class="t"><div class="d">${t.off ? '<span class="off-tag">desligado</span>' : ''}${t.virtual ? '<span class="auto-tag">automática</span>' : ''}${esc(t.desc)}</div><div class="m">${grouped ? '' : shortDate(t.date) + ' · '}${t.time ? t.time + ' · ' : ''}${esc(c.name)}${b ? ' · ' + esc(acctLabel(b)) : ''}</div></div>
+        <div class="t"><div class="d">${t.off ? '<span class="off-tag">desligado</span>' : ''}${t.virtual ? '<span class="auto-tag">automática</span>' : ''}${esc(t.desc)}</div><div class="m">${grouped ? '' : shortDate(t.date) + ' · '}${t.time ? t.time + ' · ' : ''}${esc(c.name)}${t.method && methodById(t.method) ? ' · ' + esc(methodById(t.method).name) + (b ? ' ' + esc(b.name) : '') : b ? ' · ' + esc(acctLabel(b)) : ''}</div></div>
         <span class="a ${t.amount > 0 ? 'in' : ''}">${t.amount > 0 ? '+' : '−'} ${fmt(Math.abs(t.amount))}</span></div>`;
     }
     return html || `<p class="empty-note" style="padding:20px 4px">Nenhum lançamento encontrado.</p>`;
@@ -895,7 +918,18 @@
   $('#search').addEventListener('input', e => { clearTimeout(searchT); searchT = setTimeout(() => { ui.list.q = e.target.value; ui.list.limit = 120; renderList(); }, 150); });
 
   /* =================== novo lançamento (teclado próprio) =================== */
-  const sheet = { editing: null, type: 'out', cat: null, catTouched: false, autoWhen: true, amt: '', bank: null, pocket: null };
+  const sheet = { editing: null, type: 'out', cat: null, catTouched: false, autoWhen: true, amt: '', bank: null, pocket: null, method: null };
+  const PAY_KEY = () => spaceKey(spaces.active) + ':pay';
+  const lastPay = () => { try { return JSON.parse(localStorage.getItem(PAY_KEY())) || {}; } catch (e) { return {}; } };
+  // escolhe um banco válido para a forma de pagamento (o último usado com ela, se houver)
+  function fitBank() {
+    const m = methodById(sheet.method);
+    if (!m?.bank) { sheet.bank = null; return; }
+    const list = banksFor(m);
+    if (list.some(b => b.id === sheet.bank)) return;
+    const remembered = lastPay().banks?.[m.id];
+    sheet.bank = list.find(b => b.id === remembered)?.id || list[0]?.id || (m.bank === 'dinheiro' ? '__new' : null);
+  }
   function amountText() {
     if (!sheet.amt) return '0';
     const [i, d] = sheet.amt.split(',');
@@ -914,6 +948,9 @@
     try { last = localStorage.getItem(spaceKey(spaces.active) + ':lastBank'); } catch (e) { /* */ }
     sheet.pocket = tx?.pocket || null;
     sheet.bank = tx ? tx.bank : (bankById(last) ? last : (db.banks.find(b => b.type !== 'credito')?.id || db.banks[0]?.id || null));
+    const enabled = enabledMethods();
+    sheet.method = tx ? (tx.method || methodFromBank(bankById(tx.bank)) || enabled[0]?.id) : (enabled.some(m => m.id === lastPay().method) ? lastPay().method : enabled[0]?.id);
+    if (!tx) { sheet.bank = null; fitBank(); }
     $('#tx-desc').value = tx ? tx.desc : '';
     $('#tx-date').value = tx ? tx.date : todayStr();
     $('#tx-time').value = tx ? (tx.time || '') : nowTime();
@@ -937,8 +974,24 @@
     const opts = CATS.filter(c => sheet.type === 'in' ? (c.income || c.neutral || c.id === 'pessoas') : !c.income);
     if (sheet.cat) opts.sort((a, b) => (b.id === sheet.cat) - (a.id === sheet.cat));
     $('#cat-picker').innerHTML = opts.map(c => `<button type="button" class="pick ${sheet.cat === c.id ? 'on' : ''}" data-cat="${c.id}">${tile(c.id)}${c.name}</button>`).join('');
-    $('#acct-picker').innerHTML = (db.banks.length ? db.banks : [{ id: '__new', name: 'Carteira', inst: 'carteira', type: 'dinheiro' }]).map(b =>
-      `<button type="button" class="pick ${sheet.bank === b.id || (!sheet.bank && b.id === '__new') ? 'on' : ''}" data-bank="${b.id}">${mono(b)}${esc(acctLabel(b))}</button>`).join('');
+    // como pagou → de qual banco/cartão
+    const methods = enabledMethods();
+    if (sheet.method && !methods.some(m => m.id === sheet.method) && methodById(sheet.method)) methods.push(methodById(sheet.method));
+    $('#method-lbl').textContent = sheet.type === 'in' ? 'Como você recebeu?' : 'Como você pagou?';
+    $('#method-picker').innerHTML = methods.map(m => `<button type="button" class="pick ${sheet.method === m.id ? 'on' : ''}" data-method="${m.id}"><span class="tile" style="background:var(--bg-4);color:var(--text-2)">${svg(m.ic)}</span>${esc(m.name)}</button>`).join('')
+      + `<button type="button" class="pick add" data-method="__manage">+ Formas</button>`;
+    const m = methodById(sheet.method);
+    const showBank = !!m?.bank;
+    $('#bank-lbl').classList.toggle('hidden', !showBank);
+    $('#acct-picker').classList.toggle('hidden', !showBank);
+    if (showBank) {
+      $('#bank-lbl').textContent = sheet.type === 'in' && m.bank === 'conta' ? 'Em qual banco?' : BANK_ASK[m.bank];
+      let list = banksFor(m);
+      if (!list.length && m.bank === 'dinheiro') list = [{ id: '__new', name: 'Carteira', inst: 'carteira', type: 'dinheiro' }];
+      $('#acct-picker').innerHTML = list.map(b => `<button type="button" class="pick ${sheet.bank === b.id ? 'on' : ''}" data-bank="${b.id}">${mono(b)}${esc(b.name)}</button>`).join('')
+        + (list.length ? '' : `<span class="pick-hint">Nenhum cadastrado ainda (opcional)</span>`)
+        + `<button type="button" class="pick add" data-bank="__add">+ ${m.bank === 'credito' ? 'Novo cartão' : m.bank === 'vr' || m.bank === 'va' ? 'Novo vale' : m.bank === 'dinheiro' ? 'Outra carteira' : 'Novo banco'}</button>`;
+    }
     const srcs = pocketSources();
     $('#pocket-pick').classList.toggle('hidden', !srcs.length);
     if (srcs.length) {
@@ -971,7 +1024,24 @@
   });
   $('#tx-sheet .seg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; sheet.type = b.dataset.type; if (sheet.cat && !!CAT[sheet.cat].income !== (sheet.type === 'in')) sheet.catTouched = false; syncSheet(); });
   $('#cat-picker').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; sheet.cat = b.dataset.cat; sheet.catTouched = true; syncSheet(); });
-  $('#acct-picker').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; sheet.bank = b.dataset.bank; syncSheet(); });
+  $('#acct-picker').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.bank === '__add') {
+      const m = methodById(sheet.method);
+      const name = prompt(m.bank === 'credito' ? 'Nome do cartão (ex.: Nubank, Itaú):' : m.bank === 'vr' || m.bank === 'va' ? 'Nome do vale (ex.: VR, Alelo, Ticket):' : m.bank === 'dinheiro' ? 'Nome (ex.: Carteira, Cofrinho):' : 'Nome do banco (ex.: Nubank, Santander):');
+      if (!name?.trim()) return;
+      const n = norm(name);
+      const inst = INSTS.find(i => i.id !== 'outro' && n.includes(norm(i.name).split(' ')[0]));
+      const acc = ensureAccount({ name: name.trim(), inst: inst?.id || (m.bank === 'dinheiro' ? 'carteira' : 'outro'), type: m.bank });
+      save(); sheet.bank = acc.id; syncSheet(); return;
+    }
+    sheet.bank = b.dataset.bank; syncSheet();
+  });
+  $('#method-picker').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.method === '__manage') { closeSheet(); go('ajustes'); setTimeout(() => $('#methods-edit').scrollIntoView({ behavior: 'smooth', block: 'center' }), 200); return; }
+    sheet.method = b.dataset.method; sheet.bank = null; fitBank(); syncSheet();
+  });
   $('#pocket-picker').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; sheet.pocket = b.dataset.pocket || null; syncSheet(); });
   $('#tx-desc').addEventListener('input', () => { if (!sheet.catTouched) syncSheet(); });
   $('#when-edit').addEventListener('click', () => { sheet.autoWhen = false; $('#when-inputs').classList.toggle('hidden'); updateWhen(); });
@@ -998,15 +1068,22 @@
     }
     const amount = sheet.type === 'in' ? v : -v;
     const desc = $('#tx-desc').value.trim() || (CAT[sheet.cat]?.name ?? (sheet.type === 'in' ? 'Entrada' : 'Gasto'));
+    const meth = methodById(sheet.method);
     let bankId = sheet.bank;
-    if (!bankId || bankId === '__new') bankId = ensureAccount({ name: 'Carteira', inst: 'carteira', type: 'dinheiro' }).id;
-    try { localStorage.setItem(spaceKey(spaces.active) + ':lastBank', bankId); } catch (err) { /* */ }
+    if (bankId === '__new' || (meth?.bank === 'dinheiro' && !bankId)) bankId = ensureAccount({ name: 'Carteira', inst: 'carteira', type: 'dinheiro' }).id;
+    if (meth?.bank && !bankId && banksFor(meth).length) { toast(`${BANK_ASK[meth.bank]} Escolha um ou toque em “+ Novo”.`); return; }
+    if (!meth?.bank) bankId = null;
+    try {
+      if (bankId) localStorage.setItem(spaceKey(spaces.active) + ':lastBank', bankId);
+      const lp = lastPay(); lp.method = sheet.method; lp.banks ||= {}; if (bankId) lp.banks[sheet.method] = bankId;
+      localStorage.setItem(PAY_KEY(), JSON.stringify(lp));
+    } catch (err) { /* */ }
     const cat = sheet.cat || guessCat(desc, amount, bankById(bankId)?.type);
     const when = sheet.autoWhen ? { date: todayStr(), time: nowTime() } : { date: $('#tx-date').value || todayStr(), time: $('#tx-time').value || null };
     if (sheet.editing) {
       const t = db.txs.find(x => x.id === sheet.editing.id);
       const changed = t.cat !== cat;
-      Object.assign(t, { amount, desc, bank: bankId, cat, ...when });
+      Object.assign(t, { amount, desc, bank: bankId, cat, method: sheet.method, ...when });
       if (sheet.pocket) t.pocket = sheet.pocket; else delete t.pocket;
       if (changed) {
         const key = merchant(desc);
@@ -1016,7 +1093,7 @@
       }
       toast('Lançamento atualizado');
     } else {
-      db.txs.push({ id: uid(), date: when.date, time: when.time, amount, desc, cat, bank: bankId, source: 'manual', createdAt: new Date().toISOString(), ...(sheet.pocket ? { pocket: sheet.pocket } : {}) });
+      db.txs.push({ id: uid(), date: when.date, time: when.time, amount, desc, cat, bank: bankId, method: sheet.method, source: 'manual', createdAt: new Date().toISOString(), ...(sheet.pocket ? { pocket: sheet.pocket } : {}) });
       toast(`${sheet.type === 'in' ? 'Entrada' : 'Gasto'} de ${fmt(v)} registrado`);
     }
     save(); closeSheet(); render();
@@ -1197,8 +1274,39 @@
   });
 
   /* =================== mais / exportar =================== */
+  function renderMethods() {
+    const off = methodsCfg().off;
+    $('#methods-edit').innerHTML = allMethods().map(m => `
+      <div class="method-row">
+        <span class="tile sm" style="background:var(--bg-4);color:var(--text-2)">${svg(m.ic)}</span>
+        <div class="grow"><b>${esc(m.name)}</b><small>${m.bank ? BANK_ASK[m.bank].replace('?', '') : 'Não pergunta banco'} · ${m.bank ? banksFor(m).length + ' cadastrado(s)' : ''}</small></div>
+        ${m.custom ? `<button class="del" data-mdel="${m.id}" aria-label="Excluir">${svg('trash')}</button>` : ''}
+        <button class="switch ${off.includes(m.id) ? '' : 'on'}" data-mtoggle="${m.id}" role="switch" aria-checked="${!off.includes(m.id)}" aria-label="Usar ${esc(m.name)}"><i></i></button>
+      </div>`).join('');
+    $$('#methods-edit [data-mtoggle]').forEach(b => b.addEventListener('click', () => {
+      const id = b.dataset.mtoggle, i = off.indexOf(id);
+      if (i >= 0) off.splice(i, 1); else {
+        if (enabledMethods().length <= 1) { toast('Deixe pelo menos uma forma ligada'); return; }
+        off.push(id);
+      }
+      save(); renderMethods();
+    }));
+    $$('#methods-edit [data-mdel]').forEach(b => b.addEventListener('click', () => {
+      const m = methodById(b.dataset.mdel);
+      if (!confirm(`Excluir a forma “${m.name}”? Os lançamentos continuam.`)) return;
+      methodsCfg().custom = methodsCfg().custom.filter(x => x.id !== m.id); save(); renderMethods();
+    }));
+  }
+  $('#method-new').addEventListener('submit', e => {
+    e.preventDefault();
+    const name = $('#method-new-name').value.trim();
+    if (!name) { $('#method-new-name').focus(); return; }
+    methodsCfg().custom.push({ id: 'm' + uid(), name: name.slice(0, 30), bank: $('#method-new-bank').value || null });
+    save(); $('#method-new-name').value = ''; renderMethods(); toast(`“${name}” adicionada às formas de pagamento`);
+  });
   function renderSettings() {
     renderBackup();
+    renderMethods();
     $('#banks-edit').innerHTML = db.banks.map(b => `
       <div class="bank-edit" data-id="${b.id}">${mono(b)}
         <input class="bn" value="${esc(b.name)}" aria-label="Nome da conta">
@@ -1361,6 +1469,8 @@
   const pocketSources = () => incomes().filter(s => s.mode !== 'off' && s.monthly > 0 && s.start);
   function pocketOf(t, srcs = pocketSources()) {
     if (t.pocket && srcs.some(s => s.id === t.pocket)) return t.pocket;
+    if (t.method === 'vr' || t.method === 'va') { const v = srcs.find(s => s.type === 'vr'); if (v) return v.id; }
+    if (t.method === 'folha') { const s = srcs.find(x => x.type === 'salario'); if (s) return s.id; }
     const bySrc = srcs.find(s => s.bank && s.bank === t.bank);
     if (bySrc) return bySrc.id;
     const b = bankById(t.bank);

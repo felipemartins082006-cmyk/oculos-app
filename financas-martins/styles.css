@@ -623,3 +623,18 @@ input[type=checkbox] { accent-color: var(--accent); }
 .dt-head > * { white-space: normal; line-height: 1.2; }
 .dt-row .pos { color: var(--in); } .dt-row .neg { color: var(--out); }
 .dt-row b { font-weight: 800; }
+
+/* ---------- formas de pagamento ---------- */
+.pay-block { display: flex; flex-direction: column; gap: 8px; }
+.pay-lbl { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin: 2px 0 -2px 2px; }
+.pay-lbl.hidden + .pick-row, .pick-row.hidden { display: none; }
+.pick.add { border-style: dashed; color: var(--lime); padding: 6px 14px; }
+.method-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+.method-row:first-child { border-top: 0; }
+.method-row b { display: block; font-size: 14.5px; }
+.method-row small { color: var(--muted); font-size: 12px; }
+.method-row .del { border: 0; background: none; color: var(--muted); padding: 4px; }
+.method-row .del svg { width: 18px; height: 18px; }
+.method-new { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin-top: 12px; }
+.method-new .cta { min-height: 46px; }
+.pick-hint { flex: 0 0 auto; align-self: center; color: var(--muted); font-size: 12.5px; font-weight: 600; padding: 0 4px; }

@@ -46,6 +46,11 @@ Instalar (o Android pede para permitir "instalar apps desconhecidos" na primeira
   **não contar** (só registrado, ex.: rendimento que fica investido). As entradas aparecem sozinhas no
   Extrato (marcadas "automática") e entram nos gráficos, no patrimônio e na planilha. Se a mesma renda
   também vier num extrato importado, o app avisa e pergunta qual manter, para não contar duas vezes.
+- **Formas de pagamento**: ao registrar um gasto, o app pergunta "Como você pagou?" (Pix, Débito,
+  Crédito, Dinheiro, Vale-refeição, Vale-alimentação, Boleto, TED, Desconto em folha) e, conforme a
+  forma, "De qual banco?", "Qual cartão de crédito?" ou "Qual vale?", com "+ Novo" para cadastrar na
+  hora. Ele lembra a última forma e o último banco usados. Em Mais › Formas de pagamento você liga só
+  as que usa e cria as suas (ex.: "Contracheque"), dizendo se elas perguntam banco, cartão ou vale.
 - **Saldo do dia (cada renda separada)**: salário, VR, rendimentos e outras fontes viram saldos
   separados no Início. Todo dia entra a parte de cada um e saem os gastos daquele saldo; o que sobra
   (ou falta) passa para o dia seguinte. Ex.: ganha 70, gasta 50 → sobra 20, e amanhã fica 70 + 20 = 90.
