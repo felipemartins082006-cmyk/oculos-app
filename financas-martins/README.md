@@ -40,6 +40,12 @@ Instalar (o Android pede para permitir "instalar apps desconhecidos" na primeira
   (quando só um está marcado) e **Excluir**. Tocar normalmente continua abrindo a edição.
 - **Exportar tudo em um arquivo**: planilha Excel com a aba Resumo, uma aba para cada conta, cartão
   e vale, e uma aba com todos os lançamentos.
+- **Sua renda** (atalho "Renda" no Início, ou em Mais): cadastre salário, outras fontes, rendimento
+  dos investimentos (valor investido × % ao mês) e VR/VA. Cada fonte escolhe como conta: **todo dia**
+  (valor do mês ÷ dias daquele mês, 30 ou 31), **no dia do pagamento** (inteiro, num dia escolhido) ou
+  **não contar** (só registrado, ex.: rendimento que fica investido). As entradas aparecem sozinhas no
+  Extrato (marcadas "automática") e entram nos gráficos, no patrimônio e na planilha. Se a mesma renda
+  também vier num extrato importado, o app avisa e pergunta qual manter, para não contar duas vezes.
 - **Painéis**: toque no nome no topo (ex.: "Meu painel ▾") para trocar de painel ou criar um novo do
   zero. Cada painel tem suas próprias contas, lançamentos e gráficos (ex.: um para você, outro para a
   namorada). Dá para renomear e excluir.

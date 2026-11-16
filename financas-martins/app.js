@@ -51,6 +51,7 @@
     { id: 'pessoas', name: 'Pix e transferências', ic: 'swap', color: '#8fb8ff', kw: ['pix', 'ted', 'doc ', 'transferencia', 'transferência', 'transf'] },
     { id: 'outros', name: 'Outros gastos', ic: 'dots', color: '#8a90a2' },
     { id: 'receitas', name: 'Salário e receitas', ic: 'wallet', color: '#d4fc79', income: true, kw: ['salario', 'salário', 'proventos', 'folha', 'pro labore', 'pró-labore', 'rendimento', 'cashback', 'reembolso', 'estorno', 'freela', 'venda'] },
+    { id: 'rendimentos', name: 'Rendimentos', ic: 'trend', color: '#38d9a9', income: true, kw: [] },
     { id: 'beneficios', name: 'Benefícios (VR/VA)', ic: 'gift', color: '#5ee49a', income: true, kw: ['recarga', 'credito beneficio', 'crédito benefício', 'disponibiliza', 'beneficio', 'benefício'] },
     { id: 'invest', name: 'Investimentos', ic: 'trend', color: '#38d9a9', neutral: true, kw: ['aplicacao', 'aplicação', 'resgate', 'cdb', 'tesouro', 'invest', 'poupanca', 'poupança', 'lci', 'lca', 'corretora', 'caixinha', 'cofrinho', 'renda fixa', 'fundo'] },
     { id: 'fatura', name: 'Pagamento de fatura', ic: 'card', color: '#9aa1b3', neutral: true, kw: ['pagamento de fatura', 'pagto fatura', 'pgto fatura', 'fatura cartao', 'fatura cartão', 'pag fatura', 'pagamento fatura', 'pagamento recebido', 'pgto cartao', 'pagamento cartao', 'pagamento cartão'] },
@@ -139,7 +140,7 @@
   const SPACES_KEY = STORE_KEY + ':spaces';
   const SPACE_COLORS = ['#5ee49a', '#ff7eb6', '#9db8ff', '#ffd166', '#ff8a4c', '#c4a8ff', '#3dd6d0'];
   const spaceKey = id => id === 'main' ? STORE_KEY : `${STORE_KEY}:ws:${id}`;
-  const emptyDb = () => ({ version: 2, banks: [], txs: [], rules: {} });
+  const emptyDb = () => ({ version: 2, banks: [], txs: [], rules: {}, incomes: [] });
   function loadSpaces() {
     try { const s = JSON.parse(localStorage.getItem(SPACES_KEY)); if (s?.list?.length) return s; } catch (e) { /* */ }
     return { active: 'main', list: [{ id: 'main', name: 'Meu painel', color: SPACE_COLORS[0] }] };
@@ -156,7 +157,7 @@
     return emptyDb();
   }
   function migrate(d) {
-    d.rules ||= {}; d.banks ||= []; d.txs ||= [];
+    d.rules ||= {}; d.banks ||= []; d.txs ||= []; d.incomes ||= [];
     for (const b of d.banks) {
       if (!b.type) b.type = /carteira|dinheiro/i.test(b.name) ? 'dinheiro' : 'conta';
       if (!b.inst) {
@@ -248,8 +249,8 @@
     $('#space-dot').textContent = sp.name.trim()[0]?.toUpperCase() || '?';
     $('#space-btn').title = `${wd}, ${d.getDate()} de ${MES_LONGO[d.getMonth()]}`;
     const h = d.getHours();
-    $('#top-title').textContent = { panorama: h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite', lancamentos: 'Extrato', importar: 'Importar extratos', ajustes: 'Mais opções' }[ui.view];
-    $('#period-btn').classList.toggle('hidden', ui.view !== 'panorama' || !db.txs.length);
+    $('#top-title').textContent = { panorama: h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite', lancamentos: 'Extrato', importar: 'Importar extratos', ajustes: 'Mais opções', renda: 'Sua renda' }[ui.view];
+    $('#period-btn').classList.toggle('hidden', ui.view !== 'panorama' || !hasData());
     $('#period-btn-label').textContent = ui.monthPick ? MES_LONGO[+ui.monthPick.slice(5) - 1] : PERIODS[ui.period];
   }
   $$('.dock button[data-view]').forEach(b => b.addEventListener('click', () => go(b.dataset.view)));
@@ -265,11 +266,58 @@
     else if (ui.view === 'lancamentos') renderList();
     else if (ui.view === 'importar') renderImport();
     else if (ui.view === 'ajustes') renderSettings();
+    else if (ui.view === 'renda') renderIncome();
   }
 
   /* =================== período =================== */
   // lançamento "desligado" (t.off) continua salvo, mas fica fora de saldos, gráficos e totais
-  const active = () => db.txs.filter(t => !t.off);
+  // renda automática (salário, outras fontes, rendimentos, VR): vira entradas calculadas na hora, sem gravar lançamentos
+  const INC_TYPES = {
+    salario: { name: 'Salário', ic: 'wallet', cat: 'receitas', def: 'Salário', hint: 'Seu salário fixo, o que cai todo mês' },
+    extra: { name: 'Outras fontes', ic: 'cash', cat: 'receitas', def: 'Renda extra', hint: 'Freela, aluguel recebido, pensão, bico…' },
+    invest: { name: 'Investimentos', ic: 'trend', cat: 'rendimentos', def: 'Rendimento dos investimentos', hint: 'Renda passiva: quanto rende o que você tem investido' },
+    vr: { name: 'Vale-refeição / alimentação', ic: 'food', cat: 'beneficios', def: 'Vale-refeição', hint: 'O valor do VR ou VA que cai todo mês' },
+  };
+  const incomes = () => db.incomes || [];
+  const dimOf = s => { const d = pd(s); return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); };
+  const r2 = v => Math.round(v * 100) / 100;
+  let vCache = null;
+  function virtualIncome() {
+    const today = todayStr();
+    const key = today + JSON.stringify(incomes());
+    if (vCache && vCache.db === db && vCache.key === key) return vCache.list;
+    const out = [];
+    for (const src of incomes()) {
+      if (src.mode === 'off' || !(src.monthly > 0) || !src.start) continue;
+      const end = src.end && src.end < today ? src.end : today;
+      const base = { time: null, desc: src.name, cat: INC_TYPES[src.type]?.cat || 'receitas', bank: src.bank || null, source: 'renda', virtual: true, inc: src.id };
+      if (src.mode === 'daily') {
+        // valor do mês ÷ dias daquele mês, com arredondamento que fecha o mês exato
+        for (let d = src.start; d <= end; d = addDays(d, 1)) {
+          const dim = dimOf(d), day = +d.slice(8);
+          out.push({ ...base, id: `inc:${src.id}:${d}`, date: d, amount: r2(r2(src.monthly * day / dim) - r2(src.monthly * (day - 1) / dim)) });
+        }
+      } else {
+        const s0 = pd(src.start); const m = new Date(s0.getFullYear(), s0.getMonth(), 1);
+        while (ds(m) <= end) {
+          const dim = new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate();
+          const pay = ds(new Date(m.getFullYear(), m.getMonth(), Math.min(+src.payday || 1, dim)));
+          if (pay >= src.start && pay <= end) out.push({ ...base, id: `inc:${src.id}:${pay}`, date: pay, amount: r2(src.monthly) });
+          m.setMonth(m.getMonth() + 1);
+        }
+      }
+    }
+    vCache = { db, key, list: out };
+    return out;
+  }
+  // agrupa as entradas automáticas por fonte e mês (para planilhas)
+  function groupVirtual(list) {
+    const g = {};
+    for (const t of list) { const k = `${t.inc}|${t.date.slice(0, 7)}`; (g[k] ||= { ...t, amount: 0 }); g[k].amount = r2(g[k].amount + t.amount); g[k].date = t.date > g[k].date ? t.date : g[k].date; }
+    return Object.values(g).map(t => ({ ...t, desc: `${t.desc} · renda automática (${MES_LONGO[+t.date.slice(5, 7) - 1]})` }));
+  }
+  const hasData = () => db.txs.length > 0 || virtualIncome().length > 0;
+  const active = () => db.txs.filter(t => !t.off).concat(virtualIncome());
   const scoped = () => active().filter(t => !ui.bank || t.bank === ui.bank);
   function dataBounds(txs) {
     let min = null, max = null;
@@ -376,8 +424,9 @@
 
   /* =================== início =================== */
   function renderDashboard() {
-    const has = db.txs.length > 0;
+    const has = hasData();
     renderNag();
+    renderIncomeCard();
     $('#empty-state').classList.toggle('hidden', has);
     $('#dashboard').classList.toggle('hidden', !has);
     renderTop();
@@ -696,12 +745,12 @@
   function txRows(list, grouped) {
     let html = '', last = null;
     const dayTot = {};
-    if (grouped) list.forEach(t => { dayTot[t.date] = (dayTot[t.date] || 0) + (isNeutral(t) || t.off ? 0 : t.amount); });
+    if (grouped) list.forEach(t => { dayTot[t.date] = r2((dayTot[t.date] || 0) + (isNeutral(t) || t.off ? 0 : t.amount)); });
     for (const t of list) {
       if (grouped && t.date !== last) { last = t.date; html += `<div class="day-head"><span>${dayLabel(t.date)}</span><span>${fmt(dayTot[t.date])}</span></div>`; }
       const c = CAT[t.cat] || CAT.outros; const b = bankById(t.bank);
-      html += `<div class="tx ${t.off ? 'off' : ''} ${sel.ids.has(t.id) ? 'sel' : ''}" data-id="${t.id}" role="button" tabindex="0"><span class="check">${svg('ok')}</span>${tile(t.cat)}
-        <div class="t"><div class="d">${t.off ? '<span class="off-tag">desligado</span>' : ''}${esc(t.desc)}</div><div class="m">${grouped ? '' : shortDate(t.date) + ' · '}${t.time ? t.time + ' · ' : ''}${esc(c.name)}${b ? ' · ' + esc(acctLabel(b)) : ''}</div></div>
+      html += `<div class="tx ${t.off ? 'off' : ''} ${t.virtual ? 'auto' : ''} ${sel.ids.has(t.id) ? 'sel' : ''}" data-id="${t.id}" role="button" tabindex="0"><span class="check">${svg('ok')}</span>${tile(t.cat)}
+        <div class="t"><div class="d">${t.off ? '<span class="off-tag">desligado</span>' : ''}${t.virtual ? '<span class="auto-tag">automática</span>' : ''}${esc(t.desc)}</div><div class="m">${grouped ? '' : shortDate(t.date) + ' · '}${t.time ? t.time + ' · ' : ''}${esc(c.name)}${b ? ' · ' + esc(acctLabel(b)) : ''}</div></div>
         <span class="a ${t.amount > 0 ? 'in' : ''}">${t.amount > 0 ? '+' : '−'} ${fmt(Math.abs(t.amount))}</span></div>`;
     }
     return html || `<p class="empty-note" style="padding:20px 4px">Nenhum lançamento encontrado.</p>`;
@@ -710,7 +759,8 @@
     root.querySelectorAll('.tx').forEach(el => {
       let timer = null, x0 = 0, y0 = 0, longFired = false;
       const cancel = () => { clearTimeout(timer); timer = null; };
-      if (selectable) {
+      const isAuto = el.dataset.id.startsWith('inc:');
+      if (selectable && !isAuto) {
         // pressionar e segurar: entra no modo de seleção
         el.addEventListener('pointerdown', e => {
           longFired = false; x0 = e.clientX; y0 = e.clientY;
@@ -722,6 +772,7 @@
       }
       el.addEventListener('click', () => {
         if (longFired) { longFired = false; return; }
+        if (isAuto) { if (!sel.on) openInc(incomes().find(s => s.id === el.dataset.id.split(':')[1])); return; }
         if (selectable && sel.on) { toggleSel(el.dataset.id); return; }
         closeDrill(); openTxSheet(db.txs.find(t => t.id === el.dataset.id));
       });
@@ -819,7 +870,7 @@
     }));
     $('#search').value = L.q;
     const q = norm(L.q);
-    const list = db.txs.filter(t =>
+    const list = db.txs.concat(virtualIncome()).filter(t =>
       (!L.bank || t.bank === L.bank) && (!L.cat || t.cat === L.cat) &&
       (!L.type || (L.type === 'in' ? t.amount > 0 : t.amount < 0)) &&
       (!L.merchant || merchant(t.desc) === L.merchant) &&
@@ -829,7 +880,7 @@
     $('#list-summary').innerHTML = `<div><small>Entradas</small><b style="color:var(--in)">${fmt(T.inc)}</b></div><div><small>Saídas</small><b style="color:var(--out)">${fmt(T.out)}</b></div>`;
     const box = $('#tx-list');
     box.innerHTML = txRows(list.slice(0, L.limit), true) + (list.length > L.limit ? `<button class="ghost load-more" id="load-more">Mostrar mais (${list.length - L.limit})</button>` : '');
-    sel.visible = list.slice(0, L.limit).map(t => t.id);
+    sel.visible = list.slice(0, L.limit).filter(t => !t.virtual).map(t => t.id);
     bindTxRows(box, true);
     if (sel.on) syncSel();
     const offN = list.filter(t => t.off).length;
@@ -1148,6 +1199,7 @@
         const n = db.txs.filter(t => t.bank === b.id).length;
         if (!confirm(`Excluir “${acctLabel(b)}”${n ? ` e seus ${n} lançamentos` : ''}?`)) return;
         db.txs = db.txs.filter(t => t.bank !== b.id); db.banks = db.banks.filter(x => x.id !== b.id);
+        incomes().forEach(s => { if (s.bank === b.id) s.bank = null; });
         if (ui.bank === b.id) ui.bank = '';
         save(); renderSettings();
       });
@@ -1180,7 +1232,7 @@
 
   // Um arquivo só: resumo + uma aba por conta/cartão/vale + todos os lançamentos
   async function exportAll() {
-    if (!db.txs.length) { toast('Ainda não há lançamentos para exportar'); return; }
+    if (!hasData()) { toast('Ainda não há lançamentos para exportar'); return; }
     toast('Montando a planilha…');
     try { await Parsers.loadXLSX(); } catch (e) { toast('Não consegui carregar o gerador de planilhas'); return; }
     const X = window.XLSX;
@@ -1199,13 +1251,13 @@
     const wb = X.utils.book_new();
     const now = new Date();
     const everything = [...db.txs].sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
-    const sorted = active().sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
+    const sorted = db.txs.filter(t => !t.off).concat(groupVirtual(virtualIncome())).sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
 
     // Resumo
     const resumo = [[`Finanças · ${currentSpace().name} · exportado em ${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()} às ${nowTime()}`], [],
       ['Conta', 'Instituição', 'Tipo', 'Lançamentos', 'Entradas', 'Saídas', 'Saldo atual']];
     for (const b of db.banks) {
-      const bt = active().filter(t => t.bank === b.id);
+      const bt = sorted.filter(t => t.bank === b.id);
       const inc = bt.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
       const out = -bt.filter(t => t.amount < 0).reduce((s, t) => s + t.amount, 0);
       resumo.push([b.name, instOf(b).id === 'outro' ? b.name : instOf(b).name, TYPES[b.type]?.name || '', bt.length, inc, out, (+b.initial || 0) + inc - out]);
@@ -1214,6 +1266,13 @@
     const catTot = {}; let spent = 0;
     for (const t of db.txs) if (isSpend(t)) { catTot[t.cat] = (catTot[t.cat] || 0) - t.amount; spent -= t.amount; }
     Object.entries(catTot).sort((a, b) => b[1] - a[1]).forEach(([c, v]) => resumo.push([CAT[c]?.name || c, '', '', '', v, spent ? `${(v / spent * 100).toFixed(1).replace('.', ',')}%` : '']));
+    if (incomes().length) {
+      resumo.push([], ['Renda cadastrada', 'Tipo', 'Como conta', 'Conta', 'Por mês', 'Contado até hoje']);
+      for (const src of incomes()) {
+        const counted = virtualIncome().filter(t => t.inc === src.id).reduce((s, t) => s + t.amount, 0);
+        resumo.push([src.name, INC_TYPES[src.type]?.name || '', { daily: 'Todo dia', payday: `Dia ${src.payday}`, off: 'Não conta' }[src.mode], acctLabel(bankById(src.bank)) || '—', src.monthly, r2(counted)]);
+      }
+    }
     X.utils.book_append_sheet(wb, sheetFrom(resumo, [26, 18, 20, 13, 16, 16, 16], [4, 5, 6], [], 2), 'Resumo');
 
     // Uma aba por conta
@@ -1233,7 +1292,7 @@
 
     // Todos
     const allRows = [['Data', 'Hora', 'Conta', 'Tipo de conta', 'Descrição', 'Categoria', 'Valor', 'Origem', 'Situação']];
-    for (const t of everything) { const b = bankById(t.bank); allRows.push([toDate(t.date), t.time || '', b?.name || '', TYPES[b?.type]?.name || '', t.desc, CAT[t.cat]?.name || '', t.amount, t.source === 'manual' ? 'Manual' : 'Extrato', t.off ? 'Desligado' : 'Ativo']); }
+    for (const t of everything.concat(groupVirtual(virtualIncome())).sort((a, b) => a.date.localeCompare(b.date))) { const b = bankById(t.bank); allRows.push([toDate(t.date), t.time || '', b?.name || '', TYPES[b?.type]?.name || '', t.desc, CAT[t.cat]?.name || '', t.amount, t.virtual ? 'Renda automática' : t.source === 'manual' ? 'Manual' : 'Extrato', t.off ? 'Desligado' : 'Ativo']); }
     X.utils.book_append_sheet(wb, sheetFrom(allRows, [12, 7, 18, 18, 42, 22, 14, 10, 11], [6], [0]), 'Todos os lançamentos');
 
     const b64 = X.write(wb, { bookType: 'xlsx', type: 'base64', cellDates: true });
@@ -1249,6 +1308,161 @@
   $('#clear-all').addEventListener('click', () => {
     if (!confirm(`Apagar todas as contas e lançamentos do painel “${currentSpace().name}”? Não dá para desfazer.`)) return;
     db = emptyDb(); save(); ui.bank = ''; slots = null; toast('Painel apagado'); go('panorama');
+  });
+
+  /* =================== sua renda =================== */
+  const incTile = k => { const t = INC_TYPES[k], c = CAT[t.cat].color; return `<span class="tile" style="background:${alpha(c, .14)};color:${c}">${svg(t.ic)}</span>`; };
+  const modeText = s => s.mode === 'daily' ? `todo dia (${fmt(s.monthly / dimOf(todayStr()))}/dia este mês)` : s.mode === 'payday' ? `inteiro no dia ${s.payday}` : 'não entra nas contas';
+  const isLive = s => s.mode !== 'off' && s.monthly > 0 && s.start <= todayStr() && (!s.end || s.end >= todayStr());
+  function incomeNumbers() {
+    const today = todayStr(), month = today.slice(0, 7);
+    const v = virtualIncome();
+    const perDay = incomes().filter(s => isLive(s) && s.mode === 'daily').reduce((a, s) => a + s.monthly / dimOf(today), 0);
+    return {
+      today: v.filter(t => t.date === today).reduce((a, t) => a + t.amount, 0),
+      perDay,
+      month: v.filter(t => t.date.startsWith(month)).reduce((a, t) => a + t.amount, 0),
+      monthly: incomes().filter(isLive).reduce((a, s) => a + s.monthly, 0),
+      offTotal: incomes().filter(s => s.mode === 'off').reduce((a, s) => a + (s.monthly || 0), 0),
+    };
+  }
+  // entradas dos extratos que parecem a mesma renda cadastrada aqui (contaria duas vezes)
+  function findDupIncome() {
+    const out = new Set();
+    for (const src of incomes()) {
+      if (src.mode === 'off' || !(src.monthly > 0) || src.type === 'invest') continue;
+      const cat = INC_TYPES[src.type].cat;
+      for (const t of db.txs) {
+        if (t.off || t.dupOk || t.amount <= 0 || t.cat !== cat || t.date < src.start || (src.end && t.date > src.end)) continue;
+        if (Math.abs(t.amount - src.monthly) / src.monthly <= 0.2) out.add(t);
+      }
+    }
+    return [...out];
+  }
+  function renderIncomeCard() {
+    const el = $('#income-card');
+    if (!incomes().length) {
+      el.innerHTML = `<span class="ic-ic">${svg('wallet')}</span><span class="grow"><b>Cadastre sua renda</b><small>Salário, outras fontes, rendimentos e VR entram sozinhos, todo dia ou no dia do pagamento</small></span><svg class="chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>`;
+      return;
+    }
+    const n = incomeNumbers(), dups = findDupIncome().length;
+    el.innerHTML = `<span class="ic-ic">${svg('wallet')}</span><span class="grow"><b>Hoje entrou ${fmt(n.today)} da sua renda</b><small>${fmt(n.monthly)} por mês · ${fmt(n.month)} contados em ${MES_LONGO[new Date().getMonth()]}</small>${dups ? `<small class="warn">Atenção: pode estar contando o salário duas vezes</small>` : ''}</span><svg class="chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>`;
+  }
+  function renderIncome() {
+    const n = incomeNumbers();
+    $('#inc-hero').innerHTML = `
+      <span class="hero-label">Hoje você ganhou</span>
+      <div class="inc-big">${fmt(n.today)}</div>
+      <div class="hero-row">
+        <div><small>Por dia</small><b>${fmt(n.perDay)}</b></div>
+        <div><small>Neste mês</small><b>${fmtShort(n.month)}</b></div>
+        <div><small>Por mês</small><b>${fmtShort(n.monthly)}</b></div>
+      </div>${n.offTotal ? `<p class="inc-off">Não contados: ${fmt(n.offTotal)}/mês (ficam só registrados)</p>` : ''}`;
+    const dups = findDupIncome();
+    const dw = $('#dup-warn');
+    dw.classList.toggle('hidden', !dups.length);
+    if (dups.length) {
+      const ex = dups[0];
+      dw.innerHTML = `<b>Pode estar contando duas vezes</b><p>A renda cadastrada aqui também aparece nos extratos importados: ${dups.length} entrada${dups.length > 1 ? 's' : ''} parecida${dups.length > 1 ? 's' : ''} (ex.: ${esc(ex.desc)}, ${fmt(ex.amount)} em ${shortDate(ex.date)}). Escolha qual manter:</p>
+        <div class="nag-actions"><button class="nag-btn" id="dup-off-imported">Desligar as dos extratos</button><button class="nag-btn soft" id="dup-keep">Manter as duas</button></div>`;
+      $('#dup-off-imported').addEventListener('click', () => {
+        if (!confirm(`Desligar ${dups.length} entrada(s) dos extratos? Elas continuam salvas e você pode religar no Extrato.`)) return;
+        dups.forEach(t => { t.off = true; }); save(); toast('Entradas dos extratos desligadas'); renderIncome();
+      });
+      $('#dup-keep').addEventListener('click', () => { dups.forEach(t => { t.dupOk = true; }); save(); renderIncome(); });
+    }
+    $('#inc-groups').innerHTML = Object.entries(INC_TYPES).map(([k, ty]) => {
+      const items = incomes().filter(s => s.type === k);
+      return `<div class="inc-group">
+        <div class="sec-head"><h3>${ty.name}</h3><button class="link" data-add="${k}">+ Adicionar</button></div>
+        ${items.length ? items.map(s => `<button class="inc-item ${s.mode === 'off' ? 'is-off' : ''}" data-id="${s.id}">
+            ${incTile(k)}<span class="grow"><b>${esc(s.name)}</b><small>${fmt(s.monthly)}/mês · ${modeText(s)}${s.bank ? ' · ' + esc(acctLabel(bankById(s.bank))) : ''}${s.end && s.end < todayStr() ? ' · encerrada' : ''}</small></span>
+            <span class="mode-pill ${s.mode}">${{ daily: 'diário', payday: `dia ${s.payday}`, off: 'não conta' }[s.mode]}</span></button>`).join('')
+          : `<button class="inc-empty" data-add="${k}">${ty.hint}</button>`}
+      </div>`;
+    }).join('');
+    $$('#inc-groups [data-add]').forEach(b => b.addEventListener('click', () => openInc(null, b.dataset.add)));
+    $$('#inc-groups .inc-item').forEach(b => b.addEventListener('click', () => openInc(incomes().find(s => s.id === b.dataset.id))));
+  }
+
+  const inc = { editing: null, type: 'salario', mode: 'daily' };
+  function openInc(src, type) {
+    if (!src && !type) return;
+    inc.editing = src || null;
+    inc.type = src?.type || type;
+    inc.mode = src?.mode || (inc.type === 'invest' ? 'daily' : 'daily');
+    $('#inc-title').textContent = src ? 'Editar renda' : 'Nova fonte de renda';
+    $('#inc-name').value = src?.name || INC_TYPES[inc.type].def;
+    const money = v => v ? (+v).toFixed(2).replace('.', ',') : '';
+    $('#inc-amount').value = money(src?.monthly);
+    $('#inc-principal').value = money(src?.principal);
+    $('#inc-rate').value = src?.rate ? String(src.rate).replace('.', ',') : '';
+    $('#inc-payday').value = src?.payday || 5;
+    const first = todayStr().slice(0, 8) + '01';
+    $('#inc-start').value = src?.start || first;
+    $('#inc-end').value = src?.end || '';
+    const pref = inc.type === 'vr' ? db.banks.find(b => b.type === 'vr' || b.type === 'va') : db.banks.find(b => b.type === 'conta');
+    $('#inc-bank').innerHTML = `<option value="">Nenhuma (conta só no total)</option>` + db.banks.map(b => `<option value="${b.id}">${esc(acctLabel(b))}</option>`).join('');
+    $('#inc-bank').value = src ? (src.bank || '') : (pref?.id || '');
+    $('#inc-delete').classList.toggle('hidden', !src);
+    syncInc();
+    $('#inc-sheet').classList.remove('hidden'); $('#inc-backdrop').classList.remove('hidden');
+  }
+  const closeInc = () => { $('#inc-sheet').classList.add('hidden'); $('#inc-backdrop').classList.add('hidden'); };
+  function incMonthly() {
+    if (inc.type === 'invest') {
+      const p = Parsers.parseAmount($('#inc-principal').value), r = Parsers.parseAmount($('#inc-rate').value);
+      if (p > 0 && r > 0 && document.activeElement !== $('#inc-amount')) $('#inc-amount').value = r2(p * r / 100).toFixed(2).replace('.', ',');
+    }
+    const v = Parsers.parseAmount($('#inc-amount').value);
+    return isFinite(v) && v > 0 ? v : 0;
+  }
+  function syncInc() {
+    $('#inc-types').innerHTML = Object.entries(INC_TYPES).map(([k, t]) => `<button type="button" class="pick ${inc.type === k ? 'on' : ''}" data-t="${k}">${incTile(k)}${t.name.replace(' / alimentação', '/VA')}</button>`).join('');
+    $('#inc-invest').classList.toggle('hidden', inc.type !== 'invest');
+    $('#inc-amount-lbl').textContent = inc.type === 'invest' ? 'Renda por mês (calculada ou digite)' : 'Quanto você recebe por mês';
+    $$('#inc-modes button').forEach(b => b.classList.toggle('on', b.dataset.mode === inc.mode));
+    const m = incMonthly(), today = todayStr(), dim = dimOf(today);
+    $('#inc-preview').textContent = !m ? '' : inc.mode === 'daily'
+      ? `Em ${MES_LONGO[new Date().getMonth()]} (${dim} dias): ${fmt(m / dim)} por dia. Num mês de ${dim === 31 ? 30 : 31} dias: ${fmt(m / (dim === 31 ? 30 : 31))} por dia.`
+      : inc.mode === 'payday' ? `Entra ${fmt(m)} todo dia ${$('#inc-payday').value || 1} (ou no último dia, em meses mais curtos).`
+      : 'Não entra nas contas. Fica só registrado aqui.';
+  }
+  $('#inc-types').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    const prevDef = INC_TYPES[inc.type].def;
+    inc.type = b.dataset.t;
+    if (!$('#inc-name').value.trim() || $('#inc-name').value === prevDef) $('#inc-name').value = INC_TYPES[inc.type].def;
+    syncInc();
+  });
+  $('#inc-modes').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; inc.mode = b.dataset.mode; syncInc(); });
+  $('#inc-payday').addEventListener('click', e => { e.stopPropagation(); inc.mode = 'payday'; syncInc(); });
+  ['#inc-amount', '#inc-principal', '#inc-rate', '#inc-payday'].forEach(k => $(k).addEventListener('input', syncInc));
+  $('#inc-close').addEventListener('click', closeInc);
+  $('#inc-backdrop').addEventListener('click', closeInc);
+  $('#inc-delete').addEventListener('click', () => {
+    if (!inc.editing || !confirm(`Excluir “${inc.editing.name}”? As entradas automáticas dela somem das contas.`)) return;
+    db.incomes = incomes().filter(s => s.id !== inc.editing.id); save(); closeInc(); render(); toast('Renda excluída');
+  });
+  $('#inc-sheet').addEventListener('submit', e => {
+    e.preventDefault();
+    const monthly = incMonthly();
+    if (!monthly && inc.mode !== 'off') { $('#inc-amount').focus(); toast('Digite quanto você recebe por mês'); return; }
+    const payday = Math.min(31, Math.max(1, parseInt($('#inc-payday').value, 10) || 1));
+    const start = $('#inc-start').value || todayStr().slice(0, 8) + '01';
+    const end = $('#inc-end').value || null;
+    if (end && end < start) { toast('A data final é antes do começo'); return; }
+    const data = {
+      type: inc.type, name: $('#inc-name').value.trim() || INC_TYPES[inc.type].def, monthly: r2(monthly), mode: inc.mode, payday,
+      bank: $('#inc-bank').value || null, start, end,
+      principal: inc.type === 'invest' ? (Parsers.parseAmount($('#inc-principal').value) || null) : null,
+      rate: inc.type === 'invest' ? (Parsers.parseAmount($('#inc-rate').value) || null) : null,
+    };
+    db.incomes ||= [];
+    if (inc.editing) Object.assign(db.incomes.find(s => s.id === inc.editing.id), data);
+    else db.incomes.push({ id: uid(), ...data });
+    save(); closeInc(); render();
+    toast(inc.mode === 'off' ? 'Renda registrada (não conta nas entradas)' : `Pronto: ${fmt(monthly)}/mês entrando ${inc.mode === 'daily' ? 'todo dia' : 'no dia ' + payday}`);
   });
 
   /* =================== painéis =================== */
@@ -1457,6 +1671,7 @@
     if (!$('#period-sheet').classList.contains('hidden')) { closePeriod(); return true; }
     if (ui.view === 'importar' && !$('#import-step2').classList.contains('hidden')) { $('#review-back').click(); return true; }
     if (ui.view === 'panorama' && (ui.monthPick || ui.bank)) { ui.monthPick = null; ui.bank = ''; renderDashboard(); return true; }
+    if (!$('#inc-sheet').classList.contains('hidden')) { closeInc(); return true; }
     if (ui.view !== 'panorama') { go('panorama'); return true; }
     return false;
   };
