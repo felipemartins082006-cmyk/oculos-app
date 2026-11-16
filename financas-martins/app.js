@@ -26,9 +26,14 @@
     bank: '<path d="M3 10l9-6 9 6M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/>',
     cash: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/>',
     file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M12 18v-6M9 15l3 3 3-3"/>',
+    ok: '<path d="M5 12.5l4.5 4.5L19 7"/>',
+    power: '<path d="M12 3v8"/><path d="M6.3 7.3a8 8 0 1 0 11.4 0"/>',
+    edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/>',
+    sliders: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
     trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
   };
   const svg = k => `<svg viewBox="0 0 24 24">${IC[k] || IC.dots}</svg>`;
+  document.querySelectorAll('[data-ic]').forEach(el => { el.insertAdjacentHTML('afterbegin', svg(el.dataset.ic)); });
 
   // neutral: não é gasto nem renda (fica fora das estatísticas de gasto)
   const CATS = [
@@ -213,6 +218,7 @@
   const charts = {};
 
   function go(view) {
+    if (sel.on) endSelect();
     ui.view = view;
     $$('.dock button[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view));
     $$('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + view));
@@ -245,7 +251,9 @@
   }
 
   /* =================== período =================== */
-  const scoped = () => db.txs.filter(t => !ui.bank || t.bank === ui.bank);
+  // lançamento "desligado" (t.off) continua salvo, mas fica fora de saldos, gráficos e totais
+  const active = () => db.txs.filter(t => !t.off);
+  const scoped = () => active().filter(t => !ui.bank || t.bank === ui.bank);
   function dataBounds(txs) {
     let min = null, max = null;
     for (const t of txs) { if (!min || t.date < min) min = t.date; if (!max || t.date > max) max = t.date; }
@@ -271,10 +279,10 @@
   }
   const inRange = (t, r) => t.date >= r.from && t.date <= r.to;
   const isNeutral = t => CAT[t.cat]?.neutral;
-  const isSpend = t => t.amount < 0 && !isNeutral(t);
+  const isSpend = t => t.amount < 0 && !isNeutral(t) && !t.off;
   function totals(txs) {
     let inc = 0, out = 0;
-    for (const t of txs) { if (isNeutral(t)) continue; if (t.amount > 0) inc += t.amount; else out -= t.amount; }
+    for (const t of txs) { if (isNeutral(t) || t.off) continue; if (t.amount > 0) inc += t.amount; else out -= t.amount; }
     return { inc, out, net: inc - out };
   }
   function monthsIn(r) {
@@ -557,7 +565,7 @@
   function renderAccounts() {
     const strip = $('#acct-strip');
     const cards = db.banks.map(b => {
-      const now = (+b.initial || 0) + db.txs.filter(t => t.bank === b.id).reduce((s, t) => s + t.amount, 0);
+      const now = (+b.initial || 0) + active().filter(t => t.bank === b.id).reduce((s, t) => s + t.amount, 0);
       const isCard = b.type === 'credito';
       const c = acctColor(b);
       return `<button class="acct ${ui.bank && ui.bank !== b.id ? 'dim' : ''} ${ui.bank === b.id ? 'sel' : ''}" data-bank="${b.id}" style="background:linear-gradient(140deg, ${c}, ${shade(c, .55)})">
@@ -643,7 +651,7 @@
   /* =================== detalhe =================== */
   function openDrill({ cat, bank }) {
     const r = getRange();
-    const base = (bank ? db.txs.filter(t => t.bank === bank) : scoped()).filter(t => isSpend(t) && (!cat || t.cat === cat));
+    const base = (bank ? active().filter(t => t.bank === bank) : scoped()).filter(t => isSpend(t) && (!cat || t.cat === cat));
     const list = base.filter(t => inRange(t, r)).sort((a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || '')));
     const total = -list.reduce((s, t) => s + t.amount, 0);
     const T = totals(scoped().filter(t => inRange(t, r)));
@@ -670,19 +678,115 @@
   function txRows(list, grouped) {
     let html = '', last = null;
     const dayTot = {};
-    if (grouped) list.forEach(t => { dayTot[t.date] = (dayTot[t.date] || 0) + (isNeutral(t) ? 0 : t.amount); });
+    if (grouped) list.forEach(t => { dayTot[t.date] = (dayTot[t.date] || 0) + (isNeutral(t) || t.off ? 0 : t.amount); });
     for (const t of list) {
       if (grouped && t.date !== last) { last = t.date; html += `<div class="day-head"><span>${dayLabel(t.date)}</span><span>${fmt(dayTot[t.date])}</span></div>`; }
       const c = CAT[t.cat] || CAT.outros; const b = bankById(t.bank);
-      html += `<div class="tx" data-id="${t.id}" role="button" tabindex="0">${tile(t.cat)}
-        <div class="t"><div class="d">${esc(t.desc)}</div><div class="m">${grouped ? '' : shortDate(t.date) + ' · '}${t.time ? t.time + ' · ' : ''}${esc(c.name)}${b ? ' · ' + esc(acctLabel(b)) : ''}</div></div>
+      html += `<div class="tx ${t.off ? 'off' : ''} ${sel.ids.has(t.id) ? 'sel' : ''}" data-id="${t.id}" role="button" tabindex="0"><span class="check">${svg('ok')}</span>${tile(t.cat)}
+        <div class="t"><div class="d">${t.off ? '<span class="off-tag">desligado</span>' : ''}${esc(t.desc)}</div><div class="m">${grouped ? '' : shortDate(t.date) + ' · '}${t.time ? t.time + ' · ' : ''}${esc(c.name)}${b ? ' · ' + esc(acctLabel(b)) : ''}</div></div>
         <span class="a ${t.amount > 0 ? 'in' : ''}">${t.amount > 0 ? '+' : '−'} ${fmt(Math.abs(t.amount))}</span></div>`;
     }
     return html || `<p class="empty-note" style="padding:20px 4px">Nenhum lançamento encontrado.</p>`;
   }
-  function bindTxRows(root) {
-    root.querySelectorAll('.tx').forEach(el => el.addEventListener('click', () => { closeDrill(); openTxSheet(db.txs.find(t => t.id === el.dataset.id)); }));
+  function bindTxRows(root, selectable) {
+    root.querySelectorAll('.tx').forEach(el => {
+      let timer = null, x0 = 0, y0 = 0, longFired = false;
+      const cancel = () => { clearTimeout(timer); timer = null; };
+      if (selectable) {
+        // pressionar e segurar: entra no modo de seleção
+        el.addEventListener('pointerdown', e => {
+          longFired = false; x0 = e.clientX; y0 = e.clientY;
+          timer = setTimeout(() => { longFired = true; if (navigator.vibrate) navigator.vibrate(25); startSelect(el.dataset.id); }, 450);
+        });
+        el.addEventListener('pointermove', e => { if (timer && Math.hypot(e.clientX - x0, e.clientY - y0) > 10) cancel(); });
+        el.addEventListener('pointerup', cancel); el.addEventListener('pointercancel', cancel); el.addEventListener('pointerleave', cancel);
+        el.addEventListener('contextmenu', e => e.preventDefault());
+      }
+      el.addEventListener('click', () => {
+        if (longFired) { longFired = false; return; }
+        if (selectable && sel.on) { toggleSel(el.dataset.id); return; }
+        closeDrill(); openTxSheet(db.txs.find(t => t.id === el.dataset.id));
+      });
+    });
   }
+
+  /* ---------- seleção de vários lançamentos ---------- */
+  const sel = { on: false, ids: new Set(), visible: [] };
+  function startSelect(id) {
+    sel.on = true;
+    if (id) sel.ids.add(id);
+    syncSel();
+  }
+  function toggleSel(id) {
+    if (sel.ids.has(id)) sel.ids.delete(id); else sel.ids.add(id);
+    syncSel();
+  }
+  function endSelect() {
+    sel.on = false; sel.ids.clear();
+    syncSel();
+  }
+  function syncSel() {
+    document.body.classList.toggle('selecting', sel.on);
+    $('#selbar').classList.toggle('hidden', !sel.on);
+    $$('#tx-list .tx').forEach(el => el.classList.toggle('sel', sel.ids.has(el.dataset.id)));
+    const n = sel.ids.size;
+    const chosen = db.txs.filter(t => sel.ids.has(t.id));
+    $('#sel-count').textContent = n ? `${n} selecionado${n > 1 ? 's' : ''}` : 'Toque para selecionar';
+    const sum = chosen.filter(t => !t.off).reduce((s, t) => s + t.amount, 0);
+    $('#sel-sum').textContent = n ? `soma ${fmt(sum)}` : '';
+    const allOff = n && chosen.every(t => t.off);
+    $('#sel-off span').textContent = allOff ? 'Ligar' : 'Desligar';
+    $('#sel-all').textContent = sel.visible.length && sel.visible.every(id => sel.ids.has(id)) ? 'Limpar' : 'Todos';
+    ['#sel-off', '#sel-update', '#sel-del'].forEach(k => { $(k).disabled = !n; });
+    $('#sel-edit').disabled = n !== 1;
+  }
+  $('#sel-close').addEventListener('click', endSelect);
+  $('#select-btn').addEventListener('click', () => startSelect());
+  $('#sel-all').addEventListener('click', () => {
+    const all = sel.visible.every(id => sel.ids.has(id));
+    sel.visible.forEach(id => all ? sel.ids.delete(id) : sel.ids.add(id));
+    syncSel();
+  });
+  $('#sel-off').addEventListener('click', () => {
+    const chosen = db.txs.filter(t => sel.ids.has(t.id));
+    const turnOn = chosen.every(t => t.off);
+    chosen.forEach(t => { if (turnOn) delete t.off; else t.off = true; });
+    save(); toast(`${chosen.length} lançamento${chosen.length > 1 ? 's' : ''} ${turnOn ? 'ligado' : 'desligado'}${chosen.length > 1 ? 's' : ''}`);
+    endSelect(); renderList();
+  });
+  $('#sel-edit').addEventListener('click', () => {
+    const t = db.txs.find(x => sel.ids.has(x.id));
+    endSelect(); if (t) openTxSheet(t);
+  });
+  $('#sel-del').addEventListener('click', () => {
+    const n = sel.ids.size;
+    if (!confirm(`Excluir ${n} lançamento${n > 1 ? 's' : ''}? Não dá para desfazer.\n\nSe quiser só tirar das contas, use “Desligar”.`)) return;
+    db.txs = db.txs.filter(t => !sel.ids.has(t.id));
+    save(); toast(`${n} lançamento${n > 1 ? 's' : ''} excluído${n > 1 ? 's' : ''}`);
+    endSelect(); renderList();
+  });
+  // atualizar em lote: categoria, conta ou inverter entrada/saída
+  function openBulk() {
+    const n = sel.ids.size;
+    $('#bulk-title').textContent = `Atualizar ${n} lançamento${n > 1 ? 's' : ''}`;
+    $('#bulk-cats').innerHTML = CATS.map(c => `<button type="button" class="pick" data-cat="${c.id}">${tile(c.id)}${c.name}</button>`).join('');
+    $('#bulk-accts').innerHTML = db.banks.map(b => `<button type="button" class="pick" data-bank="${b.id}">${mono(b)}${esc(acctLabel(b))}</button>`).join('');
+    $('#bulk-sheet').classList.remove('hidden'); $('#bulk-backdrop').classList.remove('hidden');
+  }
+  const closeBulk = () => { $('#bulk-sheet').classList.add('hidden'); $('#bulk-backdrop').classList.add('hidden'); };
+  function applyBulk(fn, msg) {
+    const chosen = db.txs.filter(t => sel.ids.has(t.id));
+    chosen.forEach(fn);
+    save(); closeBulk(); toast(`${msg} em ${chosen.length} lançamento${chosen.length > 1 ? 's' : ''}`);
+    endSelect(); renderList();
+  }
+  $('#sel-update').addEventListener('click', openBulk);
+  $('#bulk-backdrop').addEventListener('click', closeBulk);
+  $('#bulk-close').addEventListener('click', closeBulk);
+  $('#bulk-cats').addEventListener('click', e => { const b = e.target.closest('button'); if (b) applyBulk(t => { t.cat = b.dataset.cat; }, `Categoria “${CAT[b.dataset.cat].name}” aplicada`); });
+  $('#bulk-accts').addEventListener('click', e => { const b = e.target.closest('button'); if (b) applyBulk(t => { t.bank = b.dataset.bank; }, `Conta “${acctLabel(bankById(b.dataset.bank))}” aplicada`); });
+  $('#bulk-flip').addEventListener('click', () => applyBulk(t => { t.amount = -t.amount; }, 'Entrada e saída invertidas'));
+  $('#bulk-date').addEventListener('change', e => { if (e.target.value) applyBulk(t => { t.date = e.target.value; }, 'Data alterada'); e.target.value = ''; });
   function renderList() {
     const L = ui.list;
     const chip = (key, val, label, extra = '') => `<button class="chip ${L[key] === val ? 'on' : ''}" data-k="${key}" data-v="${esc(val)}">${extra}${esc(label)}</button>`;
@@ -707,7 +811,11 @@
     $('#list-summary').innerHTML = `<div><small>Entradas</small><b style="color:var(--in)">${fmt(T.inc)}</b></div><div><small>Saídas</small><b style="color:var(--out)">${fmt(T.out)}</b></div>`;
     const box = $('#tx-list');
     box.innerHTML = txRows(list.slice(0, L.limit), true) + (list.length > L.limit ? `<button class="ghost load-more" id="load-more">Mostrar mais (${list.length - L.limit})</button>` : '');
-    bindTxRows(box);
+    sel.visible = list.slice(0, L.limit).map(t => t.id);
+    bindTxRows(box, true);
+    if (sel.on) syncSel();
+    const offN = list.filter(t => t.off).length;
+    $('#off-note').textContent = offN ? `${offN} desligado${offN > 1 ? 's' : ''} (fora das contas)` : '';
     $('#load-more')?.addEventListener('click', () => { L.limit += 200; renderList(); });
   }
   let searchT;
@@ -737,6 +845,8 @@
     $('#tx-time').value = tx ? (tx.time || '') : nowTime();
     $('#when-inputs').classList.add('hidden');
     $('#tx-delete').classList.toggle('hidden', !tx);
+    $('#tx-off').classList.toggle('hidden', !tx);
+    $('#tx-off').textContent = tx?.off ? 'Ligar' : 'Desligar';
     syncSheet();
     $('#tx-sheet').classList.remove('hidden'); $('#sheet-backdrop').classList.remove('hidden');
   }
@@ -785,6 +895,12 @@
   const closeSheet = () => { $('#tx-sheet').classList.add('hidden'); $('#sheet-backdrop').classList.add('hidden'); };
   $('#tx-cancel').addEventListener('click', closeSheet);
   $('#sheet-backdrop').addEventListener('click', closeSheet);
+  $('#tx-off').addEventListener('click', () => {
+    const t = sheet.editing && db.txs.find(x => x.id === sheet.editing.id);
+    if (!t) return;
+    if (t.off) delete t.off; else t.off = true;
+    save(); closeSheet(); render(); toast(t.off ? 'Lançamento desligado: fica salvo, mas fora das contas' : 'Lançamento ligado de novo');
+  });
   $('#tx-delete').addEventListener('click', () => {
     if (!sheet.editing || !confirm('Excluir este lançamento?')) return;
     db.txs = db.txs.filter(t => t.id !== sheet.editing.id); save(); closeSheet(); render(); toast('Lançamento excluído');
@@ -1063,13 +1179,14 @@
     };
     const wb = X.utils.book_new();
     const now = new Date();
-    const sorted = [...db.txs].sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
+    const everything = [...db.txs].sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
+    const sorted = active().sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
 
     // Resumo
     const resumo = [[`Finanças · exportado em ${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()} às ${nowTime()}`], [],
       ['Conta', 'Instituição', 'Tipo', 'Lançamentos', 'Entradas', 'Saídas', 'Saldo atual']];
     for (const b of db.banks) {
-      const bt = db.txs.filter(t => t.bank === b.id);
+      const bt = active().filter(t => t.bank === b.id);
       const inc = bt.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
       const out = -bt.filter(t => t.amount < 0).reduce((s, t) => s + t.amount, 0);
       resumo.push([b.name, instOf(b).id === 'outro' ? b.name : instOf(b).name, TYPES[b.type]?.name || '', bt.length, inc, out, (+b.initial || 0) + inc - out]);
@@ -1096,9 +1213,9 @@
     }
 
     // Todos
-    const allRows = [['Data', 'Hora', 'Conta', 'Tipo de conta', 'Descrição', 'Categoria', 'Valor', 'Origem']];
-    for (const t of sorted) { const b = bankById(t.bank); allRows.push([toDate(t.date), t.time || '', b?.name || '', TYPES[b?.type]?.name || '', t.desc, CAT[t.cat]?.name || '', t.amount, t.source === 'manual' ? 'Manual' : 'Extrato']); }
-    X.utils.book_append_sheet(wb, sheetFrom(allRows, [12, 7, 18, 18, 42, 22, 14, 10], [6], [0]), 'Todos os lançamentos');
+    const allRows = [['Data', 'Hora', 'Conta', 'Tipo de conta', 'Descrição', 'Categoria', 'Valor', 'Origem', 'Situação']];
+    for (const t of everything) { const b = bankById(t.bank); allRows.push([toDate(t.date), t.time || '', b?.name || '', TYPES[b?.type]?.name || '', t.desc, CAT[t.cat]?.name || '', t.amount, t.source === 'manual' ? 'Manual' : 'Extrato', t.off ? 'Desligado' : 'Ativo']); }
+    X.utils.book_append_sheet(wb, sheetFrom(allRows, [12, 7, 18, 18, 42, 22, 14, 10, 11], [6], [0]), 'Todos os lançamentos');
 
     const b64 = X.write(wb, { bookType: 'xlsx', type: 'base64', cellDates: true });
     downloadBase64(`financas-${todayStr()}.xlsx`, b64, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -1173,6 +1290,8 @@
 
   /* =================== botão voltar (Android) =================== */
   window.appBack = () => {
+    if (!$('#bulk-sheet').classList.contains('hidden')) { closeBulk(); return true; }
+    if (sel.on) { endSelect(); return true; }
     if (!$('#tx-sheet').classList.contains('hidden')) { closeSheet(); return true; }
     if (!$('#drill-sheet').classList.contains('hidden')) { closeDrill(); return true; }
     if (!$('#period-sheet').classList.contains('hidden')) { closePeriod(); return true; }

@@ -154,6 +154,8 @@
     <div class="chips" id="list-chips"></div>
     <div class="chips" id="list-cats"></div>
     <div class="list-sum" id="list-summary"></div>
+    <div class="list-tools-row"><span class="off-note" id="off-note"></span><button class="link" id="select-btn">Selecionar</button></div>
+    <p class="hint">Dica: pressione e segure um lançamento para selecionar vários.</p>
     <div id="tx-list" class="tx-list"></div>
   </section>
 
@@ -228,6 +230,36 @@
   <button data-view="ajustes"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg><span>Mais</span></button>
 </nav>
 
+<!-- Barra de seleção (pressionar e segurar no extrato) -->
+<div class="selbar hidden" id="selbar">
+  <div class="sel-top">
+    <button class="icon-x" id="sel-close" aria-label="Sair da seleção"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <div class="grow"><b id="sel-count"></b><small id="sel-sum"></small></div>
+    <button class="link" id="sel-all">Todos</button>
+  </div>
+  <div class="sel-actions">
+    <button id="sel-off" data-ic="power"><span>Desligar</span></button>
+    <button id="sel-update" data-ic="sliders"><span>Atualizar</span></button>
+    <button id="sel-edit" data-ic="edit"><span>Editar</span></button>
+    <button id="sel-del" class="danger" data-ic="trash"><span>Excluir</span></button>
+  </div>
+</div>
+
+<!-- Atualizar vários -->
+<div class="backdrop hidden" id="bulk-backdrop"></div>
+<div class="sheet hidden" id="bulk-sheet">
+  <div class="grip"></div>
+  <div class="sheet-top"><h3 class="sheet-title grow" id="bulk-title">Atualizar</h3>
+    <button type="button" class="icon-x" id="bulk-close" aria-label="Fechar"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <label class="lbl">Mudar categoria</label>
+  <div class="pick-grid" id="bulk-cats"></div>
+  <label class="lbl">Mudar conta</label>
+  <div class="pick-grid" id="bulk-accts"></div>
+  <label class="lbl">Mudar data</label>
+  <input type="date" id="bulk-date" aria-label="Nova data">
+  <button type="button" class="ghost" id="bulk-flip">Inverter entrada ⇄ saída</button>
+</div>
+
 <!-- Novo lançamento: teclado próprio -->
 <div class="backdrop hidden" id="sheet-backdrop"></div>
 <form class="sheet hidden" id="tx-sheet" autocomplete="off">
@@ -261,6 +293,7 @@
   </div>
   <div class="sheet-actions">
     <button type="button" class="ghost danger hidden" id="tx-delete">Excluir</button>
+    <button type="button" class="ghost hidden" id="tx-off">Desligar</button>
     <button type="submit" class="cta" id="tx-save">Salvar</button>
   </div>
 </form>

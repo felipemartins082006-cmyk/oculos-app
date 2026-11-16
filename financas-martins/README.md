@@ -34,6 +34,10 @@ Instalar (o Android pede para permitir "instalar apps desconhecidos" na primeira
   para onde vai o dinheiro (rosca), gastos por conta (rosca), fixos × variáveis (pizza), quanto você
   guardou (medidor), de onde vem o dinheiro (pizza), entradas × saídas por mês, patrimônio no tempo,
   categorias mês a mês, gasto por dia da semana, onde você mais gasta e gastos fixos/assinaturas.
+- **Extrato com seleção**: pressione e segure um lançamento (ou toque em "Selecionar") para marcar
+  vários. Na barra de baixo: **Desligar/Ligar** (fica salvo, mas sai de saldos, gráficos e totais),
+  **Atualizar** (categoria, conta, data ou inverter entrada/saída de todos de uma vez), **Editar**
+  (quando só um está marcado) e **Excluir**. Tocar normalmente continua abrindo a edição.
 - **Exportar tudo em um arquivo**: planilha Excel com a aba Resumo, uma aba para cada conta, cartão
   e vale, e uma aba com todos os lançamentos.
 - **Mais**: contas (nome, tipo, saldo inicial), backup, restaurar, CSV simples, apagar tudo.
