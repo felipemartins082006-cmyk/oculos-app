@@ -63,10 +63,11 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
   padding: calc(14px + env(safe-area-inset-top)) 20px 12px;
   background: linear-gradient(var(--bg) 55%, rgba(10, 11, 15, 0));
 }
-.space-btn { display: inline-flex; align-items: center; gap: 7px; border: 0; background: rgba(255,255,255,0.05); border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px 4px 4px; font-size: 13px; font-weight: 700; color: var(--text-2); margin-bottom: 6px; max-width: 220px; }
+.space-btn { display: inline-flex; align-items: center; gap: 10px; border: 1px solid var(--line-2); background: rgba(255,255,255,0.06); border-radius: 999px; padding: 6px 16px 6px 6px; min-height: 48px; font-size: 16px; font-weight: 800; color: var(--text); margin-bottom: 8px; max-width: 260px; cursor: pointer; }
+.space-btn:active { transform: scale(.97); background: rgba(255,255,255,0.1); }
 .space-btn span:nth-child(2) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.space-btn svg { width: 16px; height: 16px; flex: 0 0 auto; }
-.space-dot { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 800; color: #0b1a10; flex: 0 0 auto; }
+.space-btn svg { width: 20px; height: 20px; flex: 0 0 auto; color: var(--muted); }
+.space-dot { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-size: 15px; font-weight: 800; color: #0b1a10; flex: 0 0 auto; }
 .top-title { margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.03em; }
 .period-pill {
   display: flex; align-items: center; gap: 6px; border: 1px solid var(--line-2);
@@ -651,3 +652,22 @@ button, a, label, input, select { touch-action: manipulation; }
 .ios-install .x { border: 0; background: none; color: var(--muted); font-size: 22px; line-height: 1; padding: 0 2px; }
 /* no app instalado do iPhone, a barra de status fica sobre o conteúdo: o topo já usa a área segura */
 @media (display-mode: standalone) { .top { padding-top: calc(10px + env(safe-area-inset-top)); } }
+
+/* ---------- janela de confirmação ---------- */
+.dlg-backdrop { position: fixed; inset: 0; z-index: 70; background: rgba(0, 0, 0, 0.62); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); animation: fade .18s; }
+.dlg {
+  position: fixed; z-index: 71; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: min(360px, calc(100% - 40px)); background: var(--bg-2); border: 1px solid var(--line-2); border-radius: 26px;
+  padding: 22px 20px 18px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px;
+  box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.9); animation: pop .2s cubic-bezier(.2, .9, .3, 1.2);
+}
+@keyframes pop { from { transform: translate(-50%, -46%) scale(.94); opacity: 0; } }
+.dlg-ic { width: 52px; height: 52px; border-radius: 18px; display: grid; place-items: center; background: rgba(212, 252, 121, 0.12); color: var(--lime); margin-bottom: 4px; }
+.dlg-ic.danger { background: rgba(255, 122, 107, 0.14); color: var(--out); }
+.dlg-ic svg { width: 26px; height: 26px; }
+.dlg h3 { margin: 0; font-size: 18px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.25; }
+.dlg p { margin: 0; color: var(--text-2); font-size: 14px; line-height: 1.45; }
+.dlg input { margin-top: 6px; text-align: center; }
+.dlg-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; margin-top: 12px; }
+.dlg-actions .ghost, .dlg-actions .cta { min-height: 50px; width: 100%; }
+.cta.danger-cta { background: linear-gradient(135deg, #ff8a7a, #ff5f6d); color: #2a0606; box-shadow: 0 10px 30px -10px rgba(255, 95, 109, 0.6); }

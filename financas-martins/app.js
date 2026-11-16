@@ -853,9 +853,9 @@
     const t = db.txs.find(x => sel.ids.has(x.id));
     endSelect(); if (t) openTxSheet(t);
   });
-  $('#sel-del').addEventListener('click', () => {
+  $('#sel-del').addEventListener('click', async () => {
     const n = sel.ids.size;
-    if (!confirm(`Excluir ${n} lançamento${n > 1 ? 's' : ''}? Não dá para desfazer.\n\nSe quiser só tirar das contas, use “Desligar”.`)) return;
+    if (!(await ask({ title: `Excluir ${n} lançamento${n > 1 ? 's' : ''}?`, text: 'Não dá para desfazer. Se quiser só tirar das contas, use “Desligar”.', ok: 'Excluir', danger: true }))) return;
     db.txs = db.txs.filter(t => !sel.ids.has(t.id));
     save(); toast(`${n} lançamento${n > 1 ? 's' : ''} excluído${n > 1 ? 's' : ''}`);
     endSelect(); renderList();
@@ -1027,11 +1027,14 @@
   });
   $('#tx-sheet .seg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; sheet.type = b.dataset.type; if (sheet.cat && !!CAT[sheet.cat].income !== (sheet.type === 'in')) sheet.catTouched = false; syncSheet(); });
   $('#cat-picker').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; sheet.cat = b.dataset.cat; sheet.catTouched = true; syncSheet(); });
-  $('#acct-picker').addEventListener('click', e => {
+  $('#acct-picker').addEventListener('click', async e => {
     const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.bank === '__add') {
       const m = methodById(sheet.method);
-      const name = prompt(m.bank === 'credito' ? 'Nome do cartão (ex.: Nubank, Itaú):' : m.bank === 'vr' || m.bank === 'va' ? 'Nome do vale (ex.: VR, Alelo, Ticket):' : m.bank === 'dinheiro' ? 'Nome (ex.: Carteira, Cofrinho):' : 'Nome do banco (ex.: Nubank, Santander):');
+      const name = await askText({
+        title: m.bank === 'credito' ? 'Novo cartão de crédito' : m.bank === 'vr' || m.bank === 'va' ? 'Novo vale' : m.bank === 'dinheiro' ? 'Novo lugar para o dinheiro' : 'Novo banco',
+        icon: m.bank === 'credito' ? 'card' : m.bank === 'vr' ? 'food' : m.bank === 'va' ? 'cart' : m.bank === 'dinheiro' ? 'cash' : 'bank', ok: 'Adicionar',
+        input: { placeholder: m.bank === 'credito' ? 'ex.: Nubank, Itaú' : m.bank === 'vr' || m.bank === 'va' ? 'ex.: VR, Alelo, Ticket' : m.bank === 'dinheiro' ? 'ex.: Carteira, Cofrinho' : 'ex.: Nubank, Santander' } });
       if (!name?.trim()) return;
       const n = norm(name);
       const inst = INSTS.find(i => i.id !== 'outro' && n.includes(norm(i.name).split(' ')[0]));
@@ -1058,11 +1061,11 @@
     if (t.off) delete t.off; else t.off = true;
     save(); closeSheet(); render(); toast(t.off ? 'Lançamento desligado: fica salvo, mas fora das contas' : 'Lançamento ligado de novo');
   });
-  $('#tx-delete').addEventListener('click', () => {
-    if (!sheet.editing || !confirm('Excluir este lançamento?')) return;
+  $('#tx-delete').addEventListener('click', async () => {
+    if (!sheet.editing || !(await ask({ title: 'Excluir este lançamento?', text: `${sheet.editing.desc} · ${fmt(Math.abs(sheet.editing.amount))}. Não dá para desfazer.`, ok: 'Excluir', danger: true }))) return;
     db.txs = db.txs.filter(t => t.id !== sheet.editing.id); save(); closeSheet(); render(); toast('Lançamento excluído');
   });
-  $('#tx-sheet').addEventListener('submit', e => {
+  $('#tx-sheet').addEventListener('submit', async e => {
     e.preventDefault();
     const v = Math.abs(Parsers.parseAmount(sheet.amt || '0'));
     if (!v || !isFinite(v)) {
@@ -1092,7 +1095,7 @@
         const key = merchant(desc);
         const others = db.txs.filter(x => x.id !== t.id && merchant(x.desc) === key && x.cat !== cat && Math.sign(x.amount) === Math.sign(amount));
         db.rules[norm(key)] = cat;
-        if (others.length && confirm(`Mudar também os outros ${others.length} lançamento(s) de “${key}” para ${CAT[cat].name}?`)) others.forEach(x => { x.cat = cat; });
+        if (others.length && await ask({ title: 'Mudar os parecidos também?', text: `Há mais ${others.length} lançamento${others.length > 1 ? 's' : ''} de “${key}”. Colocar todos em ${CAT[cat].name}?`, ok: 'Mudar todos', cancel: 'Só este', icon: 'sliders' })) others.forEach(x => { x.cat = cat; });
       }
       toast('Lançamento atualizado');
     } else {
@@ -1170,10 +1173,10 @@
     $('#read-files').disabled = !n || missing;
   }
   $('#bank-plus').addEventListener('click', () => { if (slots.length < 12) { slots.push({ inst: '', name: '', type: 'conta', files: [] }); drawSlots(); } });
-  $('#bank-minus').addEventListener('click', () => {
+  $('#bank-minus').addEventListener('click', async () => {
     if (slots.length <= 1) return;
     const last = slots[slots.length - 1];
-    if (last.files.length && !confirm(`Remover a conta ${slots.length} e seus ${last.files.length} arquivo(s)?`)) return;
+    if (last.files.length && !(await ask({ title: `Remover a conta ${slots.length}?`, text: `Ela tem ${last.files.length} arquivo${last.files.length > 1 ? 's' : ''} escolhido${last.files.length > 1 ? 's' : ''} para importar.`, ok: 'Remover', danger: true }))) return;
     slots.pop(); drawSlots();
   });
   $('#template-btn').addEventListener('click', () => {
@@ -1198,7 +1201,7 @@
         btn.textContent = `Lendo ${++done} de ${total}…`;
         const entry = { name, inst: s.inst, type: s.type, file: f.name, kind: '', txs: [], error: null, balance: null, opening: null };
         try {
-          const res = await Parsers.parseFile(f, { accountType: s.type, askPassword: async (fname, retry) => prompt(`${retry ? 'Senha incorreta. ' : ''}O PDF “${fname}” tem senha (em muitos bancos são números do CPF). Digite a senha:`) });
+          const res = await Parsers.parseFile(f, { accountType: s.type, askPassword: (fname, retry) => askText({ title: retry ? 'Senha incorreta' : 'PDF com senha', icon: 'file', ok: 'Abrir', text: `“${fname}” está protegido. Em muitos bancos a senha são números do CPF.`, input: { type: 'password', placeholder: 'Senha do PDF' } }) });
           entry.kind = res.kind; entry.balance = res.balance; entry.opening = res.opening ?? null;
           const seen = {};
           entry.txs = res.transactions.map(t => {
@@ -1294,9 +1297,9 @@
       }
       save(); renderMethods();
     }));
-    $$('#methods-edit [data-mdel]').forEach(b => b.addEventListener('click', () => {
+    $$('#methods-edit [data-mdel]').forEach(b => b.addEventListener('click', async () => {
       const m = methodById(b.dataset.mdel);
-      if (!confirm(`Excluir a forma “${m.name}”? Os lançamentos continuam.`)) return;
+      if (!(await ask({ title: `Excluir “${m.name}”?`, text: 'Os lançamentos que já usaram essa forma de pagamento continuam salvos.', ok: 'Excluir', danger: true }))) return;
       methodsCfg().custom = methodsCfg().custom.filter(x => x.id !== m.id); save(); renderMethods();
     }));
   }
@@ -1322,9 +1325,9 @@
       row.querySelector('.bn').addEventListener('change', e => { b.name = e.target.value.trim() || b.name; save(); renderSettings(); });
       row.querySelector('.bt').addEventListener('change', e => { b.type = e.target.value; save(); toast('Tipo atualizado'); });
       row.querySelector('.ib').addEventListener('change', e => { const v = Parsers.parseAmount(e.target.value); b.initial = isNaN(v) ? 0 : v; save(); toast('Saldo inicial salvo'); });
-      row.querySelector('[data-del]').addEventListener('click', () => {
+      row.querySelector('[data-del]').addEventListener('click', async () => {
         const n = db.txs.filter(t => t.bank === b.id).length;
-        if (!confirm(`Excluir “${acctLabel(b)}”${n ? ` e seus ${n} lançamentos` : ''}?`)) return;
+        if (!(await ask({ title: `Excluir “${acctLabel(b)}”?`, text: n ? `Os ${n} lançamentos dessa conta também serão apagados. Não dá para desfazer.` : 'Não dá para desfazer.', ok: 'Excluir', danger: true }))) return;
         db.txs = db.txs.filter(t => t.bank !== b.id); db.banks = db.banks.filter(x => x.id !== b.id);
         incomes().forEach(s => { if (s.bank === b.id) s.bank = null; });
         if (ui.bank === b.id) ui.bank = '';
@@ -1332,8 +1335,8 @@
       });
     });
   }
-  $('#add-bank').addEventListener('click', () => {
-    const name = prompt('Nome da conta (ex.: Santander, VR, Carteira):'); if (!name) return;
+  $('#add-bank').addEventListener('click', async () => {
+    const name = await askText({ title: 'Nova conta', icon: 'bank', ok: 'Adicionar', input: { placeholder: 'ex.: Santander, VR, Carteira' } }); if (!name) return;
     const n = norm(name);
     const inst = INSTS.find(i => i.id !== 'outro' && n.includes(norm(i.name).split(' ')[0]));
     ensureAccount({ name, inst: inst?.id || 'outro', type: inst?.kind === 'benefit' ? 'vr' : /carteira|dinheiro/.test(n) ? 'dinheiro' : 'conta' });
@@ -1441,8 +1444,8 @@
       [...db.txs].sort((a, b) => a.date.localeCompare(b.date)).map(t => { const b = bankById(t.bank); return [shortDate(t.date), t.time || '', b?.name || '', TYPES[b?.type]?.name || '', t.desc, CAT[t.cat]?.name || t.cat, t.amount.toFixed(2).replace('.', ',')]; }));
     download(`financas-${todayStr()}.csv`, '﻿' + rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\n'), 'text/csv');
   });
-  $('#clear-all').addEventListener('click', () => {
-    if (!confirm(`Apagar todas as contas e lançamentos do painel “${currentSpace().name}”? Não dá para desfazer.`)) return;
+  $('#clear-all').addEventListener('click', async () => {
+    if (!(await ask({ title: 'Apagar este painel?', text: `Todas as contas e lançamentos de “${currentSpace().name}” serão apagados. Não dá para desfazer.`, ok: 'Apagar tudo', danger: true }))) return;
     db = emptyDb(); save(); ui.bank = ''; slots = null; toast('Painel apagado'); go('panorama');
   });
 
@@ -1592,8 +1595,8 @@
       const ex = dups[0];
       dw.innerHTML = `<b>Pode estar contando duas vezes</b><p>A renda cadastrada aqui também aparece nos extratos importados: ${dups.length} entrada${dups.length > 1 ? 's' : ''} parecida${dups.length > 1 ? 's' : ''} (ex.: ${esc(ex.desc)}, ${fmt(ex.amount)} em ${shortDate(ex.date)}). Escolha qual manter:</p>
         <div class="nag-actions"><button class="nag-btn" id="dup-off-imported">Desligar as dos extratos</button><button class="nag-btn soft" id="dup-keep">Manter as duas</button></div>`;
-      $('#dup-off-imported').addEventListener('click', () => {
-        if (!confirm(`Desligar ${dups.length} entrada(s) dos extratos? Elas continuam salvas e você pode religar no Extrato.`)) return;
+      $('#dup-off-imported').addEventListener('click', async () => {
+        if (!(await ask({ title: 'Desligar as entradas dos extratos?', text: `${dups.length} entrada${dups.length > 1 ? 's continuam salvas' : ' continua salva'}, mas sai${dups.length > 1 ? 'em' : ''} das contas. Dá para religar no Extrato.`, ok: 'Desligar', icon: 'power' }))) return;
         dups.forEach(t => { t.off = true; }); save(); toast('Entradas dos extratos desligadas'); renderIncome();
       });
       $('#dup-keep').addEventListener('click', () => { dups.forEach(t => { t.dupOk = true; }); save(); renderIncome(); });
@@ -1667,8 +1670,8 @@
   ['#inc-amount', '#inc-principal', '#inc-rate', '#inc-payday'].forEach(k => $(k).addEventListener('input', syncInc));
   $('#inc-close').addEventListener('click', closeInc);
   $('#inc-backdrop').addEventListener('click', closeInc);
-  $('#inc-delete').addEventListener('click', () => {
-    if (!inc.editing || !confirm(`Excluir “${inc.editing.name}”? As entradas automáticas dela somem das contas.`)) return;
+  $('#inc-delete').addEventListener('click', async () => {
+    if (!inc.editing || !(await ask({ title: `Excluir “${inc.editing.name}”?`, text: 'As entradas automáticas dessa renda saem das contas.', ok: 'Excluir', danger: true }))) return;
     db.incomes = incomes().filter(s => s.id !== inc.editing.id); save(); closeInc(); render(); toast('Renda excluída');
   });
   $('#inc-sheet').addEventListener('submit', e => {
@@ -1707,15 +1710,15 @@
     }).join('');
     list.querySelectorAll('.space-item').forEach(el => {
       const id = el.dataset.id, s = spaces.list.find(x => x.id === id);
-      el.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => {
+      el.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', async () => {
         if (b.dataset.act === 'open') { if (id !== spaces.active) switchSpace(id); else closeSpaces(); }
         if (b.dataset.act === 'rename') {
-          const n = prompt('Novo nome do painel:', s.name); if (!n?.trim()) return;
+          const n = await askText({ title: 'Renomear painel', ok: 'Salvar', input: { value: s.name, placeholder: 'Nome do painel' } }); if (!n) return;
           s.name = n.trim().slice(0, 40); saveSpaces(); renderTop(); openSpaces();
         }
         if (b.dataset.act === 'delete') {
           const d = load(id);
-          if (!confirm(`Excluir o painel “${s.name}” com ${d.txs.length} lançamentos? Não dá para desfazer.`)) return;
+          if (!(await ask({ title: `Excluir o painel “${s.name}”?`, text: `${d.txs.length ? `Ele tem ${d.txs.length} lançamento${d.txs.length > 1 ? 's' : ''}. ` : ''}Não dá para desfazer.`, ok: 'Excluir', danger: true }))) return;
           try { localStorage.removeItem(spaceKey(id)); } catch (e) { /* */ }
           spaces.list = spaces.list.filter(x => x.id !== id); saveSpaces(); openSpaces();
           toast('Painel excluído');
@@ -1832,13 +1835,13 @@
     if (Array.isArray(d.spaces) && d.spaces.length) {
       const n = d.spaces.reduce((a, s) => a + (s.data?.txs?.length || 0), 0);
       const when = d.exportedAt ? ` de ${fmtWhen(d.exportedAt)}` : '';
-      if (!confirm(`Restaurar o backup${when}: ${d.spaces.length} painel(is) e ${n} lançamentos?\n\nTudo o que está neste celular agora será substituído.`)) return;
+      if (!(await ask({ title: 'Restaurar este backup?', text: `Backup${when}: ${d.spaces.length} painel${d.spaces.length > 1 ? 'éis' : ''} e ${n} lançamentos. Tudo o que está neste celular agora será substituído.`, ok: 'Restaurar', danger: true, icon: 'file' }))) return;
       for (const s of spaces.list) { try { localStorage.removeItem(spaceKey(s.id)); } catch (err) { /* */ } }
       spaces = { active: d.spaces.some(s => s.id === d.active) ? d.active : d.spaces[0].id, list: d.spaces.map(s => ({ id: s.id, name: s.name, color: s.color || SPACE_COLORS[0] })) };
       for (const s of d.spaces) { try { localStorage.setItem(spaceKey(s.id), JSON.stringify(migrate(s.data || emptyDb()))); } catch (err) { /* */ } }
       saveSpaces();
     } else if (Array.isArray(d.txs) && Array.isArray(d.banks)) {
-      if (!confirm(`Restaurar backup antigo com ${d.txs.length} lançamentos no painel “${currentSpace().name}”? Os dados deste painel serão substituídos.`)) return;
+      if (!(await ask({ title: 'Restaurar este backup?', text: `Backup antigo com ${d.txs.length} lançamentos. Os dados do painel “${currentSpace().name}” serão substituídos.`, ok: 'Restaurar', danger: true, icon: 'file' }))) return;
       try { localStorage.setItem(spaceKey(spaces.active), JSON.stringify(migrate(d))); } catch (err) { /* */ }
     } else { toast('Arquivo de backup inválido'); return; }
     db = load(); ui.bank = ''; ui.monthPick = null; slots = null;
@@ -1892,6 +1895,7 @@
 
   /* =================== botão voltar (Android) =================== */
   window.appBack = () => {
+    if (dlgDone) { dlgDone(null); return true; }
     if (!$('#bulk-sheet').classList.contains('hidden')) { closeBulk(); return true; }
     if (!$('#spaces-sheet').classList.contains('hidden')) { closeSpaces(); return true; }
     if (sel.on) { endSelect(); return true; }
@@ -1911,6 +1915,40 @@
     toast(ok ? 'Arquivo salvo' : 'Arquivo não foi salvo');
   };
   document.addEventListener('keydown', e => { if (e.key === 'Escape') window.appBack(); });
+
+  /* =================== janelas de confirmação =================== */
+  let dlgDone = null;
+  function openDlg({ title, text = '', ok = 'OK', cancel = 'Cancelar', danger = false, icon = danger ? 'trash' : 'ok', input = null }) {
+    if (dlgDone) dlgDone(null);
+    $('#dlg-title').textContent = title;
+    $('#dlg-text').textContent = text;
+    $('#dlg-text').classList.toggle('hidden', !text);
+    $('#dlg-ic').innerHTML = svg(icon);
+    $('#dlg-ic').className = 'dlg-ic' + (danger ? ' danger' : '');
+    $('#dlg-ok').textContent = ok;
+    $('#dlg-ok').classList.toggle('danger-cta', danger);
+    $('#dlg-cancel').textContent = cancel;
+    const inp = $('#dlg-input');
+    inp.classList.toggle('hidden', !input);
+    if (input) {
+      inp.type = input.type || 'text'; inp.value = input.value || ''; inp.placeholder = input.placeholder || '';
+      inp.setAttribute('inputmode', input.type === 'password' ? 'text' : 'text');
+    }
+    $('#dlg').classList.remove('hidden'); $('#dlg-backdrop').classList.remove('hidden');
+    if (input) setTimeout(() => { inp.focus(); inp.select(); }, 80);
+    return new Promise(res => { dlgDone = v => { dlgDone = null; $('#dlg').classList.add('hidden'); $('#dlg-backdrop').classList.add('hidden'); res(v); }; });
+  }
+  const ask = opts => openDlg(opts).then(v => v === true);
+  const askText = opts => openDlg({ icon: 'edit', ...opts, input: opts.input || {} }).then(v => (typeof v === 'string' && v.trim()) ? v.trim() : null);
+  $('#dlg').addEventListener('submit', e => {
+    e.preventDefault();
+    if (!dlgDone) return;
+    const inp = $('#dlg-input');
+    if (!inp.classList.contains('hidden')) { if (!inp.value.trim()) { inp.focus(); return; } dlgDone(inp.value); }
+    else dlgDone(true);
+  });
+  $('#dlg-cancel').addEventListener('click', () => dlgDone && dlgDone(null));
+  $('#dlg-backdrop').addEventListener('click', () => dlgDone && dlgDone(null));
 
   /* =================== aviso =================== */
   let toastT;

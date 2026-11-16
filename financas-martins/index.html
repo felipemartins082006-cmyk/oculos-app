@@ -448,6 +448,16 @@
   </div>
 </div>
 
+<!-- Janela de confirmação no visual do app (substitui as caixas do sistema) -->
+<div class="dlg-backdrop hidden" id="dlg-backdrop"></div>
+<form class="dlg hidden" id="dlg" role="alertdialog" aria-modal="true" aria-labelledby="dlg-title" autocomplete="off">
+  <span class="dlg-ic" id="dlg-ic"></span>
+  <h3 id="dlg-title"></h3>
+  <p id="dlg-text"></p>
+  <input id="dlg-input" class="hidden" aria-labelledby="dlg-title">
+  <div class="dlg-actions"><button type="button" class="ghost" id="dlg-cancel">Cancelar</button><button type="submit" class="cta" id="dlg-ok">OK</button></div>
+</form>
+
 <div class="toast hidden" id="toast" role="status"></div>
 
 <script src="parsers.js"></script>
