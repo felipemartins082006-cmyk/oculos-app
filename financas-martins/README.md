@@ -1,6 +1,9 @@
 # Finanças Martins
 
-App web de finanças pessoais. Sem login: os dados ficam salvos só no navegador do aparelho.
+App de finanças pessoais **só para celular**. Qualquer pessoa usa sem login nem cadastro: os dados ficam salvos só no próprio celular.
+
+É um app web instalável: abra o endereço no celular e toque em **Instalar** (Android/Chrome) ou em
+**Compartilhar → Adicionar à Tela de Início** (iPhone/Safari). Depois ele abre pelo ícone, em tela cheia, como aplicativo.
 
 ## O que faz
 
@@ -37,6 +40,7 @@ e acesse http://localhost:8000. No GitHub Pages, fica em `/financas-martins/`.
 
 ## Arquivos
 
-- `index.html`, `styles.css`: telas e visual (tema claro e escuro, feito para celular primeiro)
+- `index.html`, `styles.css`: telas e visual (só celular: abas embaixo, uma coluna, tema claro e escuro)
+- `manifest.webmanifest`, `sw.js`, `icon-*.png`: instalação na tela inicial e abertura sem internet
 - `app.js`: dados, painel, registro manual, importação e ajustes
 - `parsers.js`: leitura dos extratos (OFX, CSV/TXT, Excel via SheetJS, PDF via pdf.js)

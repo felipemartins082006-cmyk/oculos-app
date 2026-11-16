@@ -101,7 +101,11 @@
     let s = norm(desc);
     s = s.replace(/^(compra( no)?( cartao)?( de)?( debito| credito)?( internacional)?|pagamento( de)?( boleto)?|pagto|pgto|pag|pix (enviado|recebido|transf\w*|qr ?code)?( para| de)?|transferencia (enviada|recebida)( pelo pix)?( para| de)?|transf(erencia)?( pix)?( enviada| recebida)?|ted( enviada| recebida)?|doc|deb(ito)?( aut(omatico)?)?|cp|elo|visa|master(card)?|compra aprovada|debito em conta)\b\s*[-:]?\s*/g, '');
     s = s.replace(/\d{2}\/\d{2}(\/\d{2,4})?/g, ' ').replace(/\d{2}:\d{2}/g, ' ');
-    s = s.split(/ - |\bcpf\b|\bcnpj\b|•|\*{2,}/)[0];
+    s = s.split(/\bcpf\b|\bcnpj\b|•|\*{2,}/)[0];
+    // "pagamento efetuado - imobiliaria": pula pedaços genéricos e fica com o nome
+    const GENERIC = /^(efetuad[oa]|enviad[oa]|recebid[oa]|realizad[oa]|aprovad[oa]|agendad[oa]|compra|pagamento|transferencia|pix|ted|doc|debito|credito|boleto|online|no debito|no credito)?$/;
+    const parts = s.split(/ - /).map(p => p.replace(/[*_\-–—|#.,;:/\\()]/g, ' ').replace(/\b\d+\b/g, ' ').replace(/\s+/g, ' ').trim());
+    s = parts.find(p => !GENERIC.test(p) && !p.split(' ').every(w => GENERIC.test(w))) || parts[0];
     s = s.replace(/[*_\-–—|#.,;:/\\()]/g, ' ').replace(/\b\d+\b/g, ' ').replace(/\s+/g, ' ').trim();
     if (!s) return 'Outros';
     const agg = AGGREGATORS.find(a => s.startsWith(a));
@@ -687,7 +691,7 @@
         <div class="slot-head"><span class="n" style="background:${pal[i % pal.length]}">${i + 1}</span>
           <input class="slot-name" list="bank-names" placeholder="Nome do banco (ex.: Nubank)" value="${esc(s.name)}" aria-label="Nome do banco ${i + 1}"></div>
         <label class="drop"><input type="file" multiple accept=".pdf,.ofx,.qfx,.csv,.txt,.xls,.xlsx,.ods,application/pdf,text/csv,text/plain" hidden>
-          <span>📄</span><span><strong>Escolher arquivos</strong> ou arraste aqui</span><span class="sub">PDF, OFX, CSV, TXT ou Excel · vários de uma vez</span></label>
+          <span>📄</span><span><strong>Toque para escolher os arquivos</strong></span><span class="sub">PDF, OFX, CSV, TXT ou Excel · pode escolher vários</span></label>
         <ul class="files">${s.files.map((f, j) => `<li><span>${esc(f.name)}</span><em>${(f.size / 1024).toFixed(0)} KB</em><button data-rm="${j}" aria-label="Remover">×</button></li>`).join('')}</ul>
       </div>`).join('') + `<datalist id="bank-names">${COMMON_BANKS.map(b => `<option value="${b}">`).join('')}</datalist>`;
     $$('#bank-slots .slot').forEach(el => {
@@ -919,6 +923,31 @@
     const el = $('#toast'); el.textContent = msg; el.classList.remove('hidden');
     clearTimeout(toastT); toastT = setTimeout(() => el.classList.add('hidden'), 3200);
   }
+
+  /* instalar na tela inicial */
+  let installEvt = null;
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const installDismissed = () => { try { return localStorage.getItem(STORE_KEY + ':noinstall') === '1'; } catch (e) { return false; } };
+  function showInstall() {
+    if (standalone || installDismissed()) return;
+    if (installEvt) $('#install').classList.remove('hidden');
+    else if (isIOS) {
+      $('#install-text').textContent = 'No Safari, toque em Compartilhar e depois em “Adicionar à Tela de Início”.';
+      $('#install-btn').classList.add('hidden');
+      $('#install').classList.remove('hidden');
+    }
+  }
+  window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; showInstall(); });
+  $('#install-btn').addEventListener('click', async () => {
+    if (!installEvt) return;
+    installEvt.prompt(); await installEvt.userChoice; installEvt = null; $('#install').classList.add('hidden');
+  });
+  $('#install-x').addEventListener('click', () => {
+    $('#install').classList.add('hidden');
+    try { localStorage.setItem(STORE_KEY + ':noinstall', '1'); } catch (e) { /* */ }
+  });
+  showInstall();
 
   matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => render());
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
