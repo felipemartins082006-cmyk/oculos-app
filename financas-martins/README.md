@@ -16,6 +16,23 @@ Instalar (o Android pede para permitir "instalar apps desconhecidos" na primeira
   backup manual (o Android pergunta onde guardar).
 - Versões novas instalam por cima da anterior sem perder os dados (a chave de assinatura é fixa).
 
+## Instalar no iPhone (iOS)
+
+No iPhone o app funciona como app web instalável (não precisa de App Store nem de conta de desenvolvedor):
+
+1. Abra no **Safari**: https://felipemartins082006-cmyk.github.io/oculos-app/financas-martins/
+2. Toque em **Compartilhar** (quadrado com a seta para cima) › **Adicionar à Tela de Início**.
+3. Abra pelo ícone "Finanças": ele roda em tela cheia, sem a barra do Safari, e funciona sem internet
+   depois da primeira abertura.
+
+Diferenças em relação ao Android:
+- **Salvar backup** e **Exportar tudo** abrem a folha de compartilhar do iPhone: dá para escolher
+  "Salvar em Arquivos", Google Drive, WhatsApp, e-mail etc.
+- O **backup automático semanal** vira um **lembrete semanal** (o iPhone não deixa um app web gravar
+  sozinho numa pasta).
+- Use sempre pelo ícone da Tela de Início: no Safari comum, o iOS pode apagar dados de sites que você
+  não abre há 7 dias. Mesmo assim, faça backup.
+
 ## O que faz
 
 - **Importar extratos** de conta corrente, cartão de crédito, vale-refeição e vale-alimentação.

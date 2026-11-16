@@ -34,6 +34,9 @@
     receipt: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
     trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
   };
+  const IS_IOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const IS_STANDALONE = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  if (IS_IOS) document.documentElement.classList.add('ios');
   const svg = k => `<svg viewBox="0 0 24 24">${IC[k] || IC.dots}</svg>`;
   document.querySelectorAll('[data-ic]').forEach(el => { el.insertAdjacentHTML('afterbegin', svg(el.dataset.ic)); });
 
@@ -1337,21 +1340,30 @@
     save(); renderSettings();
   });
 
-  function download(name, content, type) {
-    if (window.Android?.saveFile) { window.Android.saveFile(name, type, content); return; }
+  // iPhone/iPad: salvar abre a folha de compartilhar (Salvar em Arquivos, Google Drive, WhatsApp, e-mail…)
+  async function saveBlob(name, blob) {
+    if (IS_IOS && navigator.canShare) {
+      const file = new File([blob], name, { type: blob.type });
+      if (navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file], title: name }); return true; }
+        catch (e) { if (e.name === 'AbortError') return false; /* sem permissão de compartilhar: baixa do jeito normal */ }
+      }
+    }
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([content], { type }));
+    a.href = URL.createObjectURL(blob);
     a.download = name; document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    return true;
+  }
+  function download(name, content, type) {
+    if (window.Android?.saveFile) { window.Android.saveFile(name, type, content); return Promise.resolve(null); }
+    return saveBlob(name, new Blob([content], { type }));
   }
   function downloadBase64(name, b64, type) {
-    if (window.Android?.saveBase64) { window.Android.saveBase64(name, type, b64); return; }
+    if (window.Android?.saveBase64) { window.Android.saveBase64(name, type, b64); return Promise.resolve(null); }
     const bin = atob(b64); const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([bytes], { type }));
-    a.download = name; document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    return saveBlob(name, new Blob([bytes], { type }));
   }
 
   // Um arquivo só: resumo + uma aba por conta/cartão/vale + todos os lançamentos
@@ -1421,7 +1433,7 @@
 
     const b64 = X.write(wb, { bookType: 'xlsx', type: 'base64', cellDates: true });
     downloadBase64(`financas-${norm(currentSpace().name).replace(/[^a-z0-9]+/g, '-')}-${todayStr()}.xlsx`, b64, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    if (!window.Android) toast('Planilha baixada');
+    if (!window.Android && !IS_IOS) toast('Planilha baixada');
   }
 
   $('#export-csv').addEventListener('click', () => {
@@ -1757,8 +1769,10 @@
   let markOnSave = false;
   function backupNow() {
     markOnSave = !!window.Android;
-    download(backupName(), JSON.stringify(backupPayload()), 'application/json');
-    if (!window.Android) { bk.last = new Date().toISOString(); saveBk(); toast('Backup salvo'); render(); }
+    const p = download(backupName(), JSON.stringify(backupPayload()), 'application/json');
+    if (!window.Android) {
+      p.then(ok => { if (ok === false) { toast('Backup cancelado'); return; } bk.last = new Date().toISOString(); saveBk(); toast('Backup salvo'); render(); });
+    }
   }
   // grava sozinho na pasta escolhida (só no app Android), uma vez a cada 7 dias
   function runAutoBackup(force) {
@@ -1909,4 +1923,11 @@
   if (document.fonts?.ready) document.fonts.ready.then(() => { if (ui.view === 'panorama' && db.txs.length) renderDashboard(); });
   go('panorama');
   setTimeout(() => runAutoBackup(false), 1200);
+  // iPhone: aviso para instalar na Tela de Início (só no Safari, fora do app instalado)
+  try {
+    if (IS_IOS && !IS_STANDALONE && !window.Android && localStorage.getItem(STORE_KEY + ':iosHint') !== 'off') $('#ios-install').classList.remove('hidden');
+  } catch (e) { /* */ }
+  $('#ios-install-x').addEventListener('click', () => { $('#ios-install').classList.add('hidden'); try { localStorage.setItem(STORE_KEY + ':iosHint', 'off'); } catch (e) { /* */ } });
+  // iPhone: deixa o gerador de planilhas pronto, para o “Exportar” abrir o compartilhar sem atraso
+  if (IS_IOS) setTimeout(() => Parsers.loadXLSX().catch(() => {}), 2500);
 })();

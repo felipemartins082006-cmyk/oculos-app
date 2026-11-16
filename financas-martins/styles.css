@@ -402,7 +402,7 @@ input[type=checkbox] { accent-color: var(--accent); }
 .backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(3px); z-index: 40; animation: fade .2s; }
 .sheet {
   position: fixed; z-index: 41; left: 50%; bottom: 0; transform: translateX(-50%);
-  width: min(520px, 100%); max-height: 94vh; overflow-y: auto; scrollbar-width: none;
+  width: min(520px, 100%); max-height: 94vh; max-height: 94dvh; overflow-y: auto; scrollbar-width: none;
   background: var(--bg-2); border: 1px solid var(--line); border-bottom: 0; border-radius: 28px 28px 0 0;
   padding: 10px 16px calc(16px + env(safe-area-inset-bottom));
   display: flex; flex-direction: column; gap: 12px; animation: up .28s cubic-bezier(.2, .9, .3, 1);
@@ -638,3 +638,16 @@ input[type=checkbox] { accent-color: var(--accent); }
 .method-new { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin-top: 12px; }
 .method-new .cta { min-height: 46px; }
 .pick-hint { flex: 0 0 auto; align-self: center; color: var(--muted); font-size: 12.5px; font-weight: 600; padding: 0 4px; }
+
+/* ---------- iPhone ---------- */
+button, a, label, input, select { touch-action: manipulation; }
+.ios-install { display: flex; gap: 12px; align-items: flex-start; background: linear-gradient(135deg, rgba(157, 184, 255, 0.14), rgba(94, 228, 154, 0.08)); border: 1px solid rgba(157, 184, 255, 0.3); border-radius: 20px; padding: 14px; margin-bottom: 12px; }
+.ios-install .ii-ic { width: 38px; height: 38px; border-radius: 12px; background: rgba(157, 184, 255, 0.18); color: #b9cbff; display: grid; place-items: center; flex: 0 0 auto; }
+.ios-install .ii-ic svg { width: 20px; height: 20px; }
+.ios-install > .grow > b { display: block; font-size: 14.5px; }
+.ios-install small { display: block; color: var(--text-2); font-size: 12.5px; margin-top: 3px; line-height: 1.45; }
+.ios-install small b { color: var(--text); }
+.ios-install .inl { width: 14px; height: 14px; vertical-align: -2px; color: #b9cbff; }
+.ios-install .x { border: 0; background: none; color: var(--muted); font-size: 22px; line-height: 1; padding: 0 2px; }
+/* no app instalado do iPhone, a barra de status fica sobre o conteúdo: o topo já usa a área segura */
+@media (display-mode: standalone) { .top { padding-top: calc(10px + env(safe-area-inset-top)); } }
