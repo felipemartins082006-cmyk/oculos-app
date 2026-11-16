@@ -1143,7 +1143,7 @@
         <label class="lbl">Tipo de extrato</label>
         <div class="types">${['conta', 'credito', 'vr', 'va'].map(t => `<button type="button" class="type ${s.type === t ? 'on' : ''}" data-type="${t}">${svg(TYPES[t].ic)}${TYPES[t].name}</button>`).join('')}</div>
         <details class="tip"><summary>Como baixar este extrato</summary><p>${esc(tipFor(s.inst, s.type))}</p><p style="opacity:.7">${TIP_GENERIC}</p></details>
-        <label class="drop"><input type="file" multiple accept=".pdf,.ofx,.qfx,.csv,.txt,.xls,.xlsx,.ods" hidden>
+        <label class="drop"><input type="file" multiple accept=".pdf,.ofx,.qfx,.csv,.txt,.xls,.xlsx,.ods,.json" hidden>
           <span class="tile">${svg('file')}</span><span><b>Escolher arquivos</b><small>PDF, OFX, CSV, Excel ou TXT · vários de uma vez</small></span></label>
         <ul class="files">${s.files.map((f, j) => `<li><span>${esc(f.name)}</span><em>${Math.max(1, Math.round(f.size / 1024))} KB</em><button data-rm="${j}" aria-label="Remover">×</button></li>`).join('')}</ul>
       </div>`;
@@ -1161,7 +1161,15 @@
       el.querySelector('.slot-name')?.addEventListener('input', e => { s.name = e.target.value; updateReadBtn(); });
       el.querySelectorAll('.type').forEach(b => b.addEventListener('click', () => { s.type = b.dataset.type; drawSlots(); }));
       const input = el.querySelector('input[type=file]');
-      input.addEventListener('change', () => { for (const f of input.files) if (!s.files.some(x => x.name === f.name && x.size === f.size)) s.files.push(f); input.value = ''; drawSlots(); });
+      input.addEventListener('change', async () => {
+        const picked = [...input.files]; input.value = '';
+        for (const f of picked) {
+          const bkData = await looksLikeBackupFile(f);
+          if (bkData) { toast('Esse arquivo é um backup do app, não um extrato'); await restoreBackup(bkData); return; }
+          if (!s.files.some(x => x.name === f.name && x.size === f.size)) s.files.push(f);
+        }
+        drawSlots();
+      });
       el.querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', e => { e.preventDefault(); s.files.splice(+b.dataset.rm, 1); drawSlots(); }));
     });
     updateReadBtn();
@@ -1827,11 +1835,35 @@
     else enableAuto();
   });
   $('#auto-folder').addEventListener('click', () => window.Android?.pickBackupFolder());
-  $('#import-json').addEventListener('change', async e => {
+  // Lê qualquer arquivo: o que importa é o conteúdo (WhatsApp, Drive e e-mail às vezes mudam o nome ou a extensão)
+  function parseBackup(text) {
+    try {
+      const d = JSON.parse(String(text).replace(/^\uFEFF/, '').trim());
+      if (Array.isArray(d?.spaces) && d.spaces.length) return d;
+      if (Array.isArray(d?.txs) && Array.isArray(d?.banks)) return d;
+    } catch (e) { /* não é backup */ }
+    return null;
+  }
+  async function looksLikeBackupFile(f) {
+    if (f.size > 40 * 1024 * 1024) return null;
+    const head = await f.slice(0, 64).text().catch(() => '');
+    if (!/^\uFEFF?\s*\{/.test(head)) return null;
+    return parseBackup(await f.text());
+  }
+  window.appOpenFile = async (name, text) => {
+    const d = parseBackup(text);
+    if (d) return restoreBackup(d);
+    toast(`“${name}” não é um backup do app. Para extratos, use Importar.`);
+    go('importar');
+  };
+  $$('.restore-input').forEach(inp => inp.addEventListener('change', async e => {
     const f = e.target.files[0]; if (!f) return;
     e.target.value = '';
-    let d;
-    try { d = JSON.parse(await f.text()); } catch (err) { toast('Arquivo de backup inválido'); return; }
+    const d = parseBackup(await f.text().catch(() => ''));
+    if (!d) { toast('Esse arquivo não é um backup do app'); return; }
+    restoreBackup(d);
+  }));
+  async function restoreBackup(d) {
     if (Array.isArray(d.spaces) && d.spaces.length) {
       const n = d.spaces.reduce((a, s) => a + (s.data?.txs?.length || 0), 0);
       const when = d.exportedAt ? ` de ${fmtWhen(d.exportedAt)}` : '';
@@ -1845,8 +1877,9 @@
       try { localStorage.setItem(spaceKey(spaces.active), JSON.stringify(migrate(d))); } catch (err) { /* */ }
     } else { toast('Arquivo de backup inválido'); return; }
     db = load(); ui.bank = ''; ui.monthPick = null; slots = null;
+    bk.last = bk.last || new Date().toISOString(); saveBk();
     toast('Backup restaurado'); go('panorama');
-  });
+  }
 
   /* =================== dados de exemplo =================== */
   function loadDemo() {

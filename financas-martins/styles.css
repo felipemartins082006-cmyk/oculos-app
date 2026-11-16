@@ -671,3 +671,6 @@ button, a, label, input, select { touch-action: manipulation; }
 .dlg-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; margin-top: 12px; }
 .dlg-actions .ghost, .dlg-actions .cta { min-height: 50px; width: 100%; }
 .cta.danger-cta { background: linear-gradient(135deg, #ff8a7a, #ff5f6d); color: #2a0606; box-shadow: 0 10px 30px -10px rgba(255, 95, 109, 0.6); }
+
+.restore-note { margin: 10px 2px 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+.restore-empty { margin-top: 10px; cursor: pointer; color: var(--lime); border-style: dashed; }

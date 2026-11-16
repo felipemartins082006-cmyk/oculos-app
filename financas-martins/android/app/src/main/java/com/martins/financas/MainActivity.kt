@@ -8,6 +8,7 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import org.json.JSONObject
 import android.os.Bundle
+import android.provider.OpenableColumns
 import android.view.ViewGroup
 import android.webkit.JavascriptInterface
 import android.webkit.ValueCallback
@@ -138,6 +139,11 @@ class MainActivity : ComponentActivity() {
           // A página não navega para fora do app
           override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) =
               request.url.host != WebViewAssetLoader.DEFAULT_DOMAIN
+
+          override fun onPageFinished(view: WebView, url: String) {
+            pageReady = true
+            deliverPendingFile()
+          }
         }
 
     web.webChromeClient =
@@ -149,20 +155,8 @@ class MainActivity : ComponentActivity() {
           ): Boolean {
             filesCallback?.onReceiveValue(null)
             filesCallback = callback
-            val types =
-                if (params.acceptTypes.any { it.contains("json") }) arrayOf("application/json", "*/*")
-                else
-                    arrayOf(
-                        "application/pdf",
-                        "text/*",
-                        "text/csv",
-                        "application/vnd.ms-excel",
-                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        "application/vnd.oasis.opendocument.spreadsheet",
-                        "application/x-ofx",
-                        "application/octet-stream",
-                        "*/*",
-                    )
+            // qualquer arquivo pode ser escolhido: o app confere o conteúdo (extrato ou backup)
+            val types = arrayOf("*/*")
             runCatching { pickFiles.launch(types) }
                 .onFailure {
                   filesCallback = null
@@ -189,6 +183,7 @@ class MainActivity : ComponentActivity() {
           }
         })
 
+    handleOpenIntent(intent)
     if (savedInstanceState != null) web.restoreState(savedInstanceState)
     else web.loadUrl("https://${WebViewAssetLoader.DEFAULT_DOMAIN}/assets/web/index.html")
   }
@@ -206,6 +201,46 @@ class MainActivity : ComponentActivity() {
   override fun onWindowFocusChanged(hasFocus: Boolean) {
     super.onWindowFocusChanged(hasFocus)
     if (hasFocus) hideNavigationBar()
+  }
+
+  // ---- Arquivo aberto de fora ("Abrir com Finanças" / compartilhar com o app) ----
+  private var pageReady = false
+  private var pendingFile: Pair<String, String>? = null
+
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    handleOpenIntent(intent)
+  }
+
+  private fun handleOpenIntent(intent: Intent?) {
+    val uri: Uri =
+        when (intent?.action) {
+          Intent.ACTION_VIEW -> intent.data
+          Intent.ACTION_SEND ->
+              if (Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+              else @Suppress("DEPRECATION") intent.getParcelableExtra(Intent.EXTRA_STREAM)
+          else -> null
+        } ?: return
+    runCatching {
+          var name = "arquivo"
+          contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+            if (it.moveToFirst()) it.getString(0)?.let { n -> name = n }
+          }
+          val bytes = contentResolver.openInputStream(uri)!!.use { it.readBytes() }
+          if (bytes.size > 40 * 1024 * 1024) error("arquivo grande demais")
+          pendingFile = name to String(bytes, Charsets.UTF_8)
+        }
+        .onFailure { pendingFile = null }
+    deliverPendingFile()
+  }
+
+  private fun deliverPendingFile() {
+    val (name, text) = pendingFile ?: return
+    if (!pageReady) return
+    pendingFile = null
+    web.evaluateJavascript(
+        "window.appOpenFile ? appOpenFile(${JSONObject.quote(name)}, ${JSONObject.quote(text)}) : 0", null)
   }
 
   override fun onSaveInstanceState(outState: Bundle) {

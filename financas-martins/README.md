@@ -33,6 +33,17 @@ Diferenças em relação ao Android:
 - Use sempre pelo ícone da Tela de Início: no Safari comum, o iOS pode apagar dados de sites que você
   não abre há 7 dias. Mesmo assim, faça backup.
 
+## Atualizar o app sem perder nada
+
+- **Android**: não precisa desinstalar. Abra o APK novo e toque em **Atualizar**: os dados continuam
+  (todas as versões são assinadas com a mesma chave).
+- Se desinstalar ou trocar de celular: na tela inicial vazia toque em **"Já usava o app? Restaurar um
+  backup"** (ou Mais › Restaurar um backup) e escolha o arquivo. O app aceita qualquer arquivo e confere o
+  conteúdo, então funciona mesmo se o WhatsApp/Drive mudar o nome para `.txt` ou tirar a extensão.
+- No Android também dá para tocar no arquivo de backup (Arquivos, WhatsApp, Drive, e-mail) e escolher
+  **Abrir com Finanças**. Se escolher o backup sem querer na tela Importar, o app reconhece e oferece
+  restaurar.
+
 ## O que faz
 
 - **Importar extratos** de conta corrente, cartão de crédito, vale-refeição e vale-alimentação.

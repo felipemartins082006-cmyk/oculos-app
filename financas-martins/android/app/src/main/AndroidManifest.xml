@@ -16,10 +16,27 @@
         android:exported="true"
         android:screenOrientation="portrait"
         android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
+        android:launchMode="singleTask"
         android:windowSoftInputMode="adjustResize">
       <intent-filter>
         <action android:name="android.intent.action.MAIN" />
         <category android:name="android.intent.category.LAUNCHER" />
+      </intent-filter>
+      <!-- "Abrir com Finanças": arquivo de backup tocado no Arquivos, WhatsApp, Drive, e-mail… -->
+      <intent-filter>
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <data android:scheme="content" />
+        <data android:mimeType="application/json" />
+        <data android:mimeType="text/plain" />
+        <data android:mimeType="application/octet-stream" />
+      </intent-filter>
+      <intent-filter>
+        <action android:name="android.intent.action.SEND" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <data android:mimeType="application/json" />
+        <data android:mimeType="text/plain" />
+        <data android:mimeType="application/octet-stream" />
       </intent-filter>
     </activity>
   </application>

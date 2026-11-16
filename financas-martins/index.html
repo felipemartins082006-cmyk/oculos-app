@@ -48,6 +48,7 @@
       <p>Junte os extratos da conta, do cartão e do vale-refeição e veja para onde vai cada real. Sem login, sem cadastro: tudo fica só no seu celular.</p>
       <button class="cta" data-go="importar">Importar extratos</button>
       <button class="ghost" data-action="new">Registrar um gasto agora</button>
+      <label class="ghost restore-empty"><input type="file" class="restore-input" hidden>Já usava o app? Restaurar um backup</label>
       <button class="link" id="load-demo">Ver com dados de exemplo</button>
     </div>
 
@@ -236,7 +237,8 @@
         <button class="switch" id="auto-toggle" role="switch" aria-checked="false" aria-label="Backup automático semanal"><i></i></button>
       </div>
       <button class="link hidden" id="auto-folder">Trocar pasta do backup</button>
-      <label class="ghost small restore"><input type="file" id="import-json" accept=".json,application/json" hidden>Restaurar um backup</label>
+      <label class="ghost small restore"><input type="file" id="import-json" class="restore-input" hidden>Restaurar um backup</label>
+      <p class="restore-note">Atualizando o app? Não precisa desinstalar: instale a versão nova por cima e tudo continua. Se reinstalar do zero, restaure aqui o arquivo de backup.</p>
     </div>
 
     <button class="export-card renda-link" data-go="renda">
