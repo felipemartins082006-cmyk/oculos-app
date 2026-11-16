@@ -135,12 +135,25 @@
   const tile = (catId, cls = '', id = '') => { const c = CAT[catId] || CAT.outros; return `<span class="tile ${cls}" ${id ? `id="${id}"` : ''} style="background:${alpha(c.color, .14)};color:${c.color}">${svg(c.ic)}</span>`; };
 
   /* =================== dados =================== */
-  function load() {
+  // Painéis: cada um guarda seus próprios dados. O primeiro usa a chave antiga (compatível com versões anteriores).
+  const SPACES_KEY = STORE_KEY + ':spaces';
+  const SPACE_COLORS = ['#5ee49a', '#ff7eb6', '#9db8ff', '#ffd166', '#ff8a4c', '#c4a8ff', '#3dd6d0'];
+  const spaceKey = id => id === 'main' ? STORE_KEY : `${STORE_KEY}:ws:${id}`;
+  const emptyDb = () => ({ version: 2, banks: [], txs: [], rules: {} });
+  function loadSpaces() {
+    try { const s = JSON.parse(localStorage.getItem(SPACES_KEY)); if (s?.list?.length) return s; } catch (e) { /* */ }
+    return { active: 'main', list: [{ id: 'main', name: 'Meu painel', color: SPACE_COLORS[0] }] };
+  }
+  let spaces = loadSpaces();
+  if (!spaces.list.some(s => s.id === spaces.active)) spaces.active = spaces.list[0].id;
+  const saveSpaces = () => { try { localStorage.setItem(SPACES_KEY, JSON.stringify(spaces)); } catch (e) { /* */ } };
+  const currentSpace = () => spaces.list.find(s => s.id === spaces.active);
+  function load(id = spaces.active) {
     try {
-      const raw = localStorage.getItem(STORE_KEY);
+      const raw = localStorage.getItem(spaceKey(id));
       if (raw) return migrate(JSON.parse(raw));
     } catch (e) { /* armazenamento indisponível */ }
-    return { version: 2, banks: [], txs: [], rules: {} };
+    return emptyDb();
   }
   function migrate(d) {
     d.rules ||= {}; d.banks ||= []; d.txs ||= [];
@@ -157,7 +170,7 @@
   }
   let db = load();
   function save() {
-    try { localStorage.setItem(STORE_KEY, JSON.stringify(db)); }
+    try { localStorage.setItem(spaceKey(spaces.active), JSON.stringify(db)); }
     catch (e) { toast('Não consegui salvar. Faça um backup em Mais.'); }
   }
   const bankById = id => db.banks.find(b => b.id === id);
@@ -229,7 +242,11 @@
   function renderTop() {
     const d = new Date();
     const wd = SEMANA_LONGO[d.getDay()];
-    $('#top-date').textContent = `${wd[0].toUpperCase() + wd.slice(1)}, ${d.getDate()} de ${MES_LONGO[d.getMonth()]}`;
+    const sp = currentSpace();
+    $('#space-name').textContent = sp.name;
+    $('#space-dot').style.background = sp.color;
+    $('#space-dot').textContent = sp.name.trim()[0]?.toUpperCase() || '?';
+    $('#space-btn').title = `${wd}, ${d.getDate()} de ${MES_LONGO[d.getMonth()]}`;
     const h = d.getHours();
     $('#top-title').textContent = { panorama: h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite', lancamentos: 'Extrato', importar: 'Importar extratos', ajustes: 'Mais opções' }[ui.view];
     $('#period-btn').classList.toggle('hidden', ui.view !== 'panorama' || !db.txs.length);
@@ -360,6 +377,7 @@
   /* =================== início =================== */
   function renderDashboard() {
     const has = db.txs.length > 0;
+    renderNag();
     $('#empty-state').classList.toggle('hidden', has);
     $('#dashboard').classList.toggle('hidden', !has);
     renderTop();
@@ -387,8 +405,8 @@
     const wealth = bal, wDelta = wealth - startBal;
 
     // cartão principal
-    const [int, cents] = fmt(wealth).replace('R$', '').trim().split(',');
-    $('#hero-value').innerHTML = `<small>R$</small>${esc(int)}<span style="opacity:.6;font-size:24px">,${esc(cents || '00')}</span>`;
+    const [int, cents] = fmt(Math.abs(wealth)).replace('R$', '').trim().split(',');
+    $('#hero-value').innerHTML = `<small>${wealth < 0 ? '−R$' : 'R$'}</small>${esc(int)}<span style="opacity:.6;font-size:24px">,${esc(cents || '00')}</span>`;
     $('#hero-delta').textContent = `${wDelta >= 0 ? '▲' : '▼'} ${fmtShort(Math.abs(wDelta))} no período`;
     $('#hero-in').textContent = fmtShort(T.inc);
     $('#hero-out').textContent = fmtShort(T.out);
@@ -838,7 +856,7 @@
     sheet.autoWhen = !tx;
     sheet.amt = tx ? Math.abs(tx.amount).toFixed(2).replace('.', ',').replace(/,00$/, '') : '';
     let last = null;
-    try { last = localStorage.getItem(STORE_KEY + ':lastBank'); } catch (e) { /* */ }
+    try { last = localStorage.getItem(spaceKey(spaces.active) + ':lastBank'); } catch (e) { /* */ }
     sheet.bank = tx ? tx.bank : (bankById(last) ? last : (db.banks.find(b => b.type !== 'credito')?.id || db.banks[0]?.id || null));
     $('#tx-desc').value = tx ? tx.desc : '';
     $('#tx-date').value = tx ? tx.date : todayStr();
@@ -916,7 +934,7 @@
     const desc = $('#tx-desc').value.trim() || (CAT[sheet.cat]?.name ?? (sheet.type === 'in' ? 'Entrada' : 'Gasto'));
     let bankId = sheet.bank;
     if (!bankId || bankId === '__new') bankId = ensureAccount({ name: 'Carteira', inst: 'carteira', type: 'dinheiro' }).id;
-    try { localStorage.setItem(STORE_KEY + ':lastBank', bankId); } catch (err) { /* */ }
+    try { localStorage.setItem(spaceKey(spaces.active) + ':lastBank', bankId); } catch (err) { /* */ }
     const cat = sheet.cat || guessCat(desc, amount, bankById(bankId)?.type);
     const when = sheet.autoWhen ? { date: todayStr(), time: nowTime() } : { date: $('#tx-date').value || todayStr(), time: $('#tx-time').value || null };
     if (sheet.editing) {
@@ -1113,6 +1131,7 @@
 
   /* =================== mais / exportar =================== */
   function renderSettings() {
+    renderBackup();
     $('#banks-edit').innerHTML = db.banks.map(b => `
       <div class="bank-edit" data-id="${b.id}">${mono(b)}
         <input class="bn" value="${esc(b.name)}" aria-label="Nome da conta">
@@ -1183,7 +1202,7 @@
     const sorted = active().sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
 
     // Resumo
-    const resumo = [[`Finanças · exportado em ${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()} às ${nowTime()}`], [],
+    const resumo = [[`Finanças · ${currentSpace().name} · exportado em ${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()} às ${nowTime()}`], [],
       ['Conta', 'Instituição', 'Tipo', 'Lançamentos', 'Entradas', 'Saídas', 'Saldo atual']];
     for (const b of db.banks) {
       const bt = active().filter(t => t.bank === b.id);
@@ -1218,29 +1237,169 @@
     X.utils.book_append_sheet(wb, sheetFrom(allRows, [12, 7, 18, 18, 42, 22, 14, 10, 11], [6], [0]), 'Todos os lançamentos');
 
     const b64 = X.write(wb, { bookType: 'xlsx', type: 'base64', cellDates: true });
-    downloadBase64(`financas-${todayStr()}.xlsx`, b64, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    downloadBase64(`financas-${norm(currentSpace().name).replace(/[^a-z0-9]+/g, '-')}-${todayStr()}.xlsx`, b64, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     if (!window.Android) toast('Planilha baixada');
   }
 
-  $('#export-json').addEventListener('click', () => download(`financas-backup-${todayStr()}.json`, JSON.stringify(db, null, 1), 'application/json'));
   $('#export-csv').addEventListener('click', () => {
     const rows = [['Data', 'Hora', 'Conta', 'Tipo', 'Descrição', 'Categoria', 'Valor']].concat(
       [...db.txs].sort((a, b) => a.date.localeCompare(b.date)).map(t => { const b = bankById(t.bank); return [shortDate(t.date), t.time || '', b?.name || '', TYPES[b?.type]?.name || '', t.desc, CAT[t.cat]?.name || t.cat, t.amount.toFixed(2).replace('.', ',')]; }));
     download(`financas-${todayStr()}.csv`, '﻿' + rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\n'), 'text/csv');
   });
+  $('#clear-all').addEventListener('click', () => {
+    if (!confirm(`Apagar todas as contas e lançamentos do painel “${currentSpace().name}”? Não dá para desfazer.`)) return;
+    db = emptyDb(); save(); ui.bank = ''; slots = null; toast('Painel apagado'); go('panorama');
+  });
+
+  /* =================== painéis =================== */
+  function openSpaces() {
+    const list = $('#space-list');
+    list.innerHTML = spaces.list.map(s => {
+      const d = s.id === spaces.active ? db : load(s.id);
+      const on = s.id === spaces.active;
+      return `<div class="space-item ${on ? 'on' : ''}" data-id="${s.id}">
+        <button class="space-main" data-act="open"><span class="space-av" style="background:${s.color}">${esc(s.name.trim()[0]?.toUpperCase() || '?')}</span>
+          <span class="grow"><b>${esc(s.name)}</b><small>${d.txs.length} lançamento${d.txs.length === 1 ? '' : 's'} · ${d.banks.length} conta${d.banks.length === 1 ? '' : 's'}${on ? ' · aberto agora' : ''}</small></span>
+          ${on ? `<span class="space-check">${svg('ok')}</span>` : `<svg class="chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>`}</button>
+        <div class="space-tools"><button data-act="rename">Renomear</button>${on ? '' : '<button data-act="delete" class="danger">Excluir</button>'}</div>
+      </div>`;
+    }).join('');
+    list.querySelectorAll('.space-item').forEach(el => {
+      const id = el.dataset.id, s = spaces.list.find(x => x.id === id);
+      el.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => {
+        if (b.dataset.act === 'open') { if (id !== spaces.active) switchSpace(id); else closeSpaces(); }
+        if (b.dataset.act === 'rename') {
+          const n = prompt('Novo nome do painel:', s.name); if (!n?.trim()) return;
+          s.name = n.trim().slice(0, 40); saveSpaces(); renderTop(); openSpaces();
+        }
+        if (b.dataset.act === 'delete') {
+          const d = load(id);
+          if (!confirm(`Excluir o painel “${s.name}” com ${d.txs.length} lançamentos? Não dá para desfazer.`)) return;
+          try { localStorage.removeItem(spaceKey(id)); } catch (e) { /* */ }
+          spaces.list = spaces.list.filter(x => x.id !== id); saveSpaces(); openSpaces();
+          toast('Painel excluído');
+        }
+      }));
+    });
+    $('#space-new-name').value = '';
+    $('#spaces-sheet').classList.remove('hidden'); $('#spaces-backdrop').classList.remove('hidden');
+  }
+  const closeSpaces = () => { $('#spaces-sheet').classList.add('hidden'); $('#spaces-backdrop').classList.add('hidden'); };
+  function switchSpace(id) {
+    save();
+    spaces.active = id; saveSpaces();
+    db = load();
+    ui.bank = ''; ui.monthPick = null; ui.list = { q: '', cat: '', type: '', bank: '', merchant: null, limit: 120 };
+    slots = null; review = [];
+    closeSpaces(); go('panorama');
+    toast(`Painel “${currentSpace().name}”`);
+  }
+  $('#space-btn').addEventListener('click', openSpaces);
+  $('#manage-spaces').addEventListener('click', openSpaces);
+  $('#spaces-close').addEventListener('click', closeSpaces);
+  $('#spaces-backdrop').addEventListener('click', closeSpaces);
+  $('#space-new').addEventListener('submit', e => {
+    e.preventDefault();
+    const name = $('#space-new-name').value.trim();
+    if (!name) { $('#space-new-name').focus(); toast('Dê um nome ao painel'); return; }
+    const id = uid();
+    spaces.list.push({ id, name: name.slice(0, 40), color: SPACE_COLORS[spaces.list.length % SPACE_COLORS.length] });
+    try { localStorage.setItem(spaceKey(id), JSON.stringify(emptyDb())); } catch (err) { /* */ }
+    saveSpaces(); switchSpace(id);
+  });
+
+  /* =================== backup =================== */
+  const BK_KEY = STORE_KEY + ':backup';
+  let bk = {};
+  try { bk = JSON.parse(localStorage.getItem(BK_KEY)) || {}; } catch (e) { /* */ }
+  const saveBk = () => { try { localStorage.setItem(BK_KEY, JSON.stringify(bk)); } catch (e) { /* */ } };
+  const daysSince = iso => iso ? Math.floor((Date.now() - new Date(iso)) / 86400000) : Infinity;
+  const fmtWhen = iso => { const d = new Date(iso); return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} às ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+  const canAutoFolder = () => !!(window.Android?.pickBackupFolder && window.Android?.writeBackup);
+  const totalTxs = () => spaces.list.reduce((n, s) => n + (s.id === spaces.active ? db : load(s.id)).txs.length, 0);
+  function backupPayload() {
+    save();
+    return {
+      app: 'financas-martins', version: 3, exportedAt: new Date().toISOString(), active: spaces.active,
+      spaces: spaces.list.map(s => ({ id: s.id, name: s.name, color: s.color, data: s.id === spaces.active ? db : load(s.id) })),
+    };
+  }
+  const backupName = () => `financas-backup-${todayStr()}.json`;
+  let markOnSave = false;
+  function backupNow() {
+    markOnSave = !!window.Android;
+    download(backupName(), JSON.stringify(backupPayload()), 'application/json');
+    if (!window.Android) { bk.last = new Date().toISOString(); saveBk(); toast('Backup salvo'); render(); }
+  }
+  // grava sozinho na pasta escolhida (só no app Android), uma vez a cada 7 dias
+  function runAutoBackup(force) {
+    if (!bk.auto || !bk.folder || !canAutoFolder() || !totalTxs()) return;
+    if (!force && daysSince(bk.lastAuto) < 7) return;
+    let ok = false;
+    try { ok = window.Android.writeBackup(backupName(), JSON.stringify(backupPayload())); } catch (e) { ok = false; }
+    if (ok) { bk.lastAuto = bk.last = new Date().toISOString(); saveBk(); toast(`Backup semanal salvo em “${bk.folder}”`); }
+    else { bk.folder = null; saveBk(); toast('Não consegui gravar o backup na pasta. Escolha a pasta de novo em Mais.'); }
+  }
+  function enableAuto() {
+    if (canAutoFolder()) { window.Android.pickBackupFolder(); return; } // resposta chega em appFolderPicked
+    bk.auto = true; saveBk(); toast('Pronto: vou te lembrar de salvar o backup a cada 7 dias'); render();
+  }
+  window.appFolderPicked = name => {
+    if (!name) { toast('Nenhuma pasta escolhida'); render(); return; }
+    bk.auto = true; bk.folder = name; saveBk();
+    runAutoBackup(true); render();
+  };
+  function renderNag() {
+    const has = db.txs.length > 0;
+    const autoOk = bk.auto && bk.folder && canAutoFolder();
+    const due = daysSince(bk.last) >= 7 && daysSince(bk.snooze) >= 3;
+    const show = has && !autoOk && due;
+    $('#backup-nag').classList.toggle('hidden', !show);
+    if (!show) return;
+    $('#nag-title').textContent = bk.last ? `Seu último backup foi há ${daysSince(bk.last)} dias` : 'Você ainda não fez nenhum backup';
+    $('#nag-text').textContent = 'Salve uma cópia de tudo para não perder nada se trocar ou perder o celular.';
+    $('#nag-auto').classList.toggle('hidden', !!bk.auto && !canAutoFolder());
+  }
+  function renderBackup() {
+    const autoOk = bk.auto && (bk.folder || !canAutoFolder());
+    $('#bk-status').innerHTML = bk.last
+      ? `<span class="bk-dot ${daysSince(bk.last) < 7 ? 'ok' : 'late'}"></span>Último backup: <b>${fmtWhen(bk.last)}</b>${autoOk && bk.folder ? `<br><small>Próximo automático: em ${Math.max(0, 7 - daysSince(bk.lastAuto))} dia(s)</small>` : ''}`
+      : `<span class="bk-dot late"></span>Nenhum backup salvo ainda`;
+    const t = $('#auto-toggle');
+    t.classList.toggle('on', !!autoOk); t.setAttribute('aria-checked', String(!!autoOk));
+    $('#auto-desc').textContent = canAutoFolder()
+      ? (autoOk ? `Salvando sozinho a cada 7 dias na pasta “${bk.folder}”.` : 'Escolha uma pasta uma vez e o app grava um backup novo nela a cada 7 dias.')
+      : (autoOk ? 'Ligado: vou te lembrar a cada 7 dias de salvar o backup.' : 'Te lembro a cada 7 dias de salvar o backup.');
+    $('#auto-folder').classList.toggle('hidden', !(canAutoFolder() && autoOk));
+  }
+  $('#backup-now').addEventListener('click', backupNow);
+  $('#nag-save').addEventListener('click', backupNow);
+  $('#nag-auto').addEventListener('click', enableAuto);
+  $('#nag-x').addEventListener('click', () => { bk.snooze = new Date().toISOString(); saveBk(); renderNag(); });
+  $('#auto-toggle').addEventListener('click', () => {
+    if (bk.auto && (bk.folder || !canAutoFolder())) { bk.auto = false; saveBk(); toast('Backup automático desligado'); render(); }
+    else enableAuto();
+  });
+  $('#auto-folder').addEventListener('click', () => window.Android?.pickBackupFolder());
   $('#import-json').addEventListener('change', async e => {
     const f = e.target.files[0]; if (!f) return;
-    try {
-      const d = JSON.parse(await f.text());
-      if (!Array.isArray(d.txs) || !Array.isArray(d.banks)) throw new Error();
-      if (!confirm(`Restaurar backup com ${d.txs.length} lançamentos? Os dados atuais serão substituídos.`)) return;
-      db = migrate(d); save(); toast('Backup restaurado'); render();
-    } catch (err) { toast('Arquivo de backup inválido'); }
     e.target.value = '';
-  });
-  $('#clear-all').addEventListener('click', () => {
-    if (!confirm('Apagar todos os lançamentos e contas deste celular? Não dá para desfazer.')) return;
-    db = { version: 2, banks: [], txs: [], rules: {} }; save(); ui.bank = ''; slots = null; toast('Tudo apagado'); go('panorama');
+    let d;
+    try { d = JSON.parse(await f.text()); } catch (err) { toast('Arquivo de backup inválido'); return; }
+    if (Array.isArray(d.spaces) && d.spaces.length) {
+      const n = d.spaces.reduce((a, s) => a + (s.data?.txs?.length || 0), 0);
+      const when = d.exportedAt ? ` de ${fmtWhen(d.exportedAt)}` : '';
+      if (!confirm(`Restaurar o backup${when}: ${d.spaces.length} painel(is) e ${n} lançamentos?\n\nTudo o que está neste celular agora será substituído.`)) return;
+      for (const s of spaces.list) { try { localStorage.removeItem(spaceKey(s.id)); } catch (err) { /* */ } }
+      spaces = { active: d.spaces.some(s => s.id === d.active) ? d.active : d.spaces[0].id, list: d.spaces.map(s => ({ id: s.id, name: s.name, color: s.color || SPACE_COLORS[0] })) };
+      for (const s of d.spaces) { try { localStorage.setItem(spaceKey(s.id), JSON.stringify(migrate(s.data || emptyDb()))); } catch (err) { /* */ } }
+      saveSpaces();
+    } else if (Array.isArray(d.txs) && Array.isArray(d.banks)) {
+      if (!confirm(`Restaurar backup antigo com ${d.txs.length} lançamentos no painel “${currentSpace().name}”? Os dados deste painel serão substituídos.`)) return;
+      try { localStorage.setItem(spaceKey(spaces.active), JSON.stringify(migrate(d))); } catch (err) { /* */ }
+    } else { toast('Arquivo de backup inválido'); return; }
+    db = load(); ui.bank = ''; ui.monthPick = null; slots = null;
+    toast('Backup restaurado'); go('panorama');
   });
 
   /* =================== dados de exemplo =================== */
@@ -1291,6 +1450,7 @@
   /* =================== botão voltar (Android) =================== */
   window.appBack = () => {
     if (!$('#bulk-sheet').classList.contains('hidden')) { closeBulk(); return true; }
+    if (!$('#spaces-sheet').classList.contains('hidden')) { closeSpaces(); return true; }
     if (sel.on) { endSelect(); return true; }
     if (!$('#tx-sheet').classList.contains('hidden')) { closeSheet(); return true; }
     if (!$('#drill-sheet').classList.contains('hidden')) { closeDrill(); return true; }
@@ -1300,7 +1460,11 @@
     if (ui.view !== 'panorama') { go('panorama'); return true; }
     return false;
   };
-  window.appSaved = ok => toast(ok ? 'Arquivo salvo' : 'Não foi possível salvar o arquivo');
+  window.appSaved = ok => {
+    if (ok && markOnSave) { bk.last = new Date().toISOString(); saveBk(); render(); }
+    markOnSave = false;
+    toast(ok ? 'Arquivo salvo' : 'Arquivo não foi salvo');
+  };
   document.addEventListener('keydown', e => { if (e.key === 'Escape') window.appBack(); });
 
   /* =================== aviso =================== */
@@ -1313,4 +1477,5 @@
   if ('serviceWorker' in navigator && location.protocol === 'https:' && !window.Android) navigator.serviceWorker.register('sw.js').catch(() => {});
   if (document.fonts?.ready) document.fonts.ready.then(() => { if (ui.view === 'panorama' && db.txs.length) renderDashboard(); });
   go('panorama');
+  setTimeout(() => runAutoBackup(false), 1200);
 })();

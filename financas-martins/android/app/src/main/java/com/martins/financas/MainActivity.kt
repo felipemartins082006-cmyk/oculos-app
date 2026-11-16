@@ -3,7 +3,10 @@ package com.martins.financas
 import android.annotation.SuppressLint
 import android.graphics.Color
 import android.os.Build
+import android.content.Intent
 import android.net.Uri
+import android.provider.DocumentsContract
+import org.json.JSONObject
 import android.os.Bundle
 import android.view.ViewGroup
 import android.webkit.JavascriptInterface
@@ -36,6 +39,30 @@ class MainActivity : ComponentActivity() {
 
   // Seleção de extratos (vários arquivos de uma vez)
   private var filesCallback: ValueCallback<Array<Uri>>? = null
+  // Pasta do backup automático semanal (escolhida uma vez; o Android lembra a permissão)
+  private val prefs by lazy { getSharedPreferences("backup", MODE_PRIVATE) }
+  private val pickFolder =
+      registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        var name: String? = null
+        if (uri != null) {
+          runCatching {
+            contentResolver.takePersistableUriPermission(
+                uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            prefs.edit().putString("tree", uri.toString()).apply()
+            name = folderName(uri) ?: "pasta escolhida"
+          }
+        }
+        web.evaluateJavascript("window.appFolderPicked && appFolderPicked(${JSONObject.quote(name ?: "")} || null)", null)
+      }
+
+  private fun folderName(tree: Uri): String? {
+    val doc = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+    contentResolver.query(doc, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use {
+      if (it.moveToFirst()) return it.getString(0)
+    }
+    return null
+  }
+
   private val pickFiles =
       registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         filesCallback?.onReceiveValue(uris.toTypedArray())
@@ -197,6 +224,23 @@ class MainActivity : ComponentActivity() {
     fun saveBase64(name: String, mime: String, base64: String) {
       save(name, mime, Base64.decode(base64, Base64.DEFAULT))
     }
+
+    @JavascriptInterface
+    fun pickBackupFolder() {
+      runOnUiThread { runCatching { pickFolder.launch(null) } }
+    }
+
+    // Grava um arquivo novo na pasta escolhida. Devolve false se a pasta sumiu ou perdeu a permissão.
+    @JavascriptInterface
+    fun writeBackup(name: String, content: String): Boolean =
+        runCatching {
+              val tree = Uri.parse(prefs.getString("tree", null) ?: return false)
+              val parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+              val file = DocumentsContract.createDocument(contentResolver, parent, "application/json", name) ?: return false
+              contentResolver.openOutputStream(file)!!.use { it.write(content.toByteArray(Charsets.UTF_8)) }
+              true
+            }
+            .getOrDefault(false)
 
     private fun save(name: String, mime: String, bytes: ByteArray) {
       runOnUiThread {

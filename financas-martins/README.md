@@ -40,6 +40,14 @@ Instalar (o Android pede para permitir "instalar apps desconhecidos" na primeira
   (quando só um está marcado) e **Excluir**. Tocar normalmente continua abrindo a edição.
 - **Exportar tudo em um arquivo**: planilha Excel com a aba Resumo, uma aba para cada conta, cartão
   e vale, e uma aba com todos os lançamentos.
+- **Painéis**: toque no nome no topo (ex.: "Meu painel ▾") para trocar de painel ou criar um novo do
+  zero. Cada painel tem suas próprias contas, lançamentos e gráficos (ex.: um para você, outro para a
+  namorada). Dá para renomear e excluir.
+- **Backup**: "Salvar backup agora" gera um arquivo com tudo (lançamentos manuais e importados, contas
+  e todos os painéis). "Restaurar um backup" volta tudo num celular novo. Com o **backup automático
+  semanal** ligado, no APK você escolhe uma pasta uma vez e o app grava um backup novo nela a cada 7
+  dias (ao abrir o app). No navegador, ele lembra de salvar a cada 7 dias. Sem backup há mais de 7
+  dias, aparece um aviso no Início.
 - **Mais**: contas (nome, tipo, saldo inicial), backup, restaurar, CSV simples, apagar tudo.
 
 ## Compilar o APK

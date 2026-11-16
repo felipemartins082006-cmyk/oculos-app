@@ -21,7 +21,7 @@
 
 <header class="top">
   <div>
-    <p class="top-date" id="top-date"></p>
+    <button class="space-btn" id="space-btn" aria-label="Trocar de painel"><span class="space-dot" id="space-dot"></span><span id="space-name">Meu painel</span><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
     <h1 class="top-title" id="top-title">Olá</h1>
   </div>
   <button class="period-pill" id="period-btn" aria-label="Período">
@@ -46,6 +46,12 @@
     </div>
 
     <div id="dashboard" class="hidden">
+      <div class="backup-nag hidden" id="backup-nag">
+        <span class="bn-ic"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 21h16"/></svg></span>
+        <div class="grow"><b id="nag-title">Faça um backup</b><small id="nag-text"></small>
+          <div class="nag-actions"><button class="nag-btn" id="nag-save">Salvar agora</button><button class="nag-btn soft" id="nag-auto">Ativar semanal</button></div></div>
+        <button class="x" id="nag-x" aria-label="Lembrar depois">×</button>
+      </div>
       <!-- cartão principal -->
       <div class="hero" id="hero">
         <div class="hero-head">
@@ -205,6 +211,23 @@
     </button>
 
     <div class="card">
+      <div class="card-head"><div><h3>Backup</h3><p>Tudo o que você registrou e importou, de todos os painéis, num arquivo só</p></div></div>
+      <div class="bk-status" id="bk-status"></div>
+      <button class="cta" id="backup-now">Salvar backup agora</button>
+      <div class="toggle-row">
+        <div class="grow"><b>Backup automático toda semana</b><small id="auto-desc"></small></div>
+        <button class="switch" id="auto-toggle" role="switch" aria-checked="false" aria-label="Backup automático semanal"><i></i></button>
+      </div>
+      <button class="link hidden" id="auto-folder">Trocar pasta do backup</button>
+      <label class="ghost small restore"><input type="file" id="import-json" accept=".json,application/json" hidden>Restaurar um backup</label>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><div><h3>Seus painéis</h3><p>Cada painel tem contas e lançamentos só dele</p></div></div>
+      <button class="ghost small" style="margin-top:0" id="manage-spaces">Ver e criar painéis</button>
+    </div>
+
+    <div class="card">
       <div class="card-head"><div><h3>Contas e cartões</h3><p>Saldo inicial é quanto havia antes do primeiro lançamento</p></div></div>
       <div id="banks-edit"></div>
       <button class="ghost small" id="add-bank">+ Adicionar conta</button>
@@ -213,10 +236,8 @@
     <div class="card">
       <div class="card-head"><div><h3>Seus dados</h3><p>Ficam salvos só neste celular</p></div></div>
       <div class="menu">
-        <button id="export-json"><span>Salvar backup</span><small>Arquivo para restaurar em outro celular</small></button>
-        <label><span>Restaurar backup</span><small>Substitui os dados atuais</small><input type="file" id="import-json" accept=".json,application/json" hidden></label>
-        <button id="export-csv"><span>Planilha simples (CSV)</span><small>Todos os lançamentos numa tabela só</small></button>
-        <button id="clear-all" class="danger"><span>Apagar tudo</span><small>Não dá para desfazer</small></button>
+        <button id="export-csv"><span>Planilha simples (CSV)</span><small>Lançamentos deste painel numa tabela só</small></button>
+        <button id="clear-all" class="danger"><span>Apagar este painel</span><small>Apaga contas e lançamentos do painel aberto</small></button>
       </div>
     </div>
   </section>
@@ -309,6 +330,20 @@
   </div>
   <div class="chart-box short"><canvas id="chart-drill"></canvas></div>
   <div id="drill-list" class="tx-list flat"></div>
+</div>
+
+<!-- Painéis -->
+<div class="backdrop hidden" id="spaces-backdrop"></div>
+<div class="sheet hidden" id="spaces-sheet">
+  <div class="grip"></div>
+  <div class="sheet-top"><h3 class="sheet-title grow">Seus painéis</h3>
+    <button type="button" class="icon-x" id="spaces-close" aria-label="Fechar"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <p class="sheet-sub">Cada painel começa do zero, com contas, lançamentos e gráficos só dele. Use um para você, outro para a namorada, outro para a casa…</p>
+  <div class="space-list" id="space-list"></div>
+  <form class="space-new" id="space-new" autocomplete="off">
+    <input id="space-new-name" placeholder="Nome do novo painel (ex.: Namorada)" maxlength="40">
+    <button class="cta" type="submit">Criar</button>
+  </form>
 </div>
 
 <!-- Período -->
