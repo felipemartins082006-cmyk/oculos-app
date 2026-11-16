@@ -839,6 +839,9 @@
     const n = sel.ids.size;
     $('#bulk-title').textContent = `Atualizar ${n} lançamento${n > 1 ? 's' : ''}`;
     $('#bulk-cats').innerHTML = CATS.map(c => `<button type="button" class="pick" data-cat="${c.id}">${tile(c.id)}${c.name}</button>`).join('');
+    const srcs = pocketSources();
+    $('#bulk-pockets-lbl').classList.toggle('hidden', !srcs.length);
+    $('#bulk-pockets').innerHTML = srcs.map(s => `<button type="button" class="pick" data-pocket="${s.id}">${incTile(s.type)}${esc(s.name)}</button>`).join('');
     $('#bulk-accts').innerHTML = db.banks.map(b => `<button type="button" class="pick" data-bank="${b.id}">${mono(b)}${esc(acctLabel(b))}</button>`).join('');
     $('#bulk-sheet').classList.remove('hidden'); $('#bulk-backdrop').classList.remove('hidden');
   }
@@ -853,6 +856,7 @@
   $('#bulk-backdrop').addEventListener('click', closeBulk);
   $('#bulk-close').addEventListener('click', closeBulk);
   $('#bulk-cats').addEventListener('click', e => { const b = e.target.closest('button'); if (b) applyBulk(t => { t.cat = b.dataset.cat; }, `Categoria “${CAT[b.dataset.cat].name}” aplicada`); });
+  $('#bulk-pockets').addEventListener('click', e => { const b = e.target.closest('button'); if (b) applyBulk(t => { t.pocket = b.dataset.pocket; }, `Saldo “${incomes().find(s => s.id === b.dataset.pocket)?.name}” aplicado`); });
   $('#bulk-accts').addEventListener('click', e => { const b = e.target.closest('button'); if (b) applyBulk(t => { t.bank = b.dataset.bank; }, `Conta “${acctLabel(bankById(b.dataset.bank))}” aplicada`); });
   $('#bulk-flip').addEventListener('click', () => applyBulk(t => { t.amount = -t.amount; }, 'Entrada e saída invertidas'));
   $('#bulk-date').addEventListener('change', e => { if (e.target.value) applyBulk(t => { t.date = e.target.value; }, 'Data alterada'); e.target.value = ''; });
@@ -891,7 +895,7 @@
   $('#search').addEventListener('input', e => { clearTimeout(searchT); searchT = setTimeout(() => { ui.list.q = e.target.value; ui.list.limit = 120; renderList(); }, 150); });
 
   /* =================== novo lançamento (teclado próprio) =================== */
-  const sheet = { editing: null, type: 'out', cat: null, catTouched: false, autoWhen: true, amt: '', bank: null };
+  const sheet = { editing: null, type: 'out', cat: null, catTouched: false, autoWhen: true, amt: '', bank: null, pocket: null };
   function amountText() {
     if (!sheet.amt) return '0';
     const [i, d] = sheet.amt.split(',');
@@ -908,6 +912,7 @@
     sheet.amt = tx ? Math.abs(tx.amount).toFixed(2).replace('.', ',').replace(/,00$/, '') : '';
     let last = null;
     try { last = localStorage.getItem(spaceKey(spaces.active) + ':lastBank'); } catch (e) { /* */ }
+    sheet.pocket = tx?.pocket || null;
     sheet.bank = tx ? tx.bank : (bankById(last) ? last : (db.banks.find(b => b.type !== 'credito')?.id || db.banks[0]?.id || null));
     $('#tx-desc').value = tx ? tx.desc : '';
     $('#tx-date').value = tx ? tx.date : todayStr();
@@ -934,6 +939,15 @@
     $('#cat-picker').innerHTML = opts.map(c => `<button type="button" class="pick ${sheet.cat === c.id ? 'on' : ''}" data-cat="${c.id}">${tile(c.id)}${c.name}</button>`).join('');
     $('#acct-picker').innerHTML = (db.banks.length ? db.banks : [{ id: '__new', name: 'Carteira', inst: 'carteira', type: 'dinheiro' }]).map(b =>
       `<button type="button" class="pick ${sheet.bank === b.id || (!sheet.bank && b.id === '__new') ? 'on' : ''}" data-bank="${b.id}">${mono(b)}${esc(acctLabel(b))}</button>`).join('');
+    const srcs = pocketSources();
+    $('#pocket-pick').classList.toggle('hidden', !srcs.length);
+    if (srcs.length) {
+      const auto = pocketOf({ bank: sheet.bank, amount: -1 }, srcs);
+      const cur = sheet.pocket || (sheet.type === 'in' ? null : auto);
+      $('#pocket-pick-lbl').textContent = sheet.type === 'in' ? 'Entra no saldo' : 'Sai do saldo';
+      $('#pocket-picker').innerHTML = (sheet.type === 'in' ? `<button type="button" class="pick ${!cur ? 'on' : ''}" data-pocket="">Nenhum</button>` : '') +
+        srcs.map(s => `<button type="button" class="pick ${cur === s.id ? 'on' : ''}" data-pocket="${s.id}">${incTile(s.type)}${esc(s.name)}</button>`).join('');
+    }
     updateWhen();
   }
   function updateWhen() {
@@ -958,6 +972,7 @@
   $('#tx-sheet .seg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; sheet.type = b.dataset.type; if (sheet.cat && !!CAT[sheet.cat].income !== (sheet.type === 'in')) sheet.catTouched = false; syncSheet(); });
   $('#cat-picker').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; sheet.cat = b.dataset.cat; sheet.catTouched = true; syncSheet(); });
   $('#acct-picker').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; sheet.bank = b.dataset.bank; syncSheet(); });
+  $('#pocket-picker').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; sheet.pocket = b.dataset.pocket || null; syncSheet(); });
   $('#tx-desc').addEventListener('input', () => { if (!sheet.catTouched) syncSheet(); });
   $('#when-edit').addEventListener('click', () => { sheet.autoWhen = false; $('#when-inputs').classList.toggle('hidden'); updateWhen(); });
   $('#tx-date').addEventListener('input', updateWhen); $('#tx-time').addEventListener('input', updateWhen);
@@ -992,6 +1007,7 @@
       const t = db.txs.find(x => x.id === sheet.editing.id);
       const changed = t.cat !== cat;
       Object.assign(t, { amount, desc, bank: bankId, cat, ...when });
+      if (sheet.pocket) t.pocket = sheet.pocket; else delete t.pocket;
       if (changed) {
         const key = merchant(desc);
         const others = db.txs.filter(x => x.id !== t.id && merchant(x.desc) === key && x.cat !== cat && Math.sign(x.amount) === Math.sign(amount));
@@ -1000,7 +1016,7 @@
       }
       toast('Lançamento atualizado');
     } else {
-      db.txs.push({ id: uid(), date: when.date, time: when.time, amount, desc, cat, bank: bankId, source: 'manual', createdAt: new Date().toISOString() });
+      db.txs.push({ id: uid(), date: when.date, time: when.time, amount, desc, cat, bank: bankId, source: 'manual', createdAt: new Date().toISOString(), ...(sheet.pocket ? { pocket: sheet.pocket } : {}) });
       toast(`${sheet.type === 'in' ? 'Entrada' : 'Gasto'} de ${fmt(v)} registrado`);
     }
     save(); closeSheet(); render();
@@ -1339,25 +1355,114 @@
     }
     return [...out];
   }
+  /* ---------- saldos separados por renda, com virada de dia ----------
+     Cada fonte (salário, VR, rendimentos, outras) é um saldo próprio:
+     saldo de hoje = o que sobrou (ou faltou) ontem + o que entrou hoje − o que saiu hoje. */
+  const pocketSources = () => incomes().filter(s => s.mode !== 'off' && s.monthly > 0 && s.start);
+  function pocketOf(t, srcs = pocketSources()) {
+    if (t.pocket && srcs.some(s => s.id === t.pocket)) return t.pocket;
+    const bySrc = srcs.find(s => s.bank && s.bank === t.bank);
+    if (bySrc) return bySrc.id;
+    const b = bankById(t.bank);
+    if (b && (b.type === 'vr' || b.type === 'va')) { const v = srcs.find(s => s.type === 'vr'); if (v) return v.id; }
+    return (srcs.find(s => s.type === 'salario') || srcs.find(s => s.type === 'extra') || srcs[0])?.id || null;
+  }
+  let pCache = null;
+  function pockets() {
+    const srcs = pocketSources();
+    const today = todayStr();
+    const key = today + JSON.stringify(incomes()) + db.txs.length + JSON.stringify(db.txs.map(t => [t.amount, t.pocket, t.off, t.bank, t.date, t.cat]));
+    if (pCache && pCache.db === db && pCache.key === key) return pCache.list;
+    const inc = {}, out = {};
+    for (const t of virtualIncome()) { const k = `${t.inc}|${t.date}`; inc[k] = r2((inc[k] || 0) + t.amount); }
+    for (const t of db.txs) {
+      if (t.off || isNeutral(t)) continue;
+      if (t.amount > 0 && !t.pocket) continue; // entradas dos extratos só entram num saldo se você escolher
+      const p = pocketOf(t, srcs); if (!p) continue;
+      const k = `${p}|${t.date}`;
+      if (t.amount > 0) inc[k] = r2((inc[k] || 0) + t.amount); else out[k] = r2((out[k] || 0) - t.amount);
+    }
+    const list = srcs.map(s => {
+      const end = s.end && s.end < today ? s.end : today;
+      let bal = 0; const days = [];
+      for (let d = s.start; d <= end; d = addDays(d, 1)) {
+        const i = inc[`${s.id}|${d}`] || 0, o = out[`${s.id}|${d}`] || 0;
+        const open = bal; bal = r2(bal + i - o);
+        days.push({ d, open, inc: i, out: o, bal });
+      }
+      const last = days[days.length - 1] || { d: today, open: 0, inc: 0, out: 0, bal: 0 };
+      return { src: s, days, today: last, ended: !!(s.end && s.end < today) };
+    });
+    pCache = { db, key, list };
+    return list;
+  }
+  const POCKET_GRAD = { salario: ['#0d8f68', '#17306f'], vr: ['#1f7a3a', '#6b5a12'], invest: ['#0b6e73', '#1b3b8f'], extra: ['#5b2f6e', '#17306f'] };
+  const sign = v => (v > 0 ? '+' : v < 0 ? '−' : '') + fmt(Math.abs(v));
+  function pocketCard(p, big) {
+    const t = p.today, ty = INC_TYPES[p.src.type], g = POCKET_GRAD[p.src.type] || POCKET_GRAD.extra;
+    return `<button class="pocket ${big ? 'big' : ''}" data-pocket="${p.src.id}" style="background:linear-gradient(145deg, ${g[0]}, ${g[1]})">
+      <div class="pk-top"><span class="pk-ic">${svg(ty.ic)}</span><span class="pk-name">${esc(p.src.name)}</span>${p.ended ? '<span class="pk-tag">encerrada</span>' : ''}</div>
+      <div class="pk-lbl">${p.ended ? 'Saldo final' : 'Disponível hoje'}</div>
+      <div class="pk-val ${t.bal < 0 ? 'neg' : ''}">${t.bal < 0 ? '−' : ''}${fmt(Math.abs(t.bal))}</div>
+      <div class="pk-flow"><span>Ontem ${sign(t.open)}</span><span>Entrou +${fmt(t.inc)}</span><span>Saiu −${fmt(t.out)}</span></div>
+      ${big ? `<div class="pk-spark"><canvas id="spark-${p.src.id}"></canvas></div>` : ''}
+    </button>`;
+  }
+  function bindPockets(root) {
+    root.querySelectorAll('.pocket').forEach(el => el.addEventListener('click', () => openPocket(el.dataset.pocket)));
+  }
+  function drawPocketSparks(list) {
+    for (const p of list) {
+      const c = document.getElementById(`spark-${p.src.id}`); if (!c) continue;
+      const days = p.days.slice(-30);
+      setChart(`spark-${p.src.id}`, c, {
+        type: 'bar',
+        data: { labels: days.map(d => d.d), datasets: [{ data: days.map(d => d.bal), backgroundColor: days.map(d => d.bal < 0 ? 'rgba(255,168,168,0.9)' : 'rgba(255,255,255,0.85)'), borderRadius: 3, borderSkipped: false, barPercentage: 0.7, categoryPercentage: 0.9, maxBarThickness: 9, minBarLength: 2 }] },
+        options: { responsive: true, maintainAspectRatio: false, animation: { duration: 500 }, plugins: { legend: { display: false }, tooltip: { enabled: false } }, scales: { x: { display: false }, y: { display: false } }, events: [] },
+      });
+    }
+  }
+  function openPocket(id) {
+    const p = pockets().find(x => x.src.id === id); if (!p) return;
+    const ty = INC_TYPES[p.src.type];
+    const c = CAT[ty.cat].color;
+    $('#pocket-icon').style.cssText = `background:${alpha(c, .14)};color:${c}`;
+    $('#pocket-icon').innerHTML = svg(ty.ic);
+    $('#pocket-title').textContent = p.src.name;
+    $('#pocket-sub').textContent = `Hoje: ${p.today.bal < 0 ? '−' : ''}${fmt(Math.abs(p.today.bal))} · ${p.src.mode === 'daily' ? `${fmt(p.src.monthly / dimOf(todayStr()))} por dia` : `${fmt(p.src.monthly)} no dia ${p.src.payday}`}`;
+    const days = p.days.slice(-31);
+    setChart('pocket', $('#chart-pocket'), {
+      type: 'bar',
+      data: { labels: days.map(d => `${+d.d.slice(8)}/${+d.d.slice(5, 7)}`), datasets: [{ data: days.map(d => d.bal), backgroundColor: days.map(d => d.bal < 0 ? '#ff7a6b' : '#5ee49a'), borderRadius: 5, borderSkipped: false, maxBarThickness: 14 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { ...tooltip, callbacks: { title: it => dayLabel(days[it[0].dataIndex].d), label: c => `Fechou o dia em ${fmt(c.parsed.y)}` } } }, scales: { ...axes(), x: { ...axes().x, ticks: { maxTicksLimit: 6, maxRotation: 0 } } } },
+    });
+    $('#pocket-days').innerHTML = `<div class="dt-row dt-head"><span>Dia</span><span>Veio de ontem</span><span>Entrou</span><span>Saiu</span><span>Fechou</span></div>` +
+      [...p.days].reverse().slice(0, 62).map(d => `<div class="dt-row"><span>${d.d === todayStr() ? 'Hoje' : `${pad(+d.d.slice(8))}/${d.d.slice(5, 7)}`}</span><span class="${d.open < 0 ? 'neg' : ''}">${sign(d.open)}</span><span class="pos">+${fmt(d.inc)}</span><span class="neg">${d.out ? '−' + fmt(d.out) : '—'}</span><b class="${d.bal < 0 ? 'neg' : ''}">${d.bal < 0 ? '−' : ''}${fmt(Math.abs(d.bal))}</b></div>`).join('');
+    $('#pocket-sheet').classList.remove('hidden'); $('#pocket-backdrop').classList.remove('hidden');
+  }
+  const closePocket = () => { $('#pocket-sheet').classList.add('hidden'); $('#pocket-backdrop').classList.add('hidden'); };
+  $('#pocket-close').addEventListener('click', closePocket);
+  $('#pocket-backdrop').addEventListener('click', closePocket);
+
   function renderIncomeCard() {
-    const el = $('#income-card');
+    const el = $('#income-home');
     if (!incomes().length) {
-      el.innerHTML = `<span class="ic-ic">${svg('wallet')}</span><span class="grow"><b>Cadastre sua renda</b><small>Salário, outras fontes, rendimentos e VR entram sozinhos, todo dia ou no dia do pagamento</small></span><svg class="chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>`;
+      el.innerHTML = `<button class="income-card" data-go="renda"><span class="ic-ic">${svg('wallet')}</span><span class="grow"><b>Cadastre sua renda</b><small>Salário, VR, rendimentos e outras rendas viram saldos separados que entram todo dia</small></span><svg class="chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>`;
       return;
     }
-    const n = incomeNumbers(), dups = findDupIncome().length;
-    el.innerHTML = `<span class="ic-ic">${svg('wallet')}</span><span class="grow"><b>Hoje entrou ${fmt(n.today)} da sua renda</b><small>${fmt(n.monthly)} por mês · ${fmt(n.month)} contados em ${MES_LONGO[new Date().getMonth()]}</small>${dups ? `<small class="warn">Atenção: pode estar contando o salário duas vezes</small>` : ''}</span><svg class="chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>`;
+    const list = pockets().filter(p => !p.ended);
+    const dups = findDupIncome().length;
+    el.innerHTML = `<div class="sec-head"><h3>Saldo do dia</h3><button class="link" data-go="renda">Sua renda</button></div>
+      <div class="pocket-strip">${list.map(p => pocketCard(p)).join('') || '<p class="empty-note">Nenhuma renda contando agora.</p>'}</div>
+      ${dups ? `<button class="dup-mini" data-go="renda">Atenção: pode estar contando o salário duas vezes. Toque para resolver.</button>` : ''}`;
+    bindPockets(el);
   }
   function renderIncome() {
-    const n = incomeNumbers();
-    $('#inc-hero').innerHTML = `
-      <span class="hero-label">Hoje você ganhou</span>
-      <div class="inc-big">${fmt(n.today)}</div>
-      <div class="hero-row">
-        <div><small>Por dia</small><b>${fmt(n.perDay)}</b></div>
-        <div><small>Neste mês</small><b>${fmtShort(n.month)}</b></div>
-        <div><small>Por mês</small><b>${fmtShort(n.monthly)}</b></div>
-      </div>${n.offTotal ? `<p class="inc-off">Não contados: ${fmt(n.offTotal)}/mês (ficam só registrados)</p>` : ''}`;
+    const plist = pockets();
+    $('#inc-hero').innerHTML = plist.length ? plist.map(p => pocketCard(p, true)).join('')
+      : `<p class="empty-note">Cadastre uma renda abaixo. Cada uma vira um saldo separado que entra todo dia (ou no dia do pagamento) e passa o que sobrou para o dia seguinte.</p>`;
+    bindPockets($('#inc-hero'));
+    drawPocketSparks(plist);
     const dups = findDupIncome();
     const dw = $('#dup-warn');
     dw.classList.toggle('hidden', !dups.length);
@@ -1672,6 +1777,7 @@
     if (ui.view === 'importar' && !$('#import-step2').classList.contains('hidden')) { $('#review-back').click(); return true; }
     if (ui.view === 'panorama' && (ui.monthPick || ui.bank)) { ui.monthPick = null; ui.bank = ''; renderDashboard(); return true; }
     if (!$('#inc-sheet').classList.contains('hidden')) { closeInc(); return true; }
+    if (!$('#pocket-sheet').classList.contains('hidden')) { closePocket(); return true; }
     if (ui.view !== 'panorama') { go('panorama'); return true; }
     return false;
   };

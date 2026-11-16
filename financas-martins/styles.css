@@ -587,3 +587,39 @@ input[type=checkbox] { accent-color: var(--accent); }
 .modes button.on b { color: var(--lime); }
 .modes input { width: 46px !important; min-height: 30px !important; padding: 2px 6px !important; text-align: center; display: inline-block; border-radius: 8px !important; font-size: 14px !important; }
 .inc-preview { margin: -2px 4px 0; font-size: 13px; color: var(--text-2); }
+
+/* ---------- saldos separados (virada de dia) ---------- */
+#income-home .sec-head { margin-top: 20px; }
+#income-home .link { padding: 4px 0; }
+.pocket-strip { display: flex; gap: 10px; overflow-x: auto; scrollbar-width: none; scroll-snap-type: x mandatory; margin: 0 -16px; padding: 2px 16px 4px; }
+.pocket-strip::-webkit-scrollbar { display: none; }
+.pocket-col { display: grid; gap: 12px; }
+.pocket {
+  position: relative; overflow: hidden; text-align: left; color: #fff; border: 0; border-radius: 22px; padding: 14px 16px;
+  flex: 0 0 78%; scroll-snap-align: start; display: flex; flex-direction: column; gap: 2px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 18px 40px -24px rgba(0, 0, 0, .9);
+}
+.pocket::after { content: ""; position: absolute; width: 160px; height: 160px; right: -60px; top: -70px; border-radius: 50%; background: rgba(255, 255, 255, 0.09); pointer-events: none; }
+.pocket.big { flex: none; padding: 18px; }
+.pk-top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.pk-ic { width: 30px; height: 30px; border-radius: 10px; background: rgba(0, 0, 0, 0.22); display: grid; place-items: center; }
+.pk-ic svg { width: 16px; height: 16px; }
+.pk-name { font-weight: 800; font-size: 14.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pk-tag { font-size: 10.5px; font-weight: 800; background: rgba(0, 0, 0, 0.25); border-radius: 6px; padding: 1px 6px; }
+.pk-lbl { font-size: 12px; font-weight: 600; color: rgba(255, 255, 255, 0.75); }
+.pk-val { font-size: 30px; font-weight: 800; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.pocket.big .pk-val { font-size: 36px; }
+.pk-val.neg { color: #ffb3a9; }
+.pk-flow { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-top: 8px; }
+.pk-flow span { font-size: 11.5px; font-weight: 700; background: rgba(0, 0, 0, 0.22); border-radius: 8px; padding: 3px 7px; font-variant-numeric: tabular-nums; }
+.pk-spark { height: 46px; margin-top: 12px; }
+.dup-mini { width: 100%; margin-top: 10px; text-align: left; border: 1px solid rgba(255, 209, 102, 0.3); background: rgba(255, 209, 102, 0.08); color: #ffd166; border-radius: 14px; padding: 10px 12px; font-size: 13px; font-weight: 700; }
+.pocket-pick > span { display: block; font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin: 0 0 8px 2px; }
+.day-table { display: grid; font-size: 13px; }
+.dt-row { display: grid; grid-template-columns: 48px repeat(4, minmax(0, 1fr)); gap: 6px; padding: 9px 2px; border-top: 1px solid var(--line); align-items: center; font-variant-numeric: tabular-nums; }
+.dt-row > * { text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dt-row > :first-child { text-align: left; font-weight: 700; color: var(--text-2); }
+.dt-head { border-top: 0; color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+.dt-head > * { white-space: normal; line-height: 1.2; }
+.dt-row .pos { color: var(--in); } .dt-row .neg { color: var(--out); }
+.dt-row b { font-weight: 800; }

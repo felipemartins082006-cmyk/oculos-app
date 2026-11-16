@@ -67,6 +67,7 @@
         </div>
       </div>
 
+      <div id="income-home"></div>
       <div class="quick">
         <button data-action="new" data-type="out"><span class="q-ic out"><svg viewBox="0 0 24 24"><path d="M12 5v14M19 12l-7 7-7-7"/></svg></span>Gasto</button>
         <button data-action="new" data-type="in"><span class="q-ic in"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></span>Entrada</button>
@@ -74,7 +75,6 @@
         <button data-action="export"><span class="q-ic"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M9 21V9"/></svg></span>Exportar</button>
       </div>
 
-      <button class="income-card" id="income-card" data-go="renda"></button>
 
       <div class="sec-head"><h3>Contas e cartões</h3><span class="sec-note" id="acct-note">Toque para filtrar</span></div>
       <div class="acct-strip" id="acct-strip"></div>
@@ -170,7 +170,8 @@
   <!-- ============ RENDA ============ -->
   <section id="view-renda" class="view">
     <p class="page-sub">Cadastre o que você recebe todo mês. O app conta sozinho como entrada, sem você precisar registrar nada: por dia (valor do mês ÷ dias do mês) ou no dia do pagamento.</p>
-    <div class="inc-hero" id="inc-hero"></div>
+    <div class="sec-head" style="margin-top:6px"><h3>Saldo do dia</h3><span class="sec-note">cada renda separada</span></div>
+    <div id="inc-hero" class="pocket-col"></div>
     <div class="dup-warn hidden" id="dup-warn"></div>
     <div id="inc-groups"></div>
   </section>
@@ -292,6 +293,8 @@
   <div class="pick-grid" id="bulk-cats"></div>
   <label class="lbl">Mudar conta</label>
   <div class="pick-grid" id="bulk-accts"></div>
+  <label class="lbl hidden" id="bulk-pockets-lbl">Mudar o saldo de onde sai</label>
+  <div class="pick-grid" id="bulk-pockets"></div>
   <label class="lbl">Mudar data</label>
   <input type="date" id="bulk-date" aria-label="Nova data">
   <button type="button" class="ghost" id="bulk-flip">Inverter entrada ⇄ saída</button>
@@ -312,6 +315,7 @@
   <input id="tx-desc" class="desc" placeholder="O que foi? ex.: almoço, Uber, mercado" aria-label="Descrição" maxlength="140">
   <div class="pick-row" id="cat-picker" role="radiogroup" aria-label="Categoria"></div>
   <div class="pick-row accts" id="acct-picker" role="radiogroup" aria-label="Conta"></div>
+  <div class="pocket-pick hidden" id="pocket-pick"><span id="pocket-pick-lbl">Sai do saldo</span><div class="pick-row" id="pocket-picker"></div></div>
   <div class="when">
     <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
     <span id="when-text"></span>
@@ -378,6 +382,16 @@
     <button type="submit" class="cta">Salvar</button>
   </div>
 </form>
+
+<!-- Detalhe de um saldo (dia a dia) -->
+<div class="backdrop hidden" id="pocket-backdrop"></div>
+<div class="sheet hidden" id="pocket-sheet">
+  <div class="grip"></div>
+  <div class="drill-head"><span class="tile big" id="pocket-icon"></span><div class="grow"><h3 id="pocket-title"></h3><p id="pocket-sub"></p></div>
+    <button type="button" class="icon-x" id="pocket-close" aria-label="Fechar"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <div class="chart-box short"><canvas id="chart-pocket"></canvas></div>
+  <div class="day-table" id="pocket-days"></div>
+</div>
 
 <!-- Painéis -->
 <div class="backdrop hidden" id="spaces-backdrop"></div>

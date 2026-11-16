@@ -46,6 +46,12 @@ Instalar (o Android pede para permitir "instalar apps desconhecidos" na primeira
   **não contar** (só registrado, ex.: rendimento que fica investido). As entradas aparecem sozinhas no
   Extrato (marcadas "automática") e entram nos gráficos, no patrimônio e na planilha. Se a mesma renda
   também vier num extrato importado, o app avisa e pergunta qual manter, para não contar duas vezes.
+- **Saldo do dia (cada renda separada)**: salário, VR, rendimentos e outras fontes viram saldos
+  separados no Início. Todo dia entra a parte de cada um e saem os gastos daquele saldo; o que sobra
+  (ou falta) passa para o dia seguinte. Ex.: ganha 70, gasta 50 → sobra 20, e amanhã fica 70 + 20 = 90.
+  Gastos na conta/cartão do VR saem do saldo do VR; os demais saem do Salário. Dá para escolher o saldo
+  em cada lançamento (ou em vários de uma vez). Tocar num saldo mostra o dia a dia: veio de ontem,
+  entrou, saiu e fechou.
 - **Painéis**: toque no nome no topo (ex.: "Meu painel ▾") para trocar de painel ou criar um novo do
   zero. Cada painel tem suas próprias contas, lançamentos e gráficos (ex.: um para você, outro para a
   namorada). Dá para renomear e excluir.

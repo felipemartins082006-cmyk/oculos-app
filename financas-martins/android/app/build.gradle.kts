@@ -25,8 +25,8 @@ android {
     applicationId = "com.martins.financas"
     minSdk = 26
     targetSdk = 36
-    versionCode = 5
-    versionName = "1.4"
+    versionCode = 6
+    versionName = "1.5"
   }
 
   sourceSets { getByName("main") { assets.srcDir(webAssets) } }
