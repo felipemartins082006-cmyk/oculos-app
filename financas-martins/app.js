@@ -164,6 +164,8 @@
   function migrate(d) {
     d.rules ||= {}; d.banks ||= []; d.txs ||= []; d.incomes ||= [];
     d.methods ||= { off: [], custom: [] };
+    d.invest ||= { holdings: [], rates: { cdi: 14.9, selic: 15, ipca: 4.5 }, count: { on: false, pct: 100 }, addToWealth: false };
+    d.invest.holdings ||= []; d.invest.rates ||= { cdi: 14.9, selic: 15, ipca: 4.5 }; d.invest.count ||= { on: false, pct: 100 };
     for (const b of d.banks) {
       if (!b.type) b.type = /carteira|dinheiro/i.test(b.name) ? 'dinheiro' : 'conta';
       if (!b.inst) {
@@ -275,7 +277,7 @@
     $('#space-dot').textContent = sp.name.trim()[0]?.toUpperCase() || '?';
     $('#space-btn').title = `${wd}, ${d.getDate()} de ${MES_LONGO[d.getMonth()]}`;
     const h = d.getHours();
-    $('#top-title').textContent = { panorama: h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite', lancamentos: 'Extrato', importar: 'Importar extratos', ajustes: 'Mais opções', renda: 'Sua renda' }[ui.view];
+    $('#top-title').textContent = { panorama: h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite', lancamentos: 'Extrato', importar: 'Importar extratos', ajustes: 'Mais opções', renda: 'Sua renda', invest: 'Investimentos' }[ui.view];
     $('#period-btn').classList.toggle('hidden', ui.view !== 'panorama' || !hasData());
     $('#period-btn-label').textContent = ui.monthPick ? MES_LONGO[+ui.monthPick.slice(5) - 1] : PERIODS[ui.period];
   }
@@ -293,6 +295,7 @@
     else if (ui.view === 'importar') renderImport();
     else if (ui.view === 'ajustes') renderSettings();
     else if (ui.view === 'renda') renderIncome();
+    else if (ui.view === 'invest') renderInvest();
   }
 
   /* =================== período =================== */
@@ -308,12 +311,28 @@
   const dimOf = s => { const d = pd(s); return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); };
   const r2 = v => Math.round(v * 100) / 100;
   let vCache = null;
+  // parte do salário que vai para investimento (em % ou em R$) e o que sobra livre para o dia a dia
+  const investPart = s => {
+    if (!s?.invest?.on || !(s.monthly > 0)) return 0;
+    const v = +s.invest.value || 0;
+    return r2(s.invest.mode === 'amount' ? Math.min(s.monthly, Math.max(0, v)) : s.monthly * Math.min(100, Math.max(0, v)) / 100);
+  };
+  const freeMonthly = s => r2((+s.monthly || 0) - investPart(s));
+  // fonte automática "Rendimentos dos investimentos" (só quando a chave está ligada)
+  function investSource() {
+    const iv = db.invest; if (!iv?.count?.on) return null;
+    const m = r2(invTotals().monthly * (iv.count.pct ?? 100) / 100);
+    if (!(m > 0)) return null;
+    return { id: '__inv', type: 'invest', name: 'Rendimentos dos investimentos', monthly: m, mode: 'daily', payday: 1, bank: null, start: iv.count.start || todayStr(), end: null, synthetic: true };
+  }
+  const incomeSources = () => { const s = investSource(); return s ? incomes().concat([s]) : incomes(); };
   function virtualIncome() {
     const today = todayStr();
-    const key = today + JSON.stringify(incomes());
+    const key = today + JSON.stringify(incomeSources());
     if (vCache && vCache.db === db && vCache.key === key) return vCache.list;
     const out = [];
-    for (const src of incomes()) {
+    for (const src0 of incomeSources()) {
+      const src = { ...src0, monthly: freeMonthly(src0) };
       if (src.mode === 'off' || !(src.monthly > 0) || !src.start) continue;
       const end = src.end && src.end < today ? src.end : today;
       const base = { time: null, desc: src.name, cat: INC_TYPES[src.type]?.cat || 'receitas', bank: src.bank || null, source: 'renda', virtual: true, inc: src.id };
@@ -477,7 +496,10 @@
       if (d >= r.from) series.push({ d, v: Math.round(bal * 100) / 100 });
     }
     if (startBal === null) startBal = bal;
-    const wealth = bal, wDelta = wealth - startBal;
+    const invAdd = db.invest?.addToWealth && !ui.bank ? invTotals().amount : 0;
+    if (invAdd) series.forEach(p => { p.v = r2(p.v + invAdd); });
+    const wealth = bal + invAdd, wDelta = wealth - (startBal + invAdd);
+    $('#hero-label').textContent = invAdd ? 'Patrimônio total · com investimentos' : 'Patrimônio total';
 
     // cartão principal
     const [int, cents] = fmt(Math.abs(wealth)).replace('R$', '').trim().split(',');
@@ -799,7 +821,7 @@
       }
       el.addEventListener('click', () => {
         if (longFired) { longFired = false; return; }
-        if (isAuto) { if (!sel.on) openInc(incomes().find(s => s.id === el.dataset.id.split(':')[1])); return; }
+        if (isAuto) { if (!sel.on) { const sid = el.dataset.id.split(':')[1]; if (sid === '__inv') go('invest'); else openInc(incomes().find(s => s.id === sid)); } return; }
         if (selectable && sel.on) { toggleSel(el.dataset.id); return; }
         closeDrill(); openTxSheet(db.txs.find(t => t.id === el.dataset.id));
       });
@@ -1423,6 +1445,14 @@
       }
     }
     X.utils.book_append_sheet(wb, sheetFrom(resumo, [26, 18, 20, 13, 16, 16, 16], [4, 5, 6], [], 2), 'Resumo');
+    if (db.invest?.holdings?.length) {
+      const rows = [['Aplicação', 'Tipo', 'Rende pelo', 'Taxa', 'Valor investido', 'Renda por mês (estimada)']];
+      for (const h of db.invest.holdings) rows.push([h.name, h.kind === 'fixa' ? 'Renda fixa' : 'Renda variável', h.kind === 'fixa' ? INDEXES[h.index]?.name || '' : 'Média de proventos', h.kind === 'fixa' ? `${String(h.rate).replace('.', ',')}${INDEXES[h.index]?.unit || ''}` : '', h.amount || 0, r2(holdingMonthly(h))]);
+      const tt = invTotals(); rows.push([], ['Total', '', '', '', tt.amount, tt.monthly]);
+      const prov = db.invest.holdings.filter(h => h.kind === 'variavel').flatMap(h => (h.history || []).map(x => [h.name, x.m, x.v]));
+      if (prov.length) { rows.push([], ['Proventos lançados', 'Mês', 'Valor']); prov.sort((a, b) => a[1].localeCompare(b[1])).forEach(r => rows.push([r[0], r[1], r[2]])); }
+      X.utils.book_append_sheet(wb, sheetFrom(rows, [28, 16, 20, 14, 18, 22], [2, 4, 5]), 'Investimentos');
+    }
 
     // Uma aba por conta
     const used = new Set(['Resumo', 'Todos os lançamentos']);
@@ -1461,8 +1491,8 @@
 
   /* =================== sua renda =================== */
   const incTile = k => { const t = INC_TYPES[k], c = CAT[t.cat].color; return `<span class="tile" style="background:${alpha(c, .14)};color:${c}">${svg(t.ic)}</span>`; };
-  const modeText = s => s.mode === 'daily' ? `todo dia (${fmt(s.monthly / dimOf(todayStr()))}/dia este mês)` : s.mode === 'payday' ? `inteiro no dia ${s.payday}` : 'não entra nas contas';
-  const isLive = s => s.mode !== 'off' && s.monthly > 0 && s.start <= todayStr() && (!s.end || s.end >= todayStr());
+  const modeText = s => s.mode === 'daily' ? `todo dia (${fmt(freeMonthly(s) / dimOf(todayStr()))}/dia este mês)` : s.mode === 'payday' ? `${fmt(freeMonthly(s))} no dia ${s.payday}` : 'não entra nas contas';
+  const isLive = s => s.mode !== 'off' && freeMonthly(s) > 0 && s.start <= todayStr() && (!s.end || s.end >= todayStr());
   function incomeNumbers() {
     const today = todayStr(), month = today.slice(0, 7);
     const v = virtualIncome();
@@ -1491,7 +1521,7 @@
   /* ---------- saldos separados por renda, com virada de dia ----------
      Cada fonte (salário, VR, rendimentos, outras) é um saldo próprio:
      saldo de hoje = o que sobrou (ou faltou) ontem + o que entrou hoje − o que saiu hoje. */
-  const pocketSources = () => incomes().filter(s => s.mode !== 'off' && s.monthly > 0 && s.start);
+  const pocketSources = () => incomeSources().filter(s => s.mode !== 'off' && freeMonthly(s) > 0 && s.start);
   function pocketOf(t, srcs = pocketSources()) {
     if (t.pocket && srcs.some(s => s.id === t.pocket)) return t.pocket;
     if (t.method === 'vr' || t.method === 'va') { const v = srcs.find(s => s.type === 'vr'); if (v) return v.id; }
@@ -1506,7 +1536,7 @@
   function pockets() {
     const srcs = pocketSources();
     const today = todayStr();
-    const key = today + JSON.stringify(incomes()) + db.txs.length + JSON.stringify(db.txs.map(t => [t.amount, t.pocket, t.off, t.bank, t.date, t.cat]));
+    const key = today + JSON.stringify(incomeSources()) + db.txs.length + JSON.stringify(db.txs.map(t => [t.amount, t.pocket, t.off, t.bank, t.date, t.cat]));
     if (pCache && pCache.db === db && pCache.key === key) return pCache.list;
     const inc = {}, out = {};
     for (const t of virtualIncome()) { const k = `${t.inc}|${t.date}`; inc[k] = r2((inc[k] || 0) + t.amount); }
@@ -1616,16 +1646,17 @@
       return `<div class="inc-group">
         <div class="sec-head"><h3>${ty.name}</h3><button class="link" data-add="${k}">+ Adicionar</button></div>
         ${items.length ? items.map(s => `<button class="inc-item ${s.mode === 'off' ? 'is-off' : ''}" data-id="${s.id}">
-            ${incTile(k)}<span class="grow"><b>${esc(s.name)}</b><small>${fmt(s.monthly)}/mês · ${modeText(s)}${s.bank ? ' · ' + esc(acctLabel(bankById(s.bank))) : ''}${s.end && s.end < todayStr() ? ' · encerrada' : ''}</small></span>
+            ${incTile(k)}<span class="grow"><b>${esc(s.name)}</b><small>${fmt(s.monthly)}/mês${investPart(s) ? ` · ${fmt(investPart(s))} para investir` : ''} · ${modeText(s)}${s.bank ? ' · ' + esc(acctLabel(bankById(s.bank))) : ''}${s.end && s.end < todayStr() ? ' · encerrada' : ''}</small></span>
             <span class="mode-pill ${s.mode}">${{ daily: 'diário', payday: `dia ${s.payday}`, off: 'não conta' }[s.mode]}</span></button>`).join('')
           : `<button class="inc-empty" data-add="${k}">${ty.hint}</button>`}
       </div>`;
     }).join('');
     $$('#inc-groups [data-add]').forEach(b => b.addEventListener('click', () => openInc(null, b.dataset.add)));
     $$('#inc-groups .inc-item').forEach(b => b.addEventListener('click', () => openInc(incomes().find(s => s.id === b.dataset.id))));
+    renderConsol($('#consol-renda'));
   }
 
-  const inc = { editing: null, type: 'salario', mode: 'daily' };
+  const inc = { editing: null, type: 'salario', mode: 'daily', split: { on: false, mode: 'pct', value: '' } };
   function openInc(src, type) {
     if (!src && !type) return;
     inc.editing = src || null;
@@ -1645,6 +1676,8 @@
     $('#inc-bank').innerHTML = `<option value="">Nenhuma (conta só no total)</option>` + db.banks.map(b => `<option value="${b.id}">${esc(acctLabel(b))}</option>`).join('');
     $('#inc-bank').value = src ? (src.bank || '') : (pref?.id || '');
     $('#inc-delete').classList.toggle('hidden', !src);
+    inc.split = { on: !!src?.invest?.on, mode: src?.invest?.mode || 'pct', value: src?.invest?.value ?? '' };
+    $('#split-value').value = inc.split.value === '' ? '' : String(inc.split.value).replace('.', ',');
     syncInc();
     $('#inc-sheet').classList.remove('hidden'); $('#inc-backdrop').classList.remove('hidden');
   }
@@ -1662,7 +1695,18 @@
     $('#inc-invest').classList.toggle('hidden', inc.type !== 'invest');
     $('#inc-amount-lbl').textContent = inc.type === 'invest' ? 'Renda por mês (calculada ou digite)' : 'Quanto você recebe por mês';
     $$('#inc-modes button').forEach(b => b.classList.toggle('on', b.dataset.mode === inc.mode));
-    const m = incMonthly(), today = todayStr(), dim = dimOf(today);
+    // parte para investir (salário e outras fontes)
+    const canSplit = inc.type === 'salario' || inc.type === 'extra';
+    $('#inc-split').classList.toggle('hidden', !canSplit);
+    $('#split-toggle').classList.toggle('on', canSplit && inc.split.on);
+    $('#split-body').classList.toggle('hidden', !(canSplit && inc.split.on));
+    $$('#split-mode button').forEach(b => b.classList.toggle('active', b.dataset.m === inc.split.mode));
+    $('#split-value').placeholder = inc.split.mode === 'pct' ? 'ex.: 60 (%)' : 'ex.: 3.000,00';
+    const gross = incMonthly();
+    const sv = Parsers.parseAmount($('#split-value').value);
+    const part = canSplit && inc.split.on ? investPart({ monthly: gross, invest: { on: true, mode: inc.split.mode, value: isFinite(sv) ? sv : 0 } }) : 0;
+    const m = r2(gross - part), today = todayStr(), dim = dimOf(today);
+    $('#split-preview').innerHTML = canSplit && inc.split.on && gross ? `<b>${fmt(part)}</b> vai para investimentos (${pct(gross ? part / gross : 0)}) · <b>${fmt(m)}</b> fica livre para o dia a dia` : '';
     $('#inc-preview').textContent = !m ? '' : inc.mode === 'daily'
       ? `Em ${MES_LONGO[new Date().getMonth()]} (${dim} dias): ${fmt(m / dim)} por dia. Num mês de ${dim === 31 ? 30 : 31} dias: ${fmt(m / (dim === 31 ? 30 : 31))} por dia.`
       : inc.mode === 'payday' ? `Entra ${fmt(m)} todo dia ${$('#inc-payday').value || 1} (ou no último dia, em meses mais curtos).`
@@ -1677,7 +1721,15 @@
   });
   $('#inc-modes').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; inc.mode = b.dataset.mode; syncInc(); });
   $('#inc-payday').addEventListener('click', e => { e.stopPropagation(); inc.mode = 'payday'; syncInc(); });
-  ['#inc-amount', '#inc-principal', '#inc-rate', '#inc-payday'].forEach(k => $(k).addEventListener('input', syncInc));
+  ['#inc-amount', '#inc-principal', '#inc-rate', '#inc-payday', '#split-value'].forEach(k => $(k).addEventListener('input', syncInc));
+  $('#split-toggle').addEventListener('click', () => { inc.split.on = !inc.split.on; syncInc(); if (inc.split.on) setTimeout(() => $('#split-value').focus(), 50); });
+  $('#split-mode').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b || b.dataset.m === inc.split.mode) return;
+    // converte o valor digitado para a outra forma
+    const gross = incMonthly(), v = Parsers.parseAmount($('#split-value').value);
+    if (gross > 0 && isFinite(v) && v > 0) $('#split-value').value = (b.dataset.m === 'amount' ? r2(gross * v / 100) : r2(v / gross * 100)).toFixed(2).replace('.', ',').replace(/,00$/, '');
+    inc.split.mode = b.dataset.m; syncInc();
+  });
   $('#inc-close').addEventListener('click', closeInc);
   $('#inc-backdrop').addEventListener('click', closeInc);
   $('#inc-delete').addEventListener('click', async () => {
@@ -1697,12 +1749,220 @@
       bank: $('#inc-bank').value || null, start, end,
       principal: inc.type === 'invest' ? (Parsers.parseAmount($('#inc-principal').value) || null) : null,
       rate: inc.type === 'invest' ? (Parsers.parseAmount($('#inc-rate').value) || null) : null,
+      invest: (inc.type === 'salario' || inc.type === 'extra') && inc.split.on ? { on: true, mode: inc.split.mode, value: Parsers.parseAmount($('#split-value').value) || 0 } : null,
     };
+    if (data.invest && !(investPart({ monthly: data.monthly, invest: data.invest }) > 0)) { $('#split-value').focus(); toast('Digite quanto vai para investimentos'); return; }
     db.incomes ||= [];
     if (inc.editing) Object.assign(db.incomes.find(s => s.id === inc.editing.id), data);
     else db.incomes.push({ id: uid(), ...data });
     save(); closeInc(); render();
-    toast(inc.mode === 'off' ? 'Renda registrada (não conta nas entradas)' : `Pronto: ${fmt(monthly)}/mês entrando ${inc.mode === 'daily' ? 'todo dia' : 'no dia ' + payday}`);
+    const freeM = freeMonthly(data);
+    toast(inc.mode === 'off' ? 'Renda registrada (não conta nas entradas)' : `Pronto: ${fmt(freeM)}/mês entrando ${inc.mode === 'daily' ? 'todo dia' : 'no dia ' + payday}${data.invest ? ` e ${fmt(investPart(data))} para investir` : ''}`);
+  });
+
+  /* =================== investimentos =================== */
+  const INDEXES = {
+    cdi: { name: 'CDI', lbl: '% do CDI', unit: '% do CDI', def: 100 },
+    selic: { name: 'Selic', lbl: '% da Selic', unit: '% da Selic', def: 100 },
+    ipca: { name: 'IPCA +', lbl: 'IPCA + (% ao ano)', unit: '% + IPCA', def: 6 },
+    pre: { name: 'Prefixado', lbl: 'Taxa (% ao ano)', unit: '% a.a.', def: 12 },
+  };
+  const invCfg = () => (db.invest ||= { holdings: [], rates: { cdi: 14.9, selic: 15, ipca: 4.5 }, count: { on: false, pct: 100 }, addToWealth: false });
+  function holdingAnnual(h) {
+    const r = invCfg().rates, x = (+h.rate || 0) / 100;
+    if (h.index === 'cdi') return (+r.cdi / 100) * x;
+    if (h.index === 'selic') return (+r.selic / 100) * x;
+    if (h.index === 'ipca') return (1 + +r.ipca / 100) * (1 + x) - 1;
+    return x;
+  }
+  // renda variável: média dos proventos lançados nos últimos 12 meses (do 1º mês lançado até agora)
+  function provAvg(h) {
+    const hist = (h.history || []).filter(x => x.v > 0);
+    if (!hist.length) return +h.avg || 0;
+    const now = todayStr().slice(0, 7);
+    const y = +now.slice(0, 4), m = +now.slice(5, 7);
+    const from = `${m === 12 ? y : y - 1}-${pad(m === 12 ? 1 : m + 1)}`;
+    const recent = hist.filter(x => x.m >= from && x.m <= now);
+    if (!recent.length) return +h.avg || 0;
+    const first = recent.map(x => x.m).sort()[0];
+    const span = (y * 12 + m) - (+first.slice(0, 4) * 12 + +first.slice(5, 7)) + 1;
+    return recent.reduce((a, x) => a + x.v, 0) / Math.max(1, span);
+  }
+  const pct1 = v => (v * 100).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
+  const holdingMonthly = h => h.kind === 'fixa' ? (+h.amount || 0) * (Math.pow(1 + holdingAnnual(h), 1 / 12) - 1) : provAvg(h);
+  function invTotals() {
+    const hs = invCfg().holdings;
+    const fixa = hs.filter(h => h.kind === 'fixa'), vari = hs.filter(h => h.kind === 'variavel');
+    const sum = (l, f) => l.reduce((a, h) => a + f(h), 0);
+    const fm = r2(sum(fixa, holdingMonthly)), vm = r2(sum(vari, holdingMonthly));
+    return { amount: r2(sum(hs, h => +h.amount || 0)), fixaAmt: r2(sum(fixa, h => +h.amount || 0)), varAmt: r2(sum(vari, h => +h.amount || 0)), fixaM: fm, varM: vm, monthly: r2(fm + vm) };
+  }
+  const aportes = () => incomes().filter(s => investPart(s) > 0 && (!s.end || s.end >= todayStr()));
+
+  // Consolidação: tudo o que entra por mês, separado, e o que conta no dia a dia
+  function renderConsol(el) {
+    if (!el) return;
+    const iv = invCfg(), tt = invTotals();
+    const srcs = incomes().filter(s => (!s.end || s.end >= todayStr()) && s.monthly > 0);
+    if (!srcs.length && !iv.holdings.length) { el.innerHTML = ''; return; }
+    const row = (ic, color, name, sub, value, tag) => `<div class="cs-row"><span class="tile sm" style="background:${alpha(color, .14)};color:${color}">${svg(ic)}</span><div class="grow"><b>${esc(name)}</b>${sub ? `<small>${sub}</small>` : ''}</div><div class="cs-v"><b>${fmt(value)}</b>${tag ? `<span class="cs-tag ${tag[0]}">${tag[1]}</span>` : ''}</div></div>`;
+    let total = 0, counted = 0;
+    const lines = srcs.map(s => {
+      total += s.monthly;
+      const live = s.mode !== 'off';
+      if (live) counted += freeMonthly(s);
+      const part = investPart(s);
+      const ty = INC_TYPES[s.type];
+      return row(ty.ic, CAT[ty.cat].color, s.name, part ? `${fmt(part)} vai para investir · ${fmt(freeMonthly(s))} livre` : '', s.monthly, live ? ['on', s.mode === 'daily' ? 'no dia a dia' : `dia ${s.payday}`] : ['off', 'não conta']);
+    });
+    const cnt = iv.count?.on ? r2(tt.monthly * (iv.count.pct ?? 100) / 100) : 0;
+    counted += cnt; total += tt.monthly;
+    if (iv.holdings.some(h => h.kind === 'fixa')) lines.push(row('trend', '#38d9a9', 'Renda fixa', `rendimento estimado de ${fmt(tt.fixaAmt)}`, tt.fixaM, null));
+    if (iv.holdings.some(h => h.kind === 'variavel')) lines.push(row('wallet', '#d4fc79', 'Renda variável', `média de proventos de ${fmt(tt.varAmt)}`, tt.varM, null));
+    const pctv = iv.count?.pct ?? 100;
+    el.innerHTML = `<div class="card consol">
+      <div class="card-head"><div><h3>Quanto você recebe por mês</h3><p>Tudo junto, mas cada coisa no seu lugar</p></div></div>
+      ${lines.join('')}
+      <div class="cs-total"><span>Total por mês</span><b>${fmt(total)}</b></div>
+      ${iv.holdings.length ? `<div class="cs-count">
+        <div class="toggle-row" style="margin-top:0">
+          <div class="grow"><b>Contar os rendimentos no dia a dia</b><small>${iv.count?.on ? `${pctv}% dos rendimentos (${fmt(cnt)}/mês) viram o saldo “Rendimentos”, ${fmt(cnt / dimOf(todayStr()))} por dia` : 'Desligado: os rendimentos só aparecem aqui'}</small></div>
+          <button class="switch ${iv.count?.on ? 'on' : ''}" data-cs="toggle" role="switch" aria-checked="${!!iv.count?.on}" aria-label="Contar rendimentos no dia a dia"><i></i></button>
+        </div>
+        <label class="cs-slider ${iv.count?.on ? '' : 'hidden'}"><span>Quanto contar <b data-cs="pctv">${pctv}%</b></span><input type="range" min="0" max="100" step="5" value="${pctv}" data-cs="pct"></label>
+      </div>` : ''}
+      <div class="cs-day"><span>Entra no dia a dia</span><b>${fmt(counted)}/mês · ${fmt(counted / dimOf(todayStr()))}/dia</b></div>
+    </div>`;
+    el.querySelector('[data-cs="toggle"]')?.addEventListener('click', () => {
+      iv.count.on = !iv.count.on;
+      if (iv.count.on) iv.count.start = todayStr();
+      save(); render(); toast(iv.count.on ? 'Rendimentos contando no dia a dia, num saldo separado' : 'Rendimentos fora do dia a dia');
+    });
+    const sl = el.querySelector('[data-cs="pct"]');
+    sl?.addEventListener('input', () => { el.querySelector('[data-cs="pctv"]').textContent = sl.value + '%'; });
+    sl?.addEventListener('change', () => { iv.count.pct = +sl.value; save(); render(); });
+  }
+
+  function renderInvest() {
+    const iv = invCfg(), tt = invTotals();
+    const fixaShare = tt.amount ? tt.fixaAmt / tt.amount : 0;
+    const ap = aportes(), apM = ap.reduce((a, s) => a + investPart(s), 0);
+    $('#inv-hero').innerHTML = `
+      <span class="hero-label">Total investido</span>
+      <div class="inc-big">${fmt(tt.amount)}</div>
+      <div class="inv-split"><i style="width:${fixaShare * 100}%"></i></div>
+      <div class="inv-split-lbl"><span>Renda fixa ${fmtShort(tt.fixaAmt)}</span><span>Renda variável ${fmtShort(tt.varAmt)}</span></div>
+      <div class="hero-row">
+        <div><small>Rende por mês</small><b>${fmt(tt.monthly)}</b></div>
+        <div><small>Por ano</small><b>${fmtShort(tt.monthly * 12)}</b></div>
+        <div><small>Aporte por mês</small><b>${apM ? fmtShort(apM) : '—'}</b></div>
+      </div>`;
+    renderConsol($('#consol-inv'));
+    const item = h => {
+      const m = holdingMonthly(h);
+      const sub = h.kind === 'fixa' ? `${String(h.rate ?? '').replace('.', ',')}${INDEXES[h.index]?.unit || ''} · ${pct1(holdingAnnual(h))} ao ano` : `${(h.history || []).length ? `média de ${(h.history || []).length} lançamento(s)` : 'média informada'}`;
+      return `<button class="inc-item" data-inv="${h.id}"><span class="tile" style="background:${alpha(h.kind === 'fixa' ? '#38d9a9' : '#d4fc79', .14)};color:${h.kind === 'fixa' ? '#38d9a9' : '#d4fc79'}">${svg(h.kind === 'fixa' ? 'trend' : 'wallet')}</span>
+        <span class="grow"><b>${esc(h.name)}</b><small>${fmt(+h.amount || 0)} · ${sub}</small></span><span class="inv-m"><b>${fmt(m)}</b><small>por mês</small></span></button>`;
+    };
+    const hs = iv.holdings;
+    $('#inv-fixa').innerHTML = hs.filter(h => h.kind === 'fixa').map(item).join('') || `<button class="inc-empty" data-addinv="fixa">CDB, Tesouro, LCI/LCA, poupança… O rendimento é calculado pela taxa (CDI, Selic, IPCA+ ou prefixado).</button>`;
+    $('#inv-variavel').innerHTML = hs.filter(h => h.kind === 'variavel').map(item).join('') || `<button class="inc-empty" data-addinv="variavel">Ações, FIIs, ETFs… Lance os proventos de cada mês e o app mostra a média e a evolução.</button>`;
+    $$('#view-invest [data-addinv]').forEach(b => { b.onclick = () => openInv(null, b.dataset.addinv); });
+    $$('#view-invest [data-inv]').forEach(b => b.addEventListener('click', () => openInv(hs.find(h => h.id === b.dataset.inv))));
+    $('#rate-cdi').value = String(iv.rates.cdi).replace('.', ',');
+    $('#rate-selic').value = String(iv.rates.selic).replace('.', ',');
+    $('#rate-ipca').value = String(iv.rates.ipca).replace('.', ',');
+    $('#inv-wealth').classList.toggle('on', !!iv.addToWealth);
+    // gráfico: renda fixa estimada + proventos lançados, últimos 12 meses
+    const months = []; const now = new Date();
+    for (let i = 11; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); months.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}`); }
+    const prov = {}; hs.filter(h => h.kind === 'variavel').forEach(h => (h.history || []).forEach(x => { prov[x.m] = (prov[x.m] || 0) + x.v; }));
+    const A1 = themeAccent();
+    setChart('inv', $('#chart-inv'), {
+      type: 'bar',
+      data: { labels: months.map(monthLabel), datasets: [
+        { label: 'Renda fixa (estimado)', data: months.map(() => tt.fixaM), backgroundColor: 'rgba(56,217,169,0.75)', borderRadius: 4, borderSkipped: false, maxBarThickness: 22 },
+        { label: 'Proventos', data: months.map(k => r2(prov[k] || 0)), backgroundColor: A1, borderRadius: 4, borderSkipped: false, maxBarThickness: 22 },
+      ] },
+      options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { display: false }, tooltip: { ...tooltip, callbacks: { title: it => { const k = months[it[0].dataIndex]; return `${MES_LONGO[+k.slice(5) - 1]} de ${k.slice(0, 4)}`; }, label: c => `${c.dataset.label}: ${fmt(c.parsed.y)}`, footer: it => `Total: ${fmt(it.reduce((a, c) => a + c.parsed.y, 0))}` } } },
+        scales: { x: { ...axes().x, stacked: true }, y: { ...axes().y, stacked: true } } },
+    });
+  }
+  ['cdi', 'selic', 'ipca'].forEach(k => $(`#rate-${k}`).addEventListener('change', e => {
+    const v = Parsers.parseAmount(e.target.value);
+    if (!isFinite(v) || v < 0) { toast('Taxa inválida'); renderInvest(); return; }
+    invCfg().rates[k] = v; save(); renderInvest(); toast('Taxa atualizada');
+  }));
+  $('#inv-wealth').addEventListener('click', () => { const iv = invCfg(); iv.addToWealth = !iv.addToWealth; save(); renderInvest(); toast(iv.addToWealth ? 'Investimentos somados ao patrimônio' : 'Patrimônio sem os investimentos'); });
+
+  const invEd = { editing: null, kind: 'fixa', index: 'cdi', history: [] };
+  function openInv(h, kind) {
+    invEd.editing = h || null;
+    invEd.kind = h?.kind || kind || 'fixa';
+    invEd.index = h?.index || 'cdi';
+    invEd.history = (h?.history || []).map(x => ({ ...x }));
+    $('#inv-title').textContent = h ? 'Editar aplicação' : 'Nova aplicação';
+    $('#inv-name').value = h?.name || '';
+    const money = v => v ? (+v).toFixed(2).replace('.', ',') : '';
+    $('#inv-amount').value = money(h?.amount);
+    $('#inv-rate').value = h?.rate != null ? String(h.rate).replace('.', ',') : String(INDEXES[invEd.index].def);
+    $('#inv-avg').value = money(h?.avg);
+    const d = new Date(); $('#prov-month').value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; $('#prov-value').value = '';
+    $('#inv-delete').classList.toggle('hidden', !h);
+    syncInv();
+    $('#inv-sheet').classList.remove('hidden'); $('#inv-backdrop').classList.remove('hidden');
+  }
+  const closeInv = () => { $('#inv-sheet').classList.add('hidden'); $('#inv-backdrop').classList.add('hidden'); };
+  function draftHolding() {
+    return { kind: invEd.kind, index: invEd.index, amount: Parsers.parseAmount($('#inv-amount').value) || 0, rate: Parsers.parseAmount($('#inv-rate').value) || 0, avg: Parsers.parseAmount($('#inv-avg').value) || 0, history: invEd.history };
+  }
+  function syncInv() {
+    $$('#inv-kind button').forEach(b => b.classList.toggle('active', b.dataset.k === invEd.kind));
+    $('#inv-fixa-box').classList.toggle('hidden', invEd.kind !== 'fixa');
+    $('#inv-var-box').classList.toggle('hidden', invEd.kind !== 'variavel');
+    $('#inv-index').innerHTML = Object.entries(INDEXES).map(([k, x]) => `<button type="button" class="pick ${invEd.index === k ? 'on' : ''}" data-ix="${k}">${x.name}</button>`).join('');
+    $('#inv-rate-lbl').textContent = INDEXES[invEd.index].lbl;
+    const hist = [...invEd.history].sort((a, b) => b.m.localeCompare(a.m));
+    $('#prov-list').innerHTML = hist.map(x => `<div class="prov-row"><span>${MES_LONGO[+x.m.slice(5) - 1].replace(/^./, c => c.toUpperCase())} de ${x.m.slice(0, 4)}</span><b>${fmt(x.v)}</b><button type="button" data-rmprov="${x.m}" aria-label="Remover">×</button></div>`).join('') || `<p class="empty-note" style="padding:4px 2px">Nenhum provento lançado ainda.</p>`;
+    $$('#prov-list [data-rmprov]').forEach(b => b.addEventListener('click', () => { invEd.history = invEd.history.filter(x => x.m !== b.dataset.rmprov); syncInv(); }));
+    const h = draftHolding(), m = holdingMonthly(h);
+    $('#inv-preview').textContent = invEd.kind === 'fixa'
+      ? (h.amount ? `Rende cerca de ${fmt(m)} por mês (${pct1(holdingAnnual(h))} ao ano, bruto, antes do IR).` : '')
+      : (m ? `Média de ${fmt(m)} por mês${invEd.history.length ? ` (${invEd.history.length} mês(es) lançado(s))` : ' (informada)'}${h.amount ? ` · ${pct1(m * 12 / h.amount)} ao ano sobre o valor investido` : ''}.` : 'Lance os proventos de cada mês ou informe a média.');
+  }
+  $('#inv-kind').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; invEd.kind = b.dataset.k; syncInv(); });
+  $('#inv-index').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    const prevDef = INDEXES[invEd.index].def;
+    invEd.index = b.dataset.ix;
+    if (!$('#inv-rate').value || Parsers.parseAmount($('#inv-rate').value) === prevDef) $('#inv-rate').value = String(INDEXES[invEd.index].def);
+    syncInv();
+  });
+  ['#inv-amount', '#inv-rate', '#inv-avg'].forEach(k => $(k).addEventListener('input', syncInv));
+  $('#prov-add').addEventListener('click', () => {
+    const m = $('#prov-month').value, v = Parsers.parseAmount($('#prov-value').value);
+    if (!m) { toast('Escolha o mês'); return; }
+    if (!isFinite(v) || v <= 0) { $('#prov-value').focus(); toast('Digite o valor recebido'); return; }
+    const ex = invEd.history.find(x => x.m === m);
+    if (ex) ex.v = r2(ex.v + v); else invEd.history.push({ m, v: r2(v) });
+    $('#prov-value').value = ''; syncInv();
+  });
+  $('#inv-close').addEventListener('click', closeInv);
+  $('#inv-backdrop').addEventListener('click', closeInv);
+  $('#inv-delete').addEventListener('click', async () => {
+    if (!invEd.editing || !(await ask({ title: `Excluir “${invEd.editing.name}”?`, text: 'Os proventos lançados nela também saem.', ok: 'Excluir', danger: true }))) return;
+    invCfg().holdings = invCfg().holdings.filter(h => h.id !== invEd.editing.id); save(); closeInv(); render(); toast('Aplicação excluída');
+  });
+  $('#inv-sheet').addEventListener('submit', e => {
+    e.preventDefault();
+    const h = draftHolding();
+    const name = $('#inv-name').value.trim() || (h.kind === 'fixa' ? `Renda fixa (${INDEXES[h.index].name})` : 'Renda variável');
+    if (!(h.amount > 0) && !(h.kind === 'variavel' && (h.history.length || h.avg))) { $('#inv-amount').focus(); toast('Digite quanto tem investido'); return; }
+    const data = { name, kind: h.kind, amount: r2(h.amount), index: h.kind === 'fixa' ? h.index : null, rate: h.kind === 'fixa' ? h.rate : null, avg: h.kind === 'variavel' ? h.avg : null, history: h.kind === 'variavel' ? h.history : [] };
+    const iv = invCfg();
+    if (invEd.editing) Object.assign(iv.holdings.find(x => x.id === invEd.editing.id), data); else iv.holdings.push({ id: uid(), ...data });
+    save(); closeInv(); render(); toast(`${name}: ${fmt(holdingMonthly(data))} por mês`);
   });
 
   /* =================== painéis =================== */
@@ -1946,6 +2206,7 @@
     if (ui.view === 'importar' && !$('#import-step2').classList.contains('hidden')) { $('#review-back').click(); return true; }
     if (ui.view === 'panorama' && (ui.monthPick || ui.bank)) { ui.monthPick = null; ui.bank = ''; renderDashboard(); return true; }
     if (!$('#inc-sheet').classList.contains('hidden')) { closeInc(); return true; }
+    if (!$('#inv-sheet').classList.contains('hidden')) { closeInv(); return true; }
     if (!$('#pocket-sheet').classList.contains('hidden')) { closePocket(); return true; }
     if (ui.view !== 'panorama') { go('panorama'); return true; }
     return false;

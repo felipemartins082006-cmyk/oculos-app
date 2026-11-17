@@ -79,6 +79,16 @@ Diferenças em relação ao Android:
   forma, "De qual banco?", "Qual cartão de crédito?" ou "Qual vale?", com "+ Novo" para cadastrar na
   hora. Ele lembra a última forma e o último banco usados. Em Mais › Formas de pagamento você liga só
   as que usa e cria as suas (ex.: "Contracheque"), dizendo se elas perguntam banco, cartão ou vale.
+- **Parte do salário para investir**: no cadastro do salário (ou outra renda), a chave "Separar uma parte
+  para investir" em % ou em R$. Ex.: ganha 5.000 e investe 3.000 → os 3.000 vão para investimentos e só os
+  2.000 livres são divididos pelos dias. Com a chave desligada, conta tudo.
+- **Investimentos** (atalho "Investir" no Início, ou em Mais): aplicações de **renda fixa** (CDI, Selic,
+  IPCA+ ou prefixado, com o rendimento calculado sozinho pela taxa) e de **renda variável** (lance os
+  proventos de cada mês; o app mostra a média e a evolução em gráfico). As taxas (CDI, Selic, IPCA) ficam
+  editáveis na própria tela; valores brutos, antes do IR. Opção de somar os investimentos ao patrimônio.
+- **Consolidação "Quanto você recebe por mês"**: salário, outras rendas, renda fixa e proventos, cada um
+  separado, com o total. Uma chave liga ou desliga "Contar os rendimentos no dia a dia" e uma barrinha
+  escolhe quanto contar (0–100%); o que for contado vira um saldo do dia separado ("Rendimentos").
 - **Saldo do dia (cada renda separada)**: salário, VR, rendimentos e outras fontes viram saldos
   separados no Início. Todo dia entra a parte de cada um e saem os gastos daquele saldo; o que sobra
   (ou falta) passa para o dia seguinte. Ex.: ganha 70, gasta 50 → sobra 20, e amanhã fica 70 + 20 = 90.
