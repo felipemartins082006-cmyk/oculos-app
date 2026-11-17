@@ -48,6 +48,20 @@ lê o que aparece na tela: não usa token, senha nem a API, e não envia nada pa
    digite `logbookSalvar()` no console para baixar o PDF completo.
 4. Mande o arquivo para o celular e use Importar → Escolher arquivo.
 
+## Backup e atualizações (versão 3.0)
+
+**Dados → Baixar backup completo:** salva direto em `Downloads/Logbook/logbook-backup-AAAA-MM-DD.json` um
+arquivo com tudo (séries com a hora de cada uma, diário, cronômetro, escolhas de figuras e as suas fotos).
+"Enviar backup" manda o mesmo arquivo pelo WhatsApp/Drive/e-mail; "Planilha (.csv)" exporta as séries para
+Excel/Google Planilhas. Todo dia, ao abrir o app, ele atualiza sozinho `Downloads/Logbook/logbook-backup-automatico.json`.
+
+**Restaurar / importar:** Dados → Escolher arquivo, ou Compartilhar o arquivo com o Logbook. Aceita backup de
+qualquer versão do app (campos que faltam ficam vazios, campos novos são ignorados), planilhas CSV (com `,`
+ou `;`, nomes de coluna em português ou inglês, inclusive exportações do Strong), JSON de outros apps
+(ex.: Hevy, treino → exercícios → séries), texto, PDF e Discord. Nada entra duplicado.
+
+**Atualizar o app:** instale a versão nova por cima; os dados continuam (o backup é a garantia extra).
+
 ## Coeficiente de eficiência (versão 2.3)
 
 Um número de 0 a 100 por dia (aba Dia, Histórico e Evolução → Insights):

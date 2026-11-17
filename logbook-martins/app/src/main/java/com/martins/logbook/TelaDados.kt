@@ -55,17 +55,10 @@ private class Previa(
     val novas: Int,
     val repetidas: Int,
     val arquivo: String?,
-    /** Backup completo do app: o diário (peso, sono, comida…) que vem junto. */
-    val diario: JSONObject? = null,
+    /** Backup completo do app (qualquer versão): diário e figuras que vêm junto com as séries. */
+    val backup: Backup.Conteudo? = null,
 )
 
-/** Backup completo do app: {"logbook": 2, "series": [...], "diario": {...}}. */
-private fun lerBackup(t: String): Pair<List<SerieLida>, JSONObject>? = runCatching {
-  val inicio = t.trimStart()
-  if (!inicio.startsWith("{") || "\"logbook\"" !in inicio.take(200)) return null
-  val o = JSONObject(inicio)
-  Logbook.seriesDeJson(o.optJSONArray("series") ?: org.json.JSONArray()) to (o.optJSONObject("diario") ?: JSONObject())
-}.getOrNull()
 
 /**
  * Seletor de arquivos do Android (o mesmo do app Arquivos): abre na pasta Downloads,
@@ -98,11 +91,12 @@ fun TelaDados(lb: Logbook, diario: Diario, todas: List<Serie>, recebido: Recebid
       val p = withContext(Dispatchers.Default) {
         val r = Leitor.ler(t, LocalDate.now(), ordem = ordem)
         val (novas, repetidas) = lb.separarNovas(r.series)
-        val backup = lerBackup(t)
+        val backup = if (Backup.ehBackup(t)) Backup.ler(t) else null
         if (backup != null) {
-          val (novasB, repetidasB) = lb.separarNovas(backup.first)
-          Previa(t, Leitura(backup.first, emptyList(), OrdemData.DIA_MES, false, "Backup do Logbook"),
-              novasB.size, repetidasB, arquivo, backup.second)
+          val (novasB, repetidasB) = lb.separarNovas(backup.series)
+          Previa(t, Leitura(backup.series, emptyList(), OrdemData.DIA_MES, false,
+              "Backup do Logbook (versão ${backup.versao}${backup.criadoEm?.let { ", feito em ${it.replace('T', ' ').take(16)}" } ?: ""})"),
+              novasB.size, repetidasB, arquivo, backup)
         } else Previa(t, r, novas.size, repetidas, arquivo)
       }
       previa = p
@@ -137,10 +131,13 @@ fun TelaDados(lb: Logbook, diario: Diario, todas: List<Serie>, recebido: Recebid
       lerDeArquivo(nomeDoArquivo(ctx, uri)) { lerArquivo(ctx, uri) }
     }
   }
+  val figuras = LocalFiguras.current
+  val temDados = todas.isNotEmpty() || diario.dias.value.isNotEmpty()
+
   val salvarArquivo = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
     if (uri != null) {
       runCatching {
-        val backup = JSONObject().put("logbook", 2).put("series", lb.paraJson()).put("diario", diario.paraJson())
+        val backup = Backup.gerar(lb, diario, figuras)
         ctx.contentResolver.openOutputStream(uri, "wt")!!.bufferedWriter().use { it.write(backup.toString()) }
       }.onSuccess { Toast.makeText(ctx, "Backup salvo (${todas.size} séries)", Toast.LENGTH_LONG).show() }
           .onFailure { Toast.makeText(ctx, "Não consegui salvar o backup", Toast.LENGTH_LONG).show() }
@@ -156,7 +153,7 @@ fun TelaDados(lb: Logbook, diario: Diario, todas: List<Serie>, recebido: Recebid
       verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
     item {
-      Text("Importar", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Texto)
+      Text("Dados e backup", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Texto)
       val dias = todas.map { it.data }.distinct()
       Text(
           if (todas.isEmpty()) "Nenhuma série salva ainda."
@@ -269,17 +266,16 @@ fun TelaDados(lb: Logbook, diario: Diario, todas: List<Serie>, recebido: Recebid
             if (r.naoEntendidas.size > 10) Text("… e mais ${r.naoEntendidas.size - 10}", color = Cinza, fontSize = 12.sp)
           }
           Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            BotaoDegrade(enabled = (p.novas > 0 || p.diario != null) && !lendo, onClick = {
-              val res = lb.importar(r.series)
-              p.diario?.let { diario.restaurar(it) }
+            BotaoDegrade(enabled = (p.novas > 0 || p.backup != null) && !lendo, onClick = {
+              val res = p.backup?.let { Backup.restaurar(it, lb, diario, figuras) } ?: lb.importar(r.series)
               Toast.makeText(
                   ctx,
-                  "${res.adicionadas} séries importadas em ${res.dias} dias" + if (p.diario != null) " · diário restaurado" else "",
+                  "${res.adicionadas} séries importadas em ${res.dias} dias" + if (p.backup != null) " · diário e fotos restaurados" else "",
                   Toast.LENGTH_LONG,
               ).show()
               previa = null
               texto = ""
-            }) { Text(if (p.diario != null) "Restaurar backup" else if (p.novas > 0) "Importar ${p.novas}" else "Nada novo") }
+            }) { Text(if (p.backup != null) "Restaurar backup" else if (p.novas > 0) "Importar ${p.novas}" else "Nada novo") }
             OutlinedButton(onClick = { previa = null }) { Text("Voltar") }
           }
         }
@@ -303,13 +299,45 @@ fun TelaDados(lb: Logbook, diario: Diario, todas: List<Serie>, recebido: Recebid
       Cartao {
         Text("Backup", color = Texto, fontWeight = FontWeight.Bold, fontSize = 16.sp)
         Text(
-            "Salva tudo (séries e diário: peso, sono, comida…) num arquivo no celular. Para restaurar " +
-                "(ex.: celular novo), use “Escolher arquivo do celular” acima com esse arquivo.",
+            "Um arquivo com tudo: séries (com a hora de cada uma), diário (peso, sono, cabeça, comida, " +
+                "cronômetro) e as suas fotos dos exercícios.",
             color = Cinza, fontSize = 13.sp, modifier = Modifier.padding(vertical = 6.dp),
         )
-        BotaoDegrade(onClick = { salvarArquivo.launch("logbook-${LocalDate.now()}.json") }, enabled = todas.isNotEmpty() || diario.dias.value.isNotEmpty()) {
-          Text("Salvar backup")
+        BotaoDegrade(
+            onClick = {
+              val bytes = Backup.gerar(lb, diario, figuras).toString().toByteArray()
+              val onde = Backup.salvarEmDownloads(ctx, Backup.nomeArquivo(), bytes, "application/json")
+              if (onde != null) Toast.makeText(ctx, "Backup salvo em $onde", Toast.LENGTH_LONG).show()
+              else salvarArquivo.launch(Backup.nomeArquivo())
+            },
+            enabled = temDados, modifier = Modifier.fillMaxWidth(),
+        ) { Text("⬇  Baixar backup completo") }
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          OutlinedButton(
+              onClick = { Backup.compartilhar(ctx, Backup.nomeArquivo(), Backup.gerar(lb, diario, figuras).toString().toByteArray(), "application/json") },
+              enabled = temDados, modifier = Modifier.weight(1f),
+          ) { Text("Enviar backup", maxLines = 1) }
+          OutlinedButton(
+              onClick = {
+                val bytes = Backup.csv(todas).toByteArray()
+                val nome = "logbook-planilha-${LocalDate.now()}.csv"
+                val onde = Backup.salvarEmDownloads(ctx, nome, bytes, "text/csv")
+                if (onde != null) Toast.makeText(ctx, "Planilha salva em $onde", Toast.LENGTH_LONG).show()
+                else Backup.compartilhar(ctx, nome, bytes, "text/csv")
+              },
+              enabled = todas.isNotEmpty(), modifier = Modifier.weight(1f),
+          ) { Text("Planilha (.csv)", maxLines = 1) }
         }
+        val auto = Backup.ultimoAutomatico(ctx)
+        Text(
+            (if (auto != null) "Backup automático: todo dia em Downloads/Logbook (último ${
+              java.time.Instant.ofEpochMilli(auto).atZone(java.time.ZoneId.systemDefault()).toLocalDateTime().let { "${dataCurta(it.toLocalDate())} às ${"%02d:%02d".format(it.hour, it.minute)}" }
+            })." else "Backup automático: todo dia, ao abrir o app, em Downloads/Logbook.") +
+                "\n\nPara restaurar (celular novo ou se precisar reinstalar): Importar → Escolher arquivo do celular, ou " +
+                "Compartilhar o arquivo com o Logbook. Aceita backup de qualquer versão do app, planilhas (.csv), texto, PDF " +
+                "e exportações de outros apps. Para atualizar o app, é só instalar a versão nova por cima: os dados continuam.",
+            color = Cinza, fontSize = 12.sp, lineHeight = 17.sp, modifier = Modifier.padding(top = 10.dp),
+        )
       }
     }
 

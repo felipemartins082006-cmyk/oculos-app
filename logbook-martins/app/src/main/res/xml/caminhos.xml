@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Arquivos que o app pode enviar pelo "Compartilhar" (backup e planilha). -->
+<paths>
+    <cache-path name="backup" path="backup/" />
+</paths>

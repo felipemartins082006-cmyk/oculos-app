@@ -108,6 +108,31 @@ class Figuras(private val ctx: Context) {
     versao++
   }
 
+  /** Para o backup completo: as escolhas de cada exercício e as suas fotos (em base64). */
+  fun paraJson(): org.json.JSONObject {
+    val escolhas = org.json.JSONObject()
+    val fotos = org.json.JSONObject()
+    prefs.all.forEach { (ex, v) ->
+      val valor = v as? String ?: return@forEach
+      escolhas.put(ex, valor)
+      if (valor.startsWith("foto:")) {
+        val f = File(pasta, valor.removePrefix("foto:"))
+        if (f.exists()) fotos.put(f.name, android.util.Base64.encodeToString(f.readBytes(), android.util.Base64.NO_WRAP))
+      }
+    }
+    return org.json.JSONObject().put("escolhas", escolhas).put("fotos", fotos)
+  }
+
+  fun restaurar(json: org.json.JSONObject) {
+    val fotos = json.optJSONObject("fotos")
+    fotos?.keys()?.forEach { nome ->
+      runCatching { File(pasta, File(nome).name).writeBytes(android.util.Base64.decode(fotos.getString(nome), android.util.Base64.DEFAULT)) }
+    }
+    val escolhas = json.optJSONObject("escolhas") ?: return
+    prefs.edit().apply { escolhas.keys().forEach { putString(it, escolhas.getString(it)) } }.apply()
+    versao++
+  }
+
   private fun guardar(exercicio: String, valor: String?) {
     prefs.getString(exercicio, null)?.let { if (it != valor) apagarFoto(it) }
     prefs.edit().apply { if (valor == null) remove(exercicio) else putString(exercicio, valor) }.apply()

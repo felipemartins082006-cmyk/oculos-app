@@ -1,6 +1,7 @@
 package com.martins.logbook
 
 import android.widget.Toast
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -45,7 +46,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
@@ -136,29 +139,18 @@ fun TelaTreino(
       verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
     item {
-      Row(verticalAlignment = Alignment.CenterVertically) {
-        TextButton(onClick = { onDia(dia.minusDays(1)) }) { Text("‹", fontSize = 28.sp, color = Cinza) }
-        Column(
-            Modifier.weight(1f).clickable { escolhendoData = true },
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-          Text(
-              if (dia == LocalDate.now()) "Hoje · ${diaDaSemana(dia)}" else diaDaSemana(dia),
-              fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Texto,
-          )
-          Text(dataLonga(dia), color = Cinza, fontSize = 14.sp)
-        }
-        TextButton(onClick = { onDia(dia.plusDays(1)) }, enabled = dia < LocalDate.now()) {
-          Text("›", fontSize = 28.sp, color = if (dia < LocalDate.now()) Cinza else Superficie2)
-        }
-      }
-      Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+      TopoTreino(
+          dia = dia, todas = todas, diario = diario,
+          onAnterior = { onDia(dia.minusDays(1)) }, onProximo = { onDia(dia.plusDays(1)) },
+          onEscolherData = { escolhendoData = true },
+      )
+      Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedButton(onClick = { escolhendoData = true }, modifier = Modifier.weight(1f)) { Text("📅 Outro dia") }
         OutlinedButton(onClick = { colando = true }, modifier = Modifier.weight(1f)) { Text("📋 Colar treino") }
       }
       if (dia != hoje) {
         Surface(
-            color = Color(0xFF3A2414), shape = RoundedCornerShape(10.dp),
+            color = Color(0x2EFF5C7A), shape = RoundedCornerShape(18.dp),
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
         ) {
           Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -173,13 +165,6 @@ fun TelaTreino(
 
     // Cronômetro da sessão, descanso e temporizador (só no treino de hoje).
     if (dia == hoje && !colando) item { BarraSessao(diario, todas, dia) }
-
-    // Começo da sessão: pede o peso de hoje (some quando você pesa ou fecha).
-    if (dia == hoje && diario.de(dia).pesagens.isEmpty() && !pesoFechado && !colando) {
-      item { PesarHoje(onSalvar = { kg, tipo -> diario.pesar(dia, horaAgora(), kg, tipo) }, onFechar = { pesoFechado = true }) }
-    }
-
-    if (todas.isEmpty() && !colando) item { BoasVindas(onImportar) }
 
     if (!colando) item {
       Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -229,6 +214,13 @@ fun TelaTreino(
         if (digitado.isNotEmpty()) PreviaExercicio(todas, digitado, dia)
       }
     }
+
+    // Começo da sessão: pede o peso de hoje (some quando você pesa ou fecha).
+    if (dia == hoje && diario.de(dia).pesagens.isEmpty() && !pesoFechado && !colando) {
+      item { PesarHoje(onSalvar = { kg, tipo -> diario.pesar(dia, horaAgora(), kg, tipo) }, onFechar = { pesoFechado = true }) }
+    }
+
+    if (todas.isEmpty() && !colando) item { BoasVindas(onImportar) }
 
     // Dia sem séries: dá para marcar como descanso (descanso também conta no coeficiente).
     if (porExercicio.isEmpty() && !colando) {
@@ -538,4 +530,64 @@ fun PesarHoje(onSalvar: (Double, TipoPesagem) -> Unit, onFechar: (() -> Unit)? =
 private sealed interface Apagar {
   data class Exercicio(val exercicio: String, val series: Int) : Apagar
   data object Dia : Apagar
+}
+
+/** Topo do Treino: cartão em degradê com saudação, data (toque para trocar) e um resumo rápido. */
+@Composable
+private fun TopoTreino(
+    dia: LocalDate,
+    todas: List<Serie>,
+    diario: Diario,
+    onAnterior: () -> Unit,
+    onProximo: () -> Unit,
+    onEscolherData: () -> Unit,
+) {
+  val hoje = LocalDate.now()
+  val hora = java.time.LocalTime.now().hour
+  val saudacao = when {
+    dia != hoje -> "Registrando um dia passado"
+    hora in 5..11 -> "Bom dia 👋"
+    hora in 12..17 -> "Boa tarde 👋"
+    else -> "Boa noite 👋"
+  }
+  val seq = remember(todas) { calcularEstatisticas(todas, emptyMap(), null, hoje).sequenciaAtual }
+  val noMes = todas.map { it.data }.distinct().count { it.year == dia.year && it.month == dia.month }
+  val ce = coeficienteDoDia(dia, todas, diario.dias.value).valor
+  val branco = Color.White
+  Column(
+      Modifier.fillMaxWidth().clip(RoundedCornerShape(32.dp))
+          .background(Brush.linearGradient(listOf(Color(0xFFFF8A6B), Color(0xFFE8436E), Color(0xFF7A1D5C))))
+          .padding(horizontal = 10.dp, vertical = 16.dp),
+  ) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+      TextButton(onClick = onAnterior) { Text("‹", fontSize = 30.sp, color = branco.copy(alpha = 0.85f)) }
+      Column(Modifier.weight(1f).clickable(onClick = onEscolherData), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(saudacao, color = branco.copy(alpha = 0.85f), fontSize = 14.sp)
+        Text(
+            if (dia == hoje) "Hoje · ${diaDaSemana(dia)}" else diaDaSemana(dia),
+            fontSize = 26.sp, fontWeight = FontWeight.Bold, color = branco,
+        )
+        Text(dataLonga(dia), color = branco.copy(alpha = 0.85f), fontSize = 14.sp)
+      }
+      TextButton(onClick = onProximo, enabled = dia < hoje) {
+        Text("›", fontSize = 30.sp, color = if (dia < hoje) branco.copy(alpha = 0.85f) else Color.Transparent)
+      }
+    }
+    Row(
+        Modifier.fillMaxWidth().padding(top = 12.dp, start = 8.dp, end = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+    ) {
+      ChipTopo("🔥 $seq ${if (seq == 1) "semana seguida" else "sem. seguidas"}")
+      ChipTopo("$noMes ${if (noMes == 1) "treino" else "treinos"} no mês")
+      ce?.let { ChipTopo("CE ${it.toInt()}") }
+    }
+  }
+}
+
+@Composable
+private fun ChipTopo(texto: String) {
+  Text(
+      texto, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
+      modifier = Modifier.clip(RoundedCornerShape(50)).background(Color(0x33FFFFFF)).padding(horizontal = 10.dp, vertical = 5.dp),
+  )
 }

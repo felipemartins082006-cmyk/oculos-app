@@ -42,6 +42,8 @@ class MainActivity : ComponentActivity() {
     val logbook = Logbook(applicationContext)
     val figuras = Figuras(applicationContext)
     val diario = Diario(applicationContext)
+    // Backup automático (uma vez por dia) em Downloads/Logbook, fora da tela principal.
+    Thread { runCatching { Backup.automatico(applicationContext, logbook, diario, figuras) } }.start()
     if (savedInstanceState == null) {
       receber(intent)
       // Abrindo o app do zero: um temporizador que já tinha terminado não fica mais na tela.
@@ -69,12 +71,12 @@ class MainActivity : ComponentActivity() {
   }
 }
 
-private enum class Aba(val titulo: String, val icone: String) {
-  TREINO("Treino", "＋"),
-  DIA("Dia", "◐"),
-  HISTORICO("Histórico", "☰"),
-  EVOLUCAO("Evolução", "↗"),
-  DADOS("Importar", "⇅"),
+private enum class Aba(val titulo: String, val desenho: Desenho) {
+  TREINO("Treino", Desenho.HALTER),
+  DIA("Dia", Desenho.SOL),
+  HISTORICO("Histórico", Desenho.CALENDARIO),
+  EVOLUCAO("Evolução", Desenho.GRAFICO),
+  DADOS("Dados", Desenho.NUVEM),
 }
 
 @Composable
@@ -101,30 +103,10 @@ private fun App(lb: Logbook, diario: Diario, recebido: Recebido?, onRecebidoLido
       modifier = Modifier.fundoDoApp(),
       containerColor = Color.Transparent,
       bottomBar = {
-        NavigationBar(
-            containerColor = Color(0xE60B080C),
-            modifier = Modifier.drawBehind {
-              drawLine(DegradeBorda, Offset(0f, 0f), Offset(size.width, 0f), 1.dp.toPx())
-            },
-        ) {
-          Aba.entries.forEach { a ->
-            NavigationBarItem(
-                selected = aba == a,
-                onClick = {
-                  if (a == Aba.EVOLUCAO && aba == Aba.EVOLUCAO) exercicio = null
-                  aba = a
-                },
-                icon = { Text(a.icone, fontSize = 20.sp) },
-                label = { Text(a.titulo, fontSize = 11.sp, maxLines = 1) },
-                colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = Destaque,
-                    selectedTextColor = Destaque,
-                    indicatorColor = Color(0x2EFF5C6C),
-                    unselectedIconColor = Cinza,
-                    unselectedTextColor = Cinza,
-                ),
-            )
-          }
+        BarraFlutuante(Aba.entries.map { ItemNav(it.titulo, it.desenho) }, aba.ordinal) { i ->
+          val a = Aba.entries[i]
+          if (a == Aba.EVOLUCAO && aba == Aba.EVOLUCAO) exercicio = null
+          aba = a
         }
       },
   ) { pad ->

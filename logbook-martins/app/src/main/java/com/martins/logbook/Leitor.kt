@@ -10,6 +10,8 @@ data class SerieLida(
     val peso: Double,
     val reps: Int,
     val nota: String,
+    /** Hora em que a série foi anotada (só vem de backups do app). */
+    val momento: Long? = null,
 )
 
 /** Como ler datas do tipo 7/6/25: dia/mês (Brasil) ou mês/dia (EUA). */
@@ -87,11 +89,14 @@ object Leitor {
   ): Leitura {
     val t = texto.removePrefix("﻿")
     val inicio = t.trimStart()
+    val cabecalho = inicio.lineSequence().firstOrNull().orEmpty()
     return when {
-      inicio.startsWith("{") -> runCatching { deJson(inicio) }.getOrNull()
-          ?.let { lerTexto(it, dataPadrao, hoje, OrdemData.DIA_MES, "JSON do Discord") }
-      inicio.lineSequence().firstOrNull()?.let { "Content" in it && "Date" in it && "," in it } == true ->
+      inicio.startsWith("{") || inicio.startsWith("[") ->
+        runCatching { deJson(inicio) }.getOrNull()?.let { lerTexto(it, dataPadrao, hoje, OrdemData.DIA_MES, "JSON do Discord") }
+            ?: runCatching { deJsonGenerico(inicio) }.getOrNull()?.let { lerTexto(it, dataPadrao, hoje, OrdemData.DIA_MES, "JSON") }
+      "Content" in cabecalho && "Date" in cabecalho && "," in cabecalho ->
         deCsv(inicio)?.let { lerTexto(it, dataPadrao, hoje, OrdemData.DIA_MES, "CSV do Discord") }
+      pareceCsvDeSeries(cabecalho) -> deCsvGenerico(inicio)?.let { lerTexto(it, dataPadrao, hoje, ordem, "Planilha (CSV)") }
       else -> null
     } ?: lerTexto(t, dataPadrao, hoje, ordem, "texto")
   }
@@ -211,8 +216,90 @@ object Leitor {
     }
   }
 
+  // ---- Planilhas e JSON de outros apps (Strong, Hevy, exportações próprias…) ----
+
+  private val COL_DATA = listOf("data", "date", "dia", "day", "start_time", "start time", "inicio", "início", "timestamp")
+  private val COL_EX = listOf("exercicio", "exercício", "exercise", "exercise_title", "exercise name", "exercise_name", "ex", "nome", "name", "movimento")
+  private val COL_KG = listOf("kg", "peso", "weight", "weight_kg", "carga", "load", "weight (kg)")
+  private val COL_REPS = listOf("reps", "repeticoes", "repetições", "repetitions", "rep")
+  private val COL_NOTA = listOf("nota", "notas", "note", "notes", "rir", "rpe", "obs", "observação")
+
+  private fun coluna(cab: List<String>, nomes: List<String>): Int {
+    val c = cab.map { it.trim().trim('"').lowercase() }
+    return c.indexOfFirst { it in nomes }.takeIf { it >= 0 }
+        ?: c.indexOfFirst { col -> nomes.any { n -> n.length > 3 && n in col } }
+  }
+
+  private fun separador(linha: String) = if (linha.count { it == ';' } > linha.count { it == ',' }) ';' else ','
+
+  private fun pareceCsvDeSeries(cabecalho: String): Boolean {
+    val cab = cabecalho.split(separador(cabecalho))
+    return coluna(cab, COL_EX) >= 0 && coluna(cab, COL_REPS) >= 0
+  }
+
+  /** Planilha com colunas de data, exercício, carga e reps (em qualquer ordem e nome parecido). */
+  private fun deCsvGenerico(csv: String): String? {
+    val sep = separador(csv.lineSequence().first())
+    val linhas = lerCsv(csv, sep)
+    val cab = linhas.firstOrNull() ?: return null
+    val iEx = coluna(cab, COL_EX)
+    val iReps = coluna(cab, COL_REPS)
+    if (iEx < 0 || iReps < 0) return null
+    val iData = coluna(cab, COL_DATA)
+    val iKg = coluna(cab, COL_KG)
+    val iNota = coluna(cab, COL_NOTA)
+    return buildString {
+      var ultimaData = ""
+      linhas.drop(1).forEach { l ->
+        val ex = l.getOrNull(iEx)?.trim().orEmpty()
+        val reps = l.getOrNull(iReps)?.trim()?.replace(',', '.')?.toDoubleOrNull()?.toInt() ?: return@forEach
+        if (ex.isEmpty() || reps <= 0) return@forEach
+        val data = if (iData >= 0) l.getOrNull(iData)?.trim().orEmpty() else ""
+        if (data.isNotEmpty() && data != ultimaData) { append(data).append('\n'); ultimaData = data }
+        val kg = if (iKg >= 0) l.getOrNull(iKg)?.trim()?.replace(',', '.')?.toDoubleOrNull() ?: 0.0 else 0.0
+        append(serieTexto(ex, kg, reps, if (iNota >= 0) l.getOrNull(iNota)?.trim().orEmpty() else ""))
+      }
+    }.takeIf { it.isNotBlank() }
+  }
+
+  private fun serieTexto(ex: String, kg: Double, reps: Int, nota: String): String =
+      "${ex.replace(Regex("[()]"), " ").trim()} -> ${if (kg <= 0) "bw" else fmtPeso(kg) + "kg"} x $reps reps" +
+          (if (nota.isNotBlank() && nota != "null") " (${nota.replace(Regex("[()]"), " ").trim()})" else "") + "\n"
+
+  /**
+   * JSON de qualquer formato: procura em qualquer nível objetos com reps (e carga), herdando o nome do
+   * exercício e a data dos objetos de fora (ex.: treino → exercícios → séries).
+   */
+  private fun deJsonGenerico(json: String): String? {
+    val raiz: Any = if (json.trimStart().startsWith("[")) org.json.JSONArray(json) else JSONObject(json)
+    val sb = StringBuilder()
+    var ultimaData = ""
+    fun texto(o: JSONObject, nomes: List<String>): String? =
+        o.keys().asSequence().firstOrNull { it.lowercase() in nomes }?.let { k -> o.opt(k)?.toString()?.takeIf { it.isNotBlank() && it != "null" } }
+    fun dataDe(v: String): String = v.toLongOrNull()?.takeIf { it > 100_000_000_000 }
+        ?.let { java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString() } ?: v
+    fun andar(no: Any?, data: String?, ex: String?) {
+      when (no) {
+        is org.json.JSONArray -> for (i in 0 until no.length()) andar(no.opt(i), data, ex)
+        is JSONObject -> {
+          val d = texto(no, COL_DATA)?.let(::dataDe) ?: data
+          val e = texto(no, COL_EX + "title" + "exercise_template") ?: ex
+          val reps = texto(no, COL_REPS)?.replace(',', '.')?.toDoubleOrNull()?.toInt()
+          if (reps != null && reps > 0 && e != null) {
+            if (d != null && d != ultimaData) { sb.append(d).append('\n'); ultimaData = d }
+            val kg = texto(no, COL_KG)?.replace(',', '.')?.toDoubleOrNull() ?: 0.0
+            sb.append(serieTexto(e, kg, reps, texto(no, COL_NOTA).orEmpty()))
+          }
+          no.keys().forEach { k -> val v = no.opt(k); if (v is JSONObject || v is org.json.JSONArray) andar(v, d, e) }
+        }
+      }
+    }
+    andar(raiz, null, null)
+    return sb.toString().takeIf { it.isNotBlank() }
+  }
+
   /** CSV simples com aspas (o conteúdo da mensagem pode ter várias linhas). */
-  private fun lerCsv(s: String): List<List<String>> {
+  private fun lerCsv(s: String, sep: Char = ','): List<List<String>> {
     val linhas = mutableListOf<List<String>>()
     var campo = StringBuilder()
     var atual = mutableListOf<String>()
@@ -223,7 +310,7 @@ object Leitor {
       when {
         aspas && c == '"' && s.getOrNull(i + 1) == '"' -> { campo.append('"'); i++ }
         c == '"' -> aspas = !aspas
-        !aspas && c == ',' -> { atual += campo.toString(); campo = StringBuilder() }
+        !aspas && c == sep -> { atual += campo.toString(); campo = StringBuilder() }
         !aspas && (c == '\n' || c == '\r') -> {
           if (c == '\r' && s.getOrNull(i + 1) == '\n') i++
           atual += campo.toString(); campo = StringBuilder()

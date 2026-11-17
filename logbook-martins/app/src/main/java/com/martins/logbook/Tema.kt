@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
@@ -35,25 +36,30 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 // Paleta: preto suave com brilho vermelho, vidro translúcido e vermelho-coral em degradê.
-val Fundo = Color(0xFF07070A)
-val FundoTopo = Color(0xFF1C0A10)
+// Paleta 3.0: noite em ameixa escura, com brilhos suaves de rosa, coral e um toque de violeta.
+val Fundo = Color(0xFF0B0710)
+val FundoTopo = Color(0xFF2A0D1F)
 /** Cartões de vidro: branco bem transparente sobre o fundo. */
-val Superficie = Color(0x10FFFFFF)
-val Superficie2 = Color(0x1CFFFFFF)
+val Superficie = Color(0x12FFFFFF)
+val Superficie2 = Color(0x1FFFFFFF)
 /** Para o que precisa ser sólido (diálogos, menus). */
-val SuperficieSolida = Color(0xFF16101A)
-val Borda = Color(0x24FFFFFF)
-val Destaque = Color(0xFFFF5C6C)
-val DestaqueEscuro = Color(0xFFC2183B)
-val Texto = Color(0xFFF4EEF0)
-val Cinza = Color(0xFFA89FA3)
+val SuperficieSolida = Color(0xFF1A1220)
+val Borda = Color(0x1AFFFFFF)
+val Coral = Color(0xFFFF8A6B)
+val Destaque = Color(0xFFFF5C7A)
+val DestaqueEscuro = Color(0xFFB3204F)
+val Violeta = Color(0xFF8B5CF6)
+val Texto = Color(0xFFF7F1F4)
+val Cinza = Color(0xFFB3A6AE)
 val Verde = Color(0xFF6EE7B7)
-val Vermelho = Color(0xFFFF6B6B)
+val Vermelho = Color(0xFFFF6B7D)
 
-/** O degradê principal (botões, linha do gráfico, destaques). */
-val DegradeDestaque = Brush.linearGradient(listOf(Color(0xFFFF7A6B), Destaque, DestaqueEscuro))
-/** Borda dos cartões de vidro: clara em cima, puxando para o vermelho. */
-val DegradeBorda = Brush.linearGradient(listOf(Color(0x33FFFFFF), Color(0x14FFFFFF), Color(0x40FF5C6C)))
+/** O degradê principal (botões, linha do gráfico, destaques): coral → rosa → vinho. */
+val DegradeDestaque = Brush.linearGradient(listOf(Coral, Destaque, DestaqueEscuro))
+/** Borda bem leve dos cartões de vidro. */
+val DegradeBorda = Brush.linearGradient(listOf(Color(0x26FFFFFF), Color(0x0AFFFFFF), Color(0x26FF5C7A)))
+/** Preenchimento dos cartões: um pouco mais claro em cima (efeito de vidro). */
+val DegradeCartao = Brush.verticalGradient(listOf(Color(0x1CFFFFFF), Color(0x0AFFFFFF)))
 
 @Composable
 fun Tema(content: @Composable () -> Unit) {
@@ -61,7 +67,7 @@ fun Tema(content: @Composable () -> Unit) {
       colorScheme = darkColorScheme(
           primary = Destaque,
           onPrimary = Color.White,
-          secondaryContainer = Color(0x33FF5C6C),
+          secondaryContainer = Color(0x3DFF5C7A),
           onSecondaryContainer = Destaque,
           background = Fundo,
           surface = SuperficieSolida,
@@ -71,39 +77,45 @@ fun Tema(content: @Composable () -> Unit) {
           surfaceContainerHighest = Color(0xFF2A1F2E),
           onSurface = Texto,
           onSurfaceVariant = Cinza,
-          outline = Color(0x40FFFFFF),
-          outlineVariant = Color(0x22FFFFFF),
+          outline = Color(0x33FFFFFF),
+          outlineVariant = Color(0x1AFFFFFF),
           error = Vermelho,
+      ),
+      shapes = Shapes(
+          extraSmall = RoundedCornerShape(16.dp),
+          small = RoundedCornerShape(18.dp),
+          medium = RoundedCornerShape(22.dp),
+          large = RoundedCornerShape(28.dp),
+          extraLarge = RoundedCornerShape(32.dp),
       ),
       content = content,
   )
 }
 
-/** Fundo do app: preto com um brilho vermelho suave no alto e outro bem fraco embaixo. */
+/** Fundo do app: ameixa escura com brilhos suaves (rosa no alto, violeta à esquerda, coral embaixo). */
 fun Modifier.fundoDoApp(): Modifier = this
-    .background(Brush.verticalGradient(0f to FundoTopo, 0.45f to Fundo, 1f to Color(0xFF050507)))
+    .background(Brush.verticalGradient(0f to FundoTopo, 0.35f to Color(0xFF140A16), 1f to Fundo))
     .drawBehind {
-      drawCircle(
-          Brush.radialGradient(listOf(Color(0x38E0284A), Color.Transparent), center = Offset(size.width * 0.9f, 0f), radius = size.width * 0.9f),
-          radius = size.width * 0.9f, center = Offset(size.width * 0.9f, 0f),
+      fun brilho(cor: Color, x: Float, y: Float, raio: Float) = drawCircle(
+          Brush.radialGradient(listOf(cor, Color.Transparent), center = Offset(x, y), radius = raio),
+          radius = raio, center = Offset(x, y),
       )
-      drawCircle(
-          Brush.radialGradient(listOf(Color(0x16FF5C6C), Color.Transparent), center = Offset(0f, size.height), radius = size.width * 0.8f),
-          radius = size.width * 0.8f, center = Offset(0f, size.height),
-      )
+      brilho(Color(0x47FF4F7B), size.width * 0.95f, size.height * 0.02f, size.width * 0.95f)
+      brilho(Color(0x248B5CF6), size.width * -0.1f, size.height * 0.45f, size.width * 0.85f)
+      brilho(Color(0x1FFF8A6B), size.width * 1.05f, size.height * 0.95f, size.width * 0.8f)
     }
 
 /** Cartão de vidro: translúcido, cantos arredondados e borda em degradê. */
 @Composable
 fun Cartao(modifier: Modifier = Modifier, onClick: (() -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) {
-  val forma = RoundedCornerShape(20.dp)
+  val forma = RoundedCornerShape(28.dp)
   Column(
       modifier.fillMaxWidth()
           .clip(forma)
-          .background(Superficie)
-          .border(1.dp, DegradeBorda, forma)
+          .background(DegradeCartao)
+          .border(0.7.dp, DegradeBorda, forma)
           .let { if (onClick != null) it.clickable(onClick = onClick) else it }
-          .padding(16.dp),
+          .padding(horizontal = 20.dp, vertical = 18.dp),
       content = content,
   )
 }
@@ -116,10 +128,10 @@ fun BotaoDegrade(
     enabled: Boolean = true,
     content: @Composable RowScope.() -> Unit,
 ) {
-  val forma = RoundedCornerShape(16.dp)
+  val forma = RoundedCornerShape(50)
   Row(
       modifier
-          .defaultMinSize(minHeight = 48.dp)
+          .defaultMinSize(minHeight = 50.dp)
           .clip(forma)
           .background(if (enabled) DegradeDestaque else Brush.linearGradient(listOf(Superficie2, Superficie2)))
           .clickable(enabled = enabled, onClick = onClick)
@@ -138,7 +150,7 @@ fun BotaoDegrade(
 fun Rotulo(texto: String, modifier: Modifier = Modifier) {
   Text(
       texto.uppercase(), color = Cinza, fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
-      letterSpacing = 1.6.sp, modifier = modifier,
+      letterSpacing = 1.3.sp, modifier = modifier,
   )
 }
 

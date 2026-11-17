@@ -35,7 +35,7 @@ class Logbook(private val context: Context) {
   }
 
   fun adicionar(lidas: List<SerieLida>, momento: Long? = null): List<Serie> {
-    val novas = lidas.map { it.comId(proximoId++).copy(momento = momento) }
+    val novas = lidas.map { it.comId(proximoId++).let { s -> if (momento != null) s.copy(momento = momento) else s } }
     salvar(series.value + novas)
     return novas
   }
@@ -124,13 +124,14 @@ class Logbook(private val context: Context) {
   fun paraJson(): JSONArray = JSONArray().apply {
     series.value.forEach {
       put(JSONObject().put("data", it.data.toString()).put("ex", it.exercicio).put("kg", it.peso)
-          .put("reps", it.reps).put("nota", it.nota))
+          .put("reps", it.reps).put("nota", it.nota)
+          .apply { it.momento?.let { m -> put("t", m) } })
     }
   }
 
   private fun chave(d: LocalDate, ex: String, peso: Double, reps: Int) = "$d|$ex|${fmtPeso(peso)}|$reps"
 
-  private fun SerieLida.comId(id: Long) = Serie(id, data, exercicio, peso, reps, nota)
+  private fun SerieLida.comId(id: Long) = Serie(id, data, exercicio, peso, reps, nota, momento)
 
   private fun salvar(lista: List<Serie>) {
     val json = JSONArray()
@@ -181,9 +182,19 @@ class Logbook(private val context: Context) {
 
   companion object {
     /** Lê as séries de um backup completo. */
-    fun seriesDeJson(arr: JSONArray): List<SerieLida> = (0 until arr.length()).map { i ->
-      val o = arr.getJSONObject(i)
-      SerieLida(LocalDate.parse(o.getString("data")), o.getString("ex"), o.getDouble("kg"), o.getInt("reps"), o.optString("nota"))
+    /** Lê as séries de um backup (de qualquer versão): o que não der para ler é pulado. */
+    fun seriesDeJson(arr: JSONArray): List<SerieLida> = (0 until arr.length()).mapNotNull { i ->
+      runCatching {
+        val o = arr.getJSONObject(i)
+        SerieLida(
+            LocalDate.parse(o.optString("data").ifEmpty { o.getString("date") }.take(10)),
+            normalizarNome(o.optString("ex").ifEmpty { o.optString("exercicio").ifEmpty { o.getString("exercise") } }),
+            o.optDouble("kg", o.optDouble("peso", o.optDouble("weight", 0.0))),
+            o.optInt("reps", o.optInt("repeticoes", 0)),
+            o.optString("nota"),
+            if (o.has("t")) o.getLong("t") else null,
+        ).takeIf { it.reps > 0 && it.exercicio.isNotEmpty() }
+      }.getOrNull()
     }
   }
 }

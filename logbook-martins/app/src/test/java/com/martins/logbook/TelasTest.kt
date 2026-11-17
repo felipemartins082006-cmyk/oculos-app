@@ -90,7 +90,7 @@ class TelasTest {
     foto("4-dia-passado")
 
     // 4. Importar todo o histórico do Discord de uma vez.
-    regra.onNodeWithText("Importar").performClick()
+    regra.onNodeWithText("Dados").performClick()
     foto("5-importar")
     val discord = File("src/test/resources/exemplo_discord.txt").readText()
     campoPrincipal().performTextInput(discord)
@@ -120,7 +120,7 @@ class TelasTest {
   }
 
   @Test fun importarArquivoDoCelular() {
-    regra.onNodeWithText("Importar").performClick()
+    regra.onNodeWithText("Dados").performClick()
     regra.onNodeWithText("📁  Escolher arquivo do celular").performClick()
     regra.waitForIdle()
 
