@@ -85,6 +85,10 @@ Diferenças em relação ao Android:
   Gastos na conta/cartão do VR saem do saldo do VR; os demais saem do Salário. Dá para escolher o saldo
   em cada lançamento (ou em vários de uma vez). Tocar num saldo mostra o dia a dia: veio de ontem,
   entrou, saiu e fechou.
+- **Aparência** (Mais › Aparência): Padrão, temas prontos (Oceano, Pôr do sol, Lavanda) ou **Sua imagem**.
+  Com uma foto, ela vira o fundo do app e as cores de destaque, botões e degradês são tiradas da própria
+  imagem; os cartões ficam translúcidos (efeito vidro). Dá para ajustar "Escurecer o fundo" e "Desfoque".
+  Cada painel tem a sua aparência, e ela vai junto no backup. Entradas seguem verdes e saídas vermelhas.
 - **Painéis**: toque no nome no topo (ex.: "Meu painel ▾") para trocar de painel ou criar um novo do
   zero. Cada painel tem suas próprias contas, lançamentos e gráficos (ex.: um para você, outro para a
   namorada). Dá para renomear e excluir.

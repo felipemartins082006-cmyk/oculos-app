@@ -156,7 +156,7 @@ class MainActivity : ComponentActivity() {
             filesCallback?.onReceiveValue(null)
             filesCallback = callback
             // qualquer arquivo pode ser escolhido: o app confere o conteúdo (extrato ou backup)
-            val types = arrayOf("*/*")
+            val types = if (params.acceptTypes.any { it.startsWith("image") }) arrayOf("image/*") else arrayOf("*/*")
             runCatching { pickFiles.launch(types) }
                 .onFailure {
                   filesCallback = null

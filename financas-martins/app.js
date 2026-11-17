@@ -531,7 +531,8 @@
     // quanto guardou (medidor)
     const rate = T.inc > 0 ? T.net / T.inc : 0;
     const shown = Math.max(0, Math.min(1, rate));
-    const gaugeFill = c => { const { ctx, chartArea } = c.chart; if (!chartArea) return '#5ee49a'; const g = ctx.createLinearGradient(chartArea.left, 0, chartArea.right, 0); g.addColorStop(0, '#5ee49a'); g.addColorStop(1, '#d4fc79'); return g; };
+    const A1 = themeAccent(), A2 = themeAccent2();
+    const gaugeFill = c => { const { ctx, chartArea } = c.chart; if (!chartArea) return A2; const g = ctx.createLinearGradient(chartArea.left, 0, chartArea.right, 0); g.addColorStop(0, A2); g.addColorStop(1, A1); return g; };
     setChart('gauge', $('#chart-gauge'), {
       type: 'doughnut',
       data: { datasets: [{ data: [shown, 1 - shown], backgroundColor: c => c.dataIndex === 0 ? gaugeFill(c) : '#232733', borderWidth: 0, borderRadius: 10 }] },
@@ -594,7 +595,7 @@
     // patrimônio (linha)
     setChart('wealth', $('#chart-wealth'), {
       type: 'line',
-      data: { labels: series.map(p => { const d = pd(p.d); return `${d.getDate()} ${MES[d.getMonth()]}`; }), datasets: [{ data: series.map(p => p.v), borderColor: '#d4fc79', borderWidth: 2.4, pointRadius: 0, pointHoverRadius: 6, pointHoverBackgroundColor: '#d4fc79', pointHoverBorderColor: '#12141b', pointHoverBorderWidth: 3, tension: 0.3, fill: true, backgroundColor: fillGrad('#5ee49a', 0.3) }] },
+      data: { labels: series.map(p => { const d = pd(p.d); return `${d.getDate()} ${MES[d.getMonth()]}`; }), datasets: [{ data: series.map(p => p.v), borderColor: A1, borderWidth: 2.4, pointRadius: 0, pointHoverRadius: 6, pointHoverBackgroundColor: A1, pointHoverBorderColor: '#12141b', pointHoverBorderWidth: 3, tension: 0.3, fill: true, backgroundColor: fillGrad(A2, 0.3) }] },
       options: {
         responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
         plugins: { legend: { display: false }, tooltip: { ...tooltip, callbacks: { title: it => dayLabel(series[it[0].dataIndex].d), label: c => fmt(c.parsed.y) } } },
@@ -1320,6 +1321,7 @@
   });
   function renderSettings() {
     renderBackup();
+    renderLook();
     renderMethods();
     $('#banks-edit').innerHTML = db.banks.map(b => `
       <div class="bank-edit" data-id="${b.id}">${mono(b)}
@@ -1743,6 +1745,7 @@
     db = load();
     ui.bank = ''; ui.monthPick = null; ui.list = { q: '', cat: '', type: '', bank: '', merchant: null, limit: 120 };
     slots = null; review = [];
+    applyTheme();
     closeSpaces(); go('panorama');
     toast(`Painel “${currentSpace().name}”`);
   }
@@ -1773,7 +1776,7 @@
     save();
     return {
       app: 'financas-martins', version: 3, exportedAt: new Date().toISOString(), active: spaces.active,
-      spaces: spaces.list.map(s => ({ id: s.id, name: s.name, color: s.color, data: s.id === spaces.active ? db : load(s.id) })),
+      spaces: spaces.list.map(s => ({ id: s.id, name: s.name, color: s.color, data: s.id === spaces.active ? db : load(s.id), theme: readTheme(s.id), wall: wallCache[s.id] || null })),
     };
   }
   const backupName = () => `financas-backup-${todayStr()}.json`;
@@ -1870,7 +1873,11 @@
       if (!(await ask({ title: 'Restaurar este backup?', text: `Backup${when}: ${d.spaces.length} painel${d.spaces.length > 1 ? 'éis' : ''} e ${n} lançamentos. Tudo o que está neste celular agora será substituído.`, ok: 'Restaurar', danger: true, icon: 'file' }))) return;
       for (const s of spaces.list) { try { localStorage.removeItem(spaceKey(s.id)); } catch (err) { /* */ } }
       spaces = { active: d.spaces.some(s => s.id === d.active) ? d.active : d.spaces[0].id, list: d.spaces.map(s => ({ id: s.id, name: s.name, color: s.color || SPACE_COLORS[0] })) };
-      for (const s of d.spaces) { try { localStorage.setItem(spaceKey(s.id), JSON.stringify(migrate(s.data || emptyDb()))); } catch (err) { /* */ } }
+      for (const s of d.spaces) {
+        try { localStorage.setItem(spaceKey(s.id), JSON.stringify(migrate(s.data || emptyDb()))); } catch (err) { /* */ }
+        if (s.theme) writeTheme(s.id, s.theme); else { try { localStorage.removeItem(themeKey(s.id)); } catch (err) { /* */ } }
+        if (s.wall) { wallCache[s.id] = s.wall; idbWall.set(s.id, s.wall).catch(() => {}); }
+      }
       saveSpaces();
     } else if (Array.isArray(d.txs) && Array.isArray(d.banks)) {
       if (!(await ask({ title: 'Restaurar este backup?', text: `Backup antigo com ${d.txs.length} lançamentos. Os dados do painel “${currentSpace().name}” serão substituídos.`, ok: 'Restaurar', danger: true, icon: 'file' }))) return;
@@ -1878,6 +1885,7 @@
     } else { toast('Arquivo de backup inválido'); return; }
     db = load(); ui.bank = ''; ui.monthPick = null; slots = null;
     bk.last = bk.last || new Date().toISOString(); saveBk();
+    applyTheme();
     toast('Backup restaurado'); go('panorama');
   }
 
@@ -1949,6 +1957,182 @@
   };
   document.addEventListener('keydown', e => { if (e.key === 'Escape') window.appBack(); });
 
+  /* =================== aparência (tema e imagem de fundo) =================== */
+  const themeKey = id => `${spaceKey(id)}:theme`;
+  const readTheme = (id = spaces.active) => { try { return JSON.parse(localStorage.getItem(themeKey(id))) || { mode: 'default' }; } catch (e) { return { mode: 'default' }; } };
+  const writeTheme = (id, t) => { try { localStorage.setItem(themeKey(id), JSON.stringify(t)); } catch (e) { toast('Não consegui salvar a aparência'); } };
+  // imagens ficam no IndexedDB (cabem fotos grandes); a cópia em memória serve para o backup
+  const idbWall = (() => {
+    let dbp = null;
+    const open = () => (dbp ||= new Promise((res, rej) => {
+      const r = indexedDB.open('financas-media', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('wall');
+      r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+    }));
+    const run = (mode, fn) => open().then(d => new Promise((res, rej) => {
+      const t = d.transaction('wall', mode); const rq = fn(t.objectStore('wall'));
+      t.oncomplete = () => res(rq.result); t.onerror = () => rej(t.error);
+    }));
+    return { get: k => run('readonly', s => s.get(k)), set: (k, v) => run('readwrite', s => s.put(v, k)), del: k => run('readwrite', s => s.delete(k)) };
+  })();
+  const wallCache = {};
+  const PRESETS = {
+    oceano: { name: 'Oceano', a1: '#7dd3fc', a2: '#38bdf8', h: ['#0e7490', '#155e75', '#1e3a8a'], base: '#06111c' },
+    sol: { name: 'Pôr do sol', a1: '#fdba74', a2: '#fb7185', h: ['#c2410c', '#9f1239', '#3b0764'], base: '#140a0c' },
+    lavanda: { name: 'Lavanda', a1: '#d8b4fe', a2: '#f0abfc', h: ['#7c3aed', '#5b21b6', '#1e1b4b'], base: '#0e0b1a' },
+  };
+  const hex2rgb = h => { const n = parseInt(h.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; };
+  const rgbStr = h => hex2rgb(h).join(', ');
+  function hsl2hex(h, s, l) {
+    h = ((h % 360) + 360) % 360; const c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = l - c / 2;
+    const [r, g, b] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
+    return '#' + [r, g, b].map(v => Math.round((v + m) * 255).toString(16).padStart(2, '0')).join('');
+  }
+  function rgb2hsl(r, g, b) {
+    r /= 255; g /= 255; b /= 255; const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
+    if (mx === mn) return [0, 0, l];
+    const d = mx - mn, s = l > .5 ? d / (2 - mx - mn) : d / (mx + mn);
+    const h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return [h * 60, s, l];
+  }
+  // tira a paleta da imagem: as cores mais vivas viram destaque e degradês; a média vira o tom do fundo
+  function paletteFrom(img) {
+    const c = document.createElement('canvas'); c.width = c.height = 48;
+    const x = c.getContext('2d'); x.drawImage(img, 0, 0, 48, 48);
+    const px = x.getImageData(0, 0, 48, 48).data;
+    const bins = new Array(24).fill(0).map(() => ({ w: 0, s: 0, n: 0 }));
+    let ar = 0, ag = 0, ab = 0, n = 0;
+    for (let i = 0; i < px.length; i += 4) {
+      const [h, s, l] = rgb2hsl(px[i], px[i + 1], px[i + 2]);
+      ar += px[i]; ag += px[i + 1]; ab += px[i + 2]; n++;
+      if (s < 0.18 || l < 0.12 || l > 0.92) continue;
+      const w = s * (1 - Math.abs(l - 0.5) * 1.4);
+      const bin = bins[Math.floor(h / 15) % 24]; bin.w += w; bin.s += s; bin.n++; bin.h = (bin.h || 0) + h;
+    }
+    const ranked = bins.map((b, i) => ({ ...b, hue: b.n ? b.h / b.n : i * 15 + 7.5, sat: b.n ? b.s / b.n : 0 })).filter(b => b.w > 0).sort((a, b) => b.w - a.w);
+    const [bh, bs, bl] = rgb2hsl(ar / n, ag / n, ab / n);
+    const p1 = ranked[0] || { hue: bh, sat: Math.max(bs, .4) };
+    const p2 = ranked.find(b => Math.min(Math.abs(b.hue - p1.hue), 360 - Math.abs(b.hue - p1.hue)) > 35) || { hue: p1.hue + 40, sat: p1.sat };
+    const sat = v => Math.min(0.92, Math.max(0.55, v + 0.15));
+    return {
+      a1: hsl2hex(p1.hue, sat(p1.sat), 0.74),
+      a2: hsl2hex(p2.hue, sat(p2.sat), 0.64),
+      h: [hsl2hex(p1.hue, 0.55, 0.34), hsl2hex((p1.hue + p2.hue) / 2, 0.5, 0.26), hsl2hex(p2.hue, 0.5, 0.18)],
+      base: hsl2hex(bh, Math.min(bs, 0.35), Math.min(0.08, bl * 0.25 + 0.03)),
+    };
+  }
+  const css2 = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  const themeAccent = () => css2('--lime') || '#d4fc79';
+  const themeAccent2 = () => css2('--accent2') || '#5ee49a';
+  const THEME_VARS = ['--lime', '--accent', '--accent2', '--accent-rgb', '--grad-cta', '--grad-hero', '--grad-card', '--grad-card2', '--base-rgb', '--dim', '--blur', '--bg', '--cta-ink'];
+  function applyTheme() {
+    const t = readTheme(), root = document.documentElement;
+    THEME_VARS.forEach(v => root.style.removeProperty(v));
+    root.classList.remove('has-wall');
+    $('#wall').style.backgroundImage = '';
+    const pal = t.mode === 'preset' ? PRESETS[t.preset] : t.mode === 'image' ? t.palette : null;
+    if (pal) {
+      const set = (k, v) => root.style.setProperty(k, v);
+      set('--lime', pal.a1); set('--accent', pal.a1); set('--accent2', pal.a2); set('--accent-rgb', rgbStr(pal.a1));
+      set('--grad-cta', `linear-gradient(135deg, ${pal.a1} 0%, ${pal.a2} 100%)`);
+      set('--cta-ink', hsl2hex(rgb2hsl(...hex2rgb(pal.a1))[0], 0.6, 0.1));
+      set('--grad-hero', `radial-gradient(120% 90% at 100% 0%, ${alpha(pal.a1, .38)} 0%, transparent 45%), radial-gradient(90% 80% at 0% 100%, ${alpha(pal.h[2], .7)} 0%, transparent 60%), linear-gradient(150deg, ${pal.h[0]} 0%, ${pal.h[1]} 50%, ${pal.h[2]} 100%)`);
+      set('--grad-card', `linear-gradient(135deg, ${pal.h[2]}, ${pal.h[1]} 55%, ${pal.h[0]})`);
+      set('--grad-card2', `linear-gradient(135deg, ${pal.h[1]}, ${pal.h[0]} 60%, ${alpha(pal.a2, .85)})`);
+      set('--base-rgb', rgbStr(pal.base)); set('--bg', pal.base);
+    }
+    if (t.mode === 'image' && wallCache[spaces.active]) {
+      root.classList.add('has-wall');
+      $('#wall').style.backgroundImage = `url("${wallCache[spaces.active]}")`;
+      root.style.setProperty('--dim', String((t.dim ?? 55) / 100));
+      root.style.setProperty('--blur', `${t.blur ?? 0}px`);
+    }
+    const meta = document.querySelector('meta[name="theme-color"]'); if (meta) meta.content = pal ? pal.base : '#0a0b0f';
+    if (window.Chart) Object.values(charts).forEach(c => { try { c.update('none'); } catch (e) { /* */ } });
+  }
+  async function loadWalls() {
+    await Promise.all(spaces.list.map(async s => {
+      if (readTheme(s.id).mode !== 'image' || wallCache[s.id]) return;
+      try { const v = await idbWall.get(s.id); if (v) wallCache[s.id] = v; } catch (e) { /* */ }
+    }));
+    applyTheme();
+    if (ui.view === 'panorama') renderDashboard();
+  }
+  // reduz a foto (até 1440 px) para caber bem no celular e no backup
+  function readImage(file) {
+    return new Promise((res, rej) => {
+      const url = URL.createObjectURL(file); const img = new Image();
+      img.onload = () => {
+        const max = 1440, k = Math.min(1, max / Math.max(img.width, img.height));
+        const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        res({ data: c.toDataURL('image/jpeg', 0.82), palette: paletteFrom(c) });
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('img')); };
+      img.src = url;
+    });
+  }
+  function renderLook() {
+    const t = readTheme(), has = !!wallCache[spaces.active];
+    $('#look-sub').textContent = `Painel “${currentSpace().name}”: escolha um tema ou uma imagem sua, e as cores do app se ajustam a ela`;
+    const tile = (id, name, prev, on) => `<button class="theme-tile ${on ? 'on' : ''}" data-theme="${id}"><span class="theme-prev" style="${prev}">${id === 'image' && !has ? svg('file') : '<span class="tp-hero" style="background:var(--tp-hero)"></span><span class="tp-row"><i></i><i></i></span>'}</span>${name}</button>`;
+    const heroOf = p => `linear-gradient(150deg, ${p.h[0]}, ${p.h[1]} 55%, ${p.h[2]})`;
+    $('#themes').innerHTML =
+      tile('default', 'Padrão', `background:#0a0b0f;--tp-hero:linear-gradient(150deg,#0d8f68,#0b6e73 50%,#17306f)`, t.mode === 'default')
+      + Object.entries(PRESETS).map(([k, p]) => tile(k, p.name, `background:${p.base};--tp-hero:${heroOf(p)}`, t.mode === 'preset' && t.preset === k)).join('')
+      + (has
+        ? tile('image', 'Sua imagem', `background-image:linear-gradient(rgba(0,0,0,.25),rgba(0,0,0,.45)),url('${wallCache[spaces.active]}');--tp-hero:${t.palette ? `linear-gradient(150deg, ${alpha(t.palette.h[0], .9)}, ${alpha(t.palette.h[2], .9)})` : 'rgba(255,255,255,.2)'}`, t.mode === 'image')
+        : `<button class="theme-tile" data-theme="image"><span class="theme-prev add">${svg('file')}</span>Sua imagem</button>`);
+    $$('#themes .theme-tile').forEach(b => b.addEventListener('click', () => pickTheme(b.dataset.theme)));
+    const img = t.mode === 'image' && has;
+    $('#wall-ctrl').classList.toggle('hidden', !img);
+    if (img) {
+      $('#wall-dim').value = t.dim ?? 55; $('#dim-val').textContent = `${t.dim ?? 55}%`;
+      $('#wall-blur').value = t.blur ?? 0; $('#blur-val').textContent = `${t.blur ?? 0}px`;
+      const p = t.palette;
+      $('#palette-row').innerHTML = p ? `Cores tiradas da imagem: ${[p.a1, p.a2, ...p.h].map(c => `<i style="background:${c}"></i>`).join('')}` : '';
+    }
+  }
+  function pickTheme(id) {
+    const t = readTheme();
+    if (id === 'default') writeTheme(spaces.active, { ...t, mode: 'default' });
+    else if (PRESETS[id]) writeTheme(spaces.active, { ...t, mode: 'preset', preset: id });
+    else if (id === 'image') {
+      if (wallCache[spaces.active] && t.palette) writeTheme(spaces.active, { ...t, mode: 'image' });
+      else { $('#wall-input').click(); return; }
+    }
+    applyTheme(); renderLook();
+  }
+  $('#wall-input').addEventListener('change', async e => {
+    const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+    if (f.type && !f.type.startsWith('image/')) { toast('Escolha uma imagem (foto)'); return; }
+    toast('Ajustando as cores à imagem…');
+    try {
+      const { data, palette } = await readImage(f);
+      wallCache[spaces.active] = data;
+      await idbWall.set(spaces.active, data);
+      const t = readTheme();
+      writeTheme(spaces.active, { ...t, mode: 'image', palette, dim: t.dim ?? 55, blur: t.blur ?? 0 });
+      applyTheme(); renderLook(); toast('Pronto! Ajuste o escurecer e o desfoque se quiser');
+    } catch (err) { toast('Não consegui abrir essa imagem'); }
+  });
+  $('#wall-change').addEventListener('click', () => $('#wall-input').click());
+  $('#wall-remove').addEventListener('click', async () => {
+    if (!(await ask({ title: 'Remover a imagem de fundo?', text: 'O painel volta para o visual padrão. Você pode escolher outra imagem quando quiser.', ok: 'Remover', danger: true }))) return;
+    delete wallCache[spaces.active]; idbWall.del(spaces.active).catch(() => {});
+    const t = readTheme(); writeTheme(spaces.active, { mode: 'default', dim: t.dim, blur: t.blur });
+    applyTheme(); renderLook();
+  });
+  const liveCtl = (inp, key, lbl, unit) => inp.addEventListener('input', () => {
+    const t = readTheme(); t[key] = +inp.value; writeTheme(spaces.active, t);
+    $(lbl).textContent = inp.value + unit;
+    if (key === 'dim') document.documentElement.style.setProperty('--dim', String(+inp.value / 100));
+    else document.documentElement.style.setProperty('--blur', `${inp.value}px`);
+  });
+  liveCtl($('#wall-dim'), 'dim', '#dim-val', '%');
+  liveCtl($('#wall-blur'), 'blur', '#blur-val', 'px');
+
   /* =================== janelas de confirmação =================== */
   let dlgDone = null;
   function openDlg({ title, text = '', ok = 'OK', cancel = 'Cancelar', danger = false, icon = danger ? 'trash' : 'ok', input = null }) {
@@ -1992,7 +2176,9 @@
 
   if ('serviceWorker' in navigator && location.protocol === 'https:' && !window.Android) navigator.serviceWorker.register('sw.js').catch(() => {});
   if (document.fonts?.ready) document.fonts.ready.then(() => { if (ui.view === 'panorama' && db.txs.length) renderDashboard(); });
+  applyTheme();
   go('panorama');
+  loadWalls();
   setTimeout(() => runAutoBackup(false), 1200);
   // iPhone: aviso para instalar na Tela de Início (só no Safari, fora do app instalado)
   try {

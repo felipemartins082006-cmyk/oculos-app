@@ -17,6 +17,7 @@
 <script src="vendor/chart.umd.min.js"></script>
 </head>
 <body>
+<div id="wall" aria-hidden="true"></div>
 <div class="glow" aria-hidden="true"></div>
 
 <header class="top">
@@ -239,6 +240,19 @@
       <button class="link hidden" id="auto-folder">Trocar pasta do backup</button>
       <label class="ghost small restore"><input type="file" id="import-json" class="restore-input" hidden>Restaurar um backup</label>
       <p class="restore-note">Atualizando o app? Não precisa desinstalar: instale a versão nova por cima e tudo continua. Se reinstalar do zero, restaure aqui o arquivo de backup.</p>
+    </div>
+
+    <div class="card" id="look-card">
+      <div class="card-head"><div><h3>Aparência</h3><p id="look-sub">Escolha um tema ou uma imagem sua: as cores do app se ajustam a ela</p></div></div>
+      <div class="themes" id="themes"></div>
+      <input type="file" id="wall-input" accept="image/*" hidden>
+      <div class="wall-ctrl hidden" id="wall-ctrl">
+        <div class="palette-row" id="palette-row"></div>
+        <label><span>Escurecer o fundo <b id="dim-val"></b></span><input type="range" id="wall-dim" min="20" max="88" step="1"></label>
+        <label><span>Desfoque <b id="blur-val"></b></span><input type="range" id="wall-blur" min="0" max="24" step="1"></label>
+        <div class="wall-btns"><button class="ghost" id="wall-change">Trocar imagem</button><button class="ghost danger" id="wall-remove">Remover imagem</button></div>
+      </div>
+      <p class="theme-note">Vale só para o painel aberto. Entradas continuam verdes e saídas vermelhas, para não confundir.</p>
     </div>
 
     <button class="export-card renda-link" data-go="renda">
