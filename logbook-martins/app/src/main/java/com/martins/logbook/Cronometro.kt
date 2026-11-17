@@ -91,31 +91,63 @@ object Temporizador {
   var restantePausado by mutableStateOf<Long?>(null)
   /** Acabou de terminar ("Tempo!"). */
   var terminou by mutableStateOf(false)
+  /** O pop-up do temporizador está aberto. */
+  var aberto by mutableStateOf(false)
+  /** Um alarme do sistema vai tocar no fim (então a tela não precisa tocar de novo). */
+  var alarmeAgendado = false
 
-  fun iniciar(ms: Long, agora: Long = System.currentTimeMillis()) {
+  /** Chamado a cada mudança: o app salva o estado e agenda o alarme do sistema (ver SistemaTemporizador). */
+  var aoMudar: (() -> Unit)? = null
+
+  private fun mudou() = aoMudar?.invoke()
+
+  fun abrir() { aberto = true }
+  fun fechar() { aberto = false }
+
+  /** Escolhe o tempo (sem começar): entre 5 s e 99 min. */
+  fun escolher(ms: Long) {
+    duracaoMs = ms.coerceIn(5_000, 99 * 60_000L)
+    mudou()
+  }
+
+  fun iniciar(ms: Long = duracaoMs, agora: Long = System.currentTimeMillis()) {
     duracaoMs = ms
     fimEm = agora + ms
     restantePausado = null
     terminou = false
+    mudou()
   }
 
   fun pausar(agora: Long = System.currentTimeMillis()) {
     fimEm?.let { restantePausado = max(0, it - agora); fimEm = null }
+    mudou()
   }
 
   fun continuar(agora: Long = System.currentTimeMillis()) {
     restantePausado?.let { fimEm = agora + it; restantePausado = null }
+    mudou()
   }
 
   fun mais(ms: Long) {
-    fimEm?.let { fimEm = it + ms; duracaoMs += ms }
-    restantePausado?.let { restantePausado = it + ms; duracaoMs += ms }
+    fimEm?.let { fimEm = maxOf(it + ms, System.currentTimeMillis() + 1000); duracaoMs = maxOf(duracaoMs + ms, 5_000) }
+    restantePausado?.let { restantePausado = maxOf(it + ms, 1000); duracaoMs = maxOf(duracaoMs + ms, 5_000) }
+    mudou()
+  }
+
+  /** Chegou a zero. */
+  fun acabou() {
+    fimEm = null
+    restantePausado = 0
+    terminou = true
+    aberto = true
+    mudou()
   }
 
   fun zerar() {
     fimEm = null
     restantePausado = null
     terminou = false
+    mudou()
   }
 
   fun restante(agora: Long): Long? = fimEm?.let { max(0, it - agora) } ?: restantePausado
@@ -145,10 +177,9 @@ fun VigiaTemporizador() {
     if (fim == null) return@LaunchedEffect
     delay(max(0, fim - System.currentTimeMillis()))
     if (Temporizador.fimEm == fim) {
-      Temporizador.fimEm = null
-      Temporizador.restantePausado = 0
-      Temporizador.terminou = true
-      alarme(ctx)
+      // Se o alarme do sistema está agendado, ele vibra e toca; aqui só mostra o "Tempo!".
+      if (!Temporizador.alarmeAgendado) alarme(ctx)
+      Temporizador.acabou()
     }
   }
 }
@@ -172,7 +203,6 @@ fun duracaoTreino(dia: Dia?, seriesDoDia: List<Serie>): Long? {
 fun BarraSessao(diario: Diario, series: List<Serie>, dia: LocalDate) {
   val d = diario.de(dia)
   val agora = agoraAoVivo()
-  var timerAberto by remember { mutableStateOf(false) }
   var confirmandoCancelar by remember { mutableStateOf(false) }
   val doDia = series.filter { it.data == dia }
   val ultima = doDia.mapNotNull { it.momento }.maxOrNull()
@@ -214,8 +244,8 @@ fun BarraSessao(diario: Diario, series: List<Serie>, dia: LocalDate) {
             Text("⏱ Iniciar treino")
           }
         }
-        OutlinedButton(onClick = { timerAberto = !timerAberto }) {
-          Text(if (restanteTimer != null && !timerAberto) "⏲ ${fmtDuracao(restanteTimer)}" else "⏲ Timer")
+        OutlinedButton(onClick = { Temporizador.abrir() }) {
+          Text(if (restanteTimer != null) "⏲ ${fmtDuracao(restanteTimer)}" else "⏲ Timer")
         }
       }
     }
@@ -241,7 +271,6 @@ fun BarraSessao(diario: Diario, series: List<Serie>, dia: LocalDate) {
         Text(if (d.sessaoConcluida) "Apagar o tempo deste treino" else "Cancelar cronômetro", color = Vermelho, fontSize = 13.sp)
       }
     }
-    if (timerAberto || Temporizador.terminou) PainelTemporizador(agora)
   }
 
   if (confirmandoCancelar) {
@@ -264,71 +293,3 @@ fun BarraSessao(diario: Diario, series: List<Serie>, dia: LocalDate) {
   }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun PainelTemporizador(agora: Long) {
-  val restante = Temporizador.restante(agora)
-  var min by remember { mutableStateOf("") }
-  var seg by remember { mutableStateOf("") }
-  Column(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-    Rotulo("Temporizador de descanso", Modifier.fillMaxWidth())
-    if (restante != null) {
-      val frac = if (Temporizador.duracaoMs > 0) restante.toFloat() / Temporizador.duracaoMs else 0f
-      Box(Modifier.size(190.dp).padding(top = 10.dp), contentAlignment = Alignment.Center) {
-        Canvas(Modifier.size(170.dp)) {
-          val esp = 10.dp.toPx()
-          val tam = Size(size.width - esp, size.height - esp)
-          val topo = Offset(esp / 2, esp / 2)
-          drawArc(Color(0x1FFFFFFF), 0f, 360f, false, topo, tam, style = Stroke(esp))
-          drawArc(
-              Brush.sweepGradient(listOf(DestaqueEscuro, Destaque, Color(0xFFFF8A7A), DestaqueEscuro)),
-              -90f, 360f * frac, false, topo, tam, style = Stroke(esp, cap = StrokeCap.Round),
-          )
-        }
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-          Text(
-              if (Temporizador.terminou) "Tempo!" else fmtDuracao(restante),
-              color = if (Temporizador.terminou) Destaque else Texto,
-              fontSize = 38.sp, fontWeight = FontWeight.Bold, style = TextStyle(fontFeatureSettings = "tnum"),
-          )
-          if (Temporizador.restantePausado != null && !Temporizador.terminou) Text("pausado", color = Cinza, fontSize = 12.sp)
-        }
-      }
-      Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        when {
-          Temporizador.terminou -> BotaoDegrade(onClick = { Temporizador.iniciar(Temporizador.duracaoMs) }) { Text("De novo") }
-          Temporizador.fimEm != null -> OutlinedButton(onClick = { Temporizador.pausar() }) { Text("Pausar") }
-          else -> BotaoDegrade(onClick = { Temporizador.continuar() }) { Text("Continuar") }
-        }
-        if (!Temporizador.terminou) OutlinedButton(onClick = { Temporizador.mais(15_000) }) { Text("+15s") }
-        TextButton(onClick = { Temporizador.zerar() }) { Text("Zerar", color = Cinza) }
-      }
-    }
-    if (restante == null || Temporizador.terminou) {
-      FlowRow(
-          Modifier.fillMaxWidth().padding(top = 10.dp),
-          horizontalArrangement = Arrangement.spacedBy(6.dp),
-      ) {
-        listOf(45, 60, 90, 120, 150, 180, 300).forEach { s ->
-          FilterChip(selected = false, onClick = { Temporizador.iniciar(s * 1000L) }, label = { Text(fmtDuracao(s * 1000L)) })
-        }
-      }
-      Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        OutlinedTextField(
-            min, { min = it.filter(Char::isDigit).take(3) }, modifier = Modifier.width(88.dp),
-            label = { Text("min") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-        )
-        Text(" : ", color = Cinza, fontSize = 22.sp)
-        OutlinedTextField(
-            seg, { seg = it.filter(Char::isDigit).take(2) }, modifier = Modifier.width(88.dp),
-            label = { Text("seg") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-        )
-        Spacer(Modifier.width(10.dp))
-        val total = ((min.toIntOrNull() ?: 0) * 60 + (seg.toIntOrNull() ?: 0).coerceAtMost(59)) * 1000L
-        BotaoDegrade(onClick = { Temporizador.iniciar(total) }, enabled = total > 0, modifier = Modifier.height(56.dp)) {
-          Text("Iniciar")
-        }
-      }
-    }
-  }
-}

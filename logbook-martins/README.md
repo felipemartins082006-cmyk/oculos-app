@@ -48,6 +48,17 @@ lê o que aparece na tela: não usa token, senha nem a API, e não envia nada pa
    digite `logbookSalvar()` no console para baixar o PDF completo.
 4. Mande o arquivo para o celular e use Importar → Escolher arquivo.
 
+## Temas e temporizador (versão 3.1)
+
+**Aparência** (aba Dados → Aparência e tema, ou o 🎨 no topo do Treino): temas prontos (Rubi, Brasa, Oceano,
+Aurora, Esmeralda, Âmbar, Grafite), foto de fundo da galeria com "escurecer" e "desfoque", "usar as cores da
+foto" (o app tira a cor principal da imagem) e a opacidade dos cartões de vidro. Fica salvo.
+
+**Temporizador:** abre em pop-up por cima de tudo, com − / + de minutos e segundos e atalhos. Enquanto conta,
+uma bolha flutuante mostra o tempo em todas as abas (toque para abrir). O estado é salvo: não zera ao sair do
+app nem se o Android fechar o app. No fim, um alarme do sistema vibra, toca e notifica, mesmo com o app
+fechado; enquanto conta, a notificação mostra a contagem regressiva.
+
 ## Backup e atualizações (versão 3.0)
 
 **Dados → Baixar backup completo:** salva direto em `Downloads/Logbook/logbook-backup-AAAA-MM-DD.json` um

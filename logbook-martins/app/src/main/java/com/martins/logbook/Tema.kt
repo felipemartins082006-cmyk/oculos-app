@@ -22,6 +22,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -36,45 +39,51 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 // Paleta: preto suave com brilho vermelho, vidro translúcido e vermelho-coral em degradê.
-// Paleta 3.0: noite em ameixa escura, com brilhos suaves de rosa, coral e um toque de violeta.
-val Fundo = Color(0xFF0B0710)
-val FundoTopo = Color(0xFF2A0D1F)
-/** Cartões de vidro: branco bem transparente sobre o fundo. */
-val Superficie = Color(0x12FFFFFF)
-val Superficie2 = Color(0x1FFFFFFF)
-/** Para o que precisa ser sólido (diálogos, menus). */
-val SuperficieSolida = Color(0xFF1A1220)
+// Cores do tema: vêm da aparência escolhida (paleta pronta ou cores da foto de fundo).
+val Fundo: Color get() = Aparencia.paleta.fundo
+val FundoTopo: Color get() = Aparencia.paleta.fundoTopo
+/** Cartões de vidro: branco transparente (a transparência é ajustável). */
+val Superficie: Color get() = Color.White.copy(alpha = Aparencia.vidro)
+val Superficie2: Color get() = Color.White.copy(alpha = (Aparencia.vidro + 0.07f).coerceAtMost(0.5f))
+/** Para o que precisa ser sólido (diálogos, menus, pop-ups). */
+val SuperficieSolida: Color get() = Aparencia.paleta.solida
 val Borda = Color(0x1AFFFFFF)
-val Coral = Color(0xFFFF8A6B)
-val Destaque = Color(0xFFFF5C7A)
-val DestaqueEscuro = Color(0xFFB3204F)
+val Coral: Color get() = Aparencia.paleta.coral
+val Destaque: Color get() = Aparencia.paleta.destaque
+val DestaqueEscuro: Color get() = Aparencia.paleta.escuro
+/** Cor do texto em cima do degradê principal. */
+val SobreDestaque: Color get() = Aparencia.paleta.sobreDestaque
 val Violeta = Color(0xFF8B5CF6)
 val Texto = Color(0xFFF7F1F4)
 val Cinza = Color(0xFFB3A6AE)
 val Verde = Color(0xFF6EE7B7)
 val Vermelho = Color(0xFFFF6B7D)
 
-/** O degradê principal (botões, linha do gráfico, destaques): coral → rosa → vinho. */
-val DegradeDestaque = Brush.linearGradient(listOf(Coral, Destaque, DestaqueEscuro))
-/** Borda bem leve dos cartões de vidro. */
-val DegradeBorda = Brush.linearGradient(listOf(Color(0x26FFFFFF), Color(0x0AFFFFFF), Color(0x26FF5C7A)))
+/** O degradê principal (botões, linha do gráfico, destaques). */
+val DegradeDestaque: Brush get() = Brush.linearGradient(listOf(Coral, Destaque, DestaqueEscuro))
+/** Borda bem leve dos cartões de vidro, puxando para a cor do tema. */
+val DegradeBorda: Brush get() = Brush.linearGradient(listOf(Color(0x26FFFFFF), Color(0x0AFFFFFF), Destaque.copy(alpha = 0.16f)))
 /** Preenchimento dos cartões: um pouco mais claro em cima (efeito de vidro). */
-val DegradeCartao = Brush.verticalGradient(listOf(Color(0x1CFFFFFF), Color(0x0AFFFFFF)))
+val DegradeCartao: Brush
+  get() = Brush.verticalGradient(listOf(Color.White.copy(alpha = Aparencia.vidro + 0.05f), Color.White.copy(alpha = Aparencia.vidro * 0.55f)))
+/** Fundo dos pop-ups e da barra flutuante (sólido, na cor do tema). */
+val DegradePainel: Brush
+  get() = Brush.verticalGradient(listOf(SuperficieSolida.copy(alpha = 0.97f), Fundo.copy(alpha = 0.97f)))
 
 @Composable
 fun Tema(content: @Composable () -> Unit) {
   MaterialTheme(
       colorScheme = darkColorScheme(
           primary = Destaque,
-          onPrimary = Color.White,
-          secondaryContainer = Color(0x3DFF5C7A),
+          onPrimary = SobreDestaque,
+          secondaryContainer = Destaque.copy(alpha = 0.24f),
           onSecondaryContainer = Destaque,
           background = Fundo,
           surface = SuperficieSolida,
           surfaceContainer = SuperficieSolida,
           surfaceContainerLow = SuperficieSolida,
-          surfaceContainerHigh = Color(0xFF1F1724),
-          surfaceContainerHighest = Color(0xFF2A1F2E),
+          surfaceContainerHigh = SuperficieSolida,
+          surfaceContainerHighest = SuperficieSolida,
           onSurface = Texto,
           onSurfaceVariant = Cinza,
           outline = Color(0x33FFFFFF),
@@ -92,18 +101,39 @@ fun Tema(content: @Composable () -> Unit) {
   )
 }
 
-/** Fundo do app: ameixa escura com brilhos suaves (rosa no alto, violeta à esquerda, coral embaixo). */
+/** Fundo do app (sem foto): degradê do tema com brilhos suaves nas cores da paleta. */
 fun Modifier.fundoDoApp(): Modifier = this
-    .background(Brush.verticalGradient(0f to FundoTopo, 0.35f to Color(0xFF140A16), 1f to Fundo))
+    .background(Brush.verticalGradient(0f to FundoTopo, 0.35f to Aparencia.paleta.fundoMeio, 1f to Fundo))
     .drawBehind {
       fun brilho(cor: Color, x: Float, y: Float, raio: Float) = drawCircle(
           Brush.radialGradient(listOf(cor, Color.Transparent), center = Offset(x, y), radius = raio),
           radius = raio, center = Offset(x, y),
       )
-      brilho(Color(0x47FF4F7B), size.width * 0.95f, size.height * 0.02f, size.width * 0.95f)
-      brilho(Color(0x248B5CF6), size.width * -0.1f, size.height * 0.45f, size.width * 0.85f)
-      brilho(Color(0x1FFF8A6B), size.width * 1.05f, size.height * 0.95f, size.width * 0.8f)
+      val b = Aparencia.paleta.brilhos
+      brilho(b[0].copy(alpha = 0.28f), size.width * 0.95f, size.height * 0.02f, size.width * 0.95f)
+      brilho(b[1].copy(alpha = 0.14f), size.width * -0.1f, size.height * 0.45f, size.width * 0.85f)
+      brilho(b[2].copy(alpha = 0.12f), size.width * 1.05f, size.height * 0.95f, size.width * 0.8f)
     }
+
+/** Camada de fundo do app: a foto escolhida (escurecida e desfocada) ou o degradê do tema. */
+@Composable
+fun FundoApp() {
+  val img = Aparencia.fundoImagem
+  if (img == null) {
+    Box(Modifier.fillMaxSize().fundoDoApp())
+    return
+  }
+  Box(Modifier.fillMaxSize().background(Fundo)) {
+    androidx.compose.foundation.Image(
+        img, contentDescription = null, contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+        modifier = Modifier.fillMaxSize().blur(Aparencia.desfoque.dp),
+    )
+    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(
+        FundoTopo.copy(alpha = (Aparencia.escurecer * 0.6f)), Color.Black.copy(alpha = Aparencia.escurecer),
+        Fundo.copy(alpha = (Aparencia.escurecer + 0.15f).coerceAtMost(1f)),
+    ))))
+  }
+}
 
 /** Cartão de vidro: translúcido, cantos arredondados e borda em degradê. */
 @Composable
@@ -139,7 +169,7 @@ fun BotaoDegrade(
       horizontalArrangement = Arrangement.Center,
       verticalAlignment = Alignment.CenterVertically,
   ) {
-    CompositionLocalProvider(LocalContentColor provides if (enabled) Color.White else Cinza) {
+    CompositionLocalProvider(LocalContentColor provides if (enabled) SobreDestaque else Cinza) {
       ProvideTextStyle(TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 15.sp)) { content() }
     }
   }

@@ -3,6 +3,10 @@
 
     <!-- Sem internet: tudo fica só no celular. Vibrar é para o fim do temporizador. -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Temporizador: avisar no fim (notificação) e tocar na hora certa (alarme exato), mesmo com o app fechado. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
     <application
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -48,6 +52,8 @@
                 <data android:mimeType="application/pdf" />
             </intent-filter>
         </activity>
+
+        <receiver android:name=".AlarmeTemporizador" android:exported="false" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

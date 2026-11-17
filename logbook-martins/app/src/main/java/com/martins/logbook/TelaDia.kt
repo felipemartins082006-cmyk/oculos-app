@@ -296,7 +296,7 @@ private fun Escala(valor: Int?, rotulos: List<String>, legenda: List<String>, de
       ) {
         Box(
             Modifier.size(44.dp).clip(CircleShape)
-                .background(if (sel) Color(0x33FF5C6C) else Superficie)
+                .background(if (sel) Destaque.copy(alpha = 0.2f) else Superficie)
                 .border(1.dp, if (sel) Destaque else Borda, CircleShape),
             contentAlignment = Alignment.Center,
         ) { Text(emoji, fontSize = 22.sp) }
@@ -437,12 +437,12 @@ private fun NotaDe0a10(valor: Int?, onEscolher: (Int?) -> Unit) {
       val cheio = valor != null && n <= valor
       Box(
           Modifier.weight(1f).height(34.dp).clip(RoundedCornerShape(8.dp))
-              .background(if (cheio) Brush.verticalGradient(listOf(Color(0xFFFF8A7A), DestaqueEscuro)) else Brush.linearGradient(listOf(Superficie, Superficie)))
+              .background(if (cheio) Brush.verticalGradient(listOf(Coral, DestaqueEscuro)) else Brush.linearGradient(listOf(Superficie, Superficie)))
               .border(1.dp, if (sel) Color.White else Borda, RoundedCornerShape(8.dp))
               .clickable { onEscolher(if (sel) null else n) }
               .semantics { contentDescription = "Nota do dia $n" },
           contentAlignment = Alignment.Center,
-      ) { Text("$n", color = if (cheio) Color.White else Cinza, fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
+      ) { Text("$n", color = if (cheio) SobreDestaque else Cinza, fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
     }
   }
 }

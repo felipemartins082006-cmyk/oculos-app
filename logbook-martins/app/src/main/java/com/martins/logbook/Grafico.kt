@@ -134,7 +134,7 @@ fun Grafico(
         // Brilho embaixo da linha, depois a linha em degradê.
         drawPath(linha, Destaque.copy(alpha = 0.18f), style = Stroke(9.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
         drawPath(
-            linha, Brush.horizontalGradient(listOf(DestaqueEscuro, Destaque, Color(0xFFFF8A7A)), esq, size.width - dir),
+            linha, Brush.horizontalGradient(listOf(DestaqueEscuro, Destaque, Coral), esq, size.width - dir),
             style = Stroke(2.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round),
         )
       }

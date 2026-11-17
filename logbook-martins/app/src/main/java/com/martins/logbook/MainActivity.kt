@@ -39,11 +39,14 @@ class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
+    Aparencia.carregar(applicationContext)
     val logbook = Logbook(applicationContext)
     val figuras = Figuras(applicationContext)
     val diario = Diario(applicationContext)
     // Backup automático (uma vez por dia) em Downloads/Logbook, fora da tela principal.
     Thread { runCatching { Backup.automatico(applicationContext, logbook, diario, figuras) } }.start()
+    // Temporizador salvo (continua de onde estava, mesmo se o Android fechou o app).
+    SistemaTemporizador.configurar(applicationContext)
     if (savedInstanceState == null) {
       receber(intent)
       // Abrindo o app do zero: um temporizador que já tinha terminado não fica mais na tela.
@@ -85,6 +88,7 @@ private fun App(lb: Logbook, diario: Diario, recebido: Recebido?, onRecebidoLido
   var aba by rememberSaveable { mutableStateOf(if (recebido != null) Aba.DADOS else Aba.TREINO) }
   var dia by rememberSaveable { mutableStateOf(LocalDate.now()) }
   var exercicio by rememberSaveable { mutableStateOf<String?>(null) }
+  var vendoAparencia by rememberSaveable { mutableStateOf(false) }
   val series = lb.series.value
   val dias = diario.dias.value
   VigiaTemporizador()
@@ -99,21 +103,25 @@ private fun App(lb: Logbook, diario: Diario, recebido: Recebido?, onRecebidoLido
   val abrirDia: (LocalDate) -> Unit = { dia = it; aba = Aba.TREINO }
   val abrirExercicio: (String) -> Unit = { exercicio = it; aba = Aba.EVOLUCAO }
 
+  Box(Modifier.fillMaxSize()) {
+  // Fundo: a foto escolhida ou o degradê do tema.
+  FundoApp()
   Scaffold(
-      modifier = Modifier.fundoDoApp(),
       containerColor = Color.Transparent,
       bottomBar = {
         BarraFlutuante(Aba.entries.map { ItemNav(it.titulo, it.desenho) }, aba.ordinal) { i ->
           val a = Aba.entries[i]
+          vendoAparencia = false
           if (a == Aba.EVOLUCAO && aba == Aba.EVOLUCAO) exercicio = null
           aba = a
         }
       },
   ) { pad ->
     Box(Modifier.fillMaxSize().padding(pad).consumeWindowInsets(pad).imePadding()) {
-      when (aba) {
+      if (vendoAparencia) TelaAparencia(onVoltar = { vendoAparencia = false }) else when (aba) {
         Aba.TREINO -> TelaTreino(
             lb, diario, series, dia,
+            onAparencia = { vendoAparencia = true },
             onDia = { dia = it },
             onAbrirExercicio = abrirExercicio,
             onImportar = { aba = Aba.DADOS },
@@ -136,8 +144,12 @@ private fun App(lb: Logbook, diario: Diario, recebido: Recebido?, onRecebidoLido
             )
           }
         }
-        Aba.DADOS -> TelaDados(lb, diario, series, recebido, onRecebidoLido)
+        Aba.DADOS -> TelaDados(lb, diario, series, recebido, onRecebidoLido, onAparencia = { vendoAparencia = true })
       }
     }
+  }
+  // Temporizador: bolha flutuante e pop-up por cima de todas as abas.
+  BolhaTemporizador()
+  PopupTemporizador()
   }
 }

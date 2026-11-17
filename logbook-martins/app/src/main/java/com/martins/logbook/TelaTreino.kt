@@ -46,6 +46,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
@@ -78,6 +80,7 @@ fun TelaTreino(
     onDia: (LocalDate) -> Unit,
     onAbrirExercicio: (String) -> Unit,
     onImportar: () -> Unit,
+    onAparencia: () -> Unit = {},
 ) {
   val ctx = LocalContext.current
   var campo by remember { mutableStateOf(TextFieldValue("")) }
@@ -143,6 +146,7 @@ fun TelaTreino(
           dia = dia, todas = todas, diario = diario,
           onAnterior = { onDia(dia.minusDays(1)) }, onProximo = { onDia(dia.plusDays(1)) },
           onEscolherData = { escolhendoData = true },
+          onAparencia = onAparencia,
       )
       Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedButton(onClick = { escolhendoData = true }, modifier = Modifier.weight(1f)) { Text("📅 Outro dia") }
@@ -150,7 +154,7 @@ fun TelaTreino(
       }
       if (dia != hoje) {
         Surface(
-            color = Color(0x2EFF5C7A), shape = RoundedCornerShape(18.dp),
+            color = Destaque.copy(alpha = 0.18f), shape = RoundedCornerShape(18.dp),
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
         ) {
           Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -541,6 +545,7 @@ private fun TopoTreino(
     onAnterior: () -> Unit,
     onProximo: () -> Unit,
     onEscolherData: () -> Unit,
+    onAparencia: () -> Unit,
 ) {
   val hoje = LocalDate.now()
   val hora = java.time.LocalTime.now().hour
@@ -553,10 +558,10 @@ private fun TopoTreino(
   val seq = remember(todas) { calcularEstatisticas(todas, emptyMap(), null, hoje).sequenciaAtual }
   val noMes = todas.map { it.data }.distinct().count { it.year == dia.year && it.month == dia.month }
   val ce = coeficienteDoDia(dia, todas, diario.dias.value).valor
-  val branco = Color.White
+  val branco = SobreDestaque
   Column(
       Modifier.fillMaxWidth().clip(RoundedCornerShape(32.dp))
-          .background(Brush.linearGradient(listOf(Color(0xFFFF8A6B), Color(0xFFE8436E), Color(0xFF7A1D5C))))
+          .background(Brush.linearGradient(listOf(Coral, Destaque, DestaqueEscuro)))
           .padding(horizontal = 10.dp, vertical = 16.dp),
   ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -580,6 +585,11 @@ private fun TopoTreino(
       ChipTopo("🔥 $seq ${if (seq == 1) "semana seguida" else "sem. seguidas"}")
       ChipTopo("$noMes ${if (noMes == 1) "treino" else "treinos"} no mês")
       ce?.let { ChipTopo("CE ${it.toInt()}") }
+      Text(
+          "🎨", fontSize = 14.sp,
+          modifier = Modifier.clip(RoundedCornerShape(50)).background(Color(0x33FFFFFF)).clickable(onClick = onAparencia)
+              .semantics { contentDescription = "Aparência" }.padding(horizontal = 9.dp, vertical = 4.dp),
+      )
     }
   }
 }
@@ -587,7 +597,7 @@ private fun TopoTreino(
 @Composable
 private fun ChipTopo(texto: String) {
   Text(
-      texto, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
+      texto, color = SobreDestaque, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
       modifier = Modifier.clip(RoundedCornerShape(50)).background(Color(0x33FFFFFF)).padding(horizontal = 10.dp, vertical = 5.dp),
   )
 }

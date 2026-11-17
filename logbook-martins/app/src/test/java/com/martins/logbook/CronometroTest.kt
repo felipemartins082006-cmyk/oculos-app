@@ -42,6 +42,7 @@ class CronometroTest {
   private val hoje = LocalDate.now()
 
   @Before fun limpar() = Temporizador.zerar()
+  @org.junit.After fun fechar() { Temporizador.zerar(); Temporizador.fechar(); Temporizador.aoMudar = null }
 
   private fun foto(cena: ActivityScenario<MainActivity>, nome: String) {
     regra.waitForIdle()
@@ -95,25 +96,54 @@ class CronometroTest {
       regra.onNodeWithText("⏲ Timer").performClick()
       regra.onNodeWithText("TEMPORIZADOR DE DESCANSO").assertExists()
       foto(cena, "c2-timer-escolher")
-      regra.onNodeWithText("1:30").performClick()
+      regra.onAllNodesWithText("1:30").onLast().performClick() // o atalho (o visor também mostra 1:30)
       regra.waitForIdle()
-      regra.onNodeWithText("Pausar").assertExists()
+      regra.onNodeWithText("⏸ Pausar").assertExists()
       foto(cena, "c3-timer-rodando")
-      regra.onNodeWithText("Pausar").performClick()
+      regra.onNodeWithText("⏸ Pausar").performClick()
       regra.onNodeWithText("pausado").assertExists()
       regra.onNodeWithText("+15s").performClick()
       assertEquals(105_000L, Temporizador.duracaoMs)
       regra.onNodeWithText("Zerar").performClick()
       regra.waitForIdle()
 
-      // Personalizado: 0 min 3 s; quando zera, mostra "Tempo!".
-      regra.onNode(hasSetTextAction() and hasText("seg")).performTextInput("3")
-      regra.onNodeWithText("Iniciar").performClick()
-      regra.mainClock.advanceTimeBy(4_000)
+      // Escolher 0:05 com os botões − / + e iniciar; fechar o pop-up: a bolha continua mostrando o tempo.
+      regra.onNode(hasContentDescription("Minutos menos")).performClick()
+      repeat(8) { regra.onNode(hasContentDescription("Segundos menos")).performClick() }
+      assertEquals(5_000L, Temporizador.duracaoMs)
+      regra.onNodeWithText("▶  Iniciar 0:05").performClick()
+      regra.onNodeWithText("Fechar").performClick()
+      regra.waitForIdle()
+      regra.onNode(hasContentDescription("Abrir temporizador")).assertExists()
+      foto(cena, "c3b-bolha")
+      // Troca de aba: continua contando.
+      regra.onNodeWithText("Histórico").performClick()
+      regra.onNode(hasContentDescription("Abrir temporizador")).assertExists()
+      regra.mainClock.advanceTimeBy(6_000)
       regra.waitUntil(10_000) { Temporizador.terminou }
-      regra.onNodeWithText("Tempo!").assertExists()
+      // No fim, o pop-up abre sozinho com "Tempo!".
+      regra.onAllNodesWithText("Tempo!").onFirst().assertExists()
       foto(cena, "c4-timer-acabou")
     }
+  }
+
+  @Test fun temporizadorNaoZeraSeOAppFechar() {
+    SistemaTemporizador.configurar(ctx)
+    Temporizador.iniciar(120_000, agora = System.currentTimeMillis())
+    val fim = Temporizador.fimEm
+    // O Android fecha o app: a memória some…
+    Temporizador.fimEm = null; Temporizador.duracaoMs = 1; Temporizador.restantePausado = null
+    // …e ao abrir de novo, o temporizador volta de onde estava.
+    SistemaTemporizador.carregar(ctx)
+    assertEquals(fim, Temporizador.fimEm)
+    assertEquals(120_000L, Temporizador.duracaoMs)
+    // Se terminou enquanto o app estava fechado, aparece como "acabou".
+    SistemaTemporizador.carregar(ctx, agora = fim!! + 1)
+    assertTrue(Temporizador.terminou)
+    // O alarme do sistema foi agendado para o fim.
+    val am = ctx.getSystemService(android.app.AlarmManager::class.java)
+    assertNotNull(org.robolectric.Shadows.shadowOf(am).nextScheduledAlarm)
+    Temporizador.zerar()
   }
 
   @Test fun telaDeNumeros() {

@@ -106,7 +106,7 @@ fun BarraFlutuante(itens: List<ItemNav>, selecionado: Int, onEscolher: (Int) -> 
   Row(
       Modifier.navigationBarsPadding().padding(horizontal = 14.dp, vertical = 10.dp).fillMaxWidth()
           .clip(forma)
-          .background(Brush.verticalGradient(listOf(Color(0xF2241526), Color(0xF2140B16))))
+          .background(DegradePainel)
           .border(0.7.dp, DegradeBorda, forma)
           .padding(horizontal = 6.dp, vertical = 6.dp),
       horizontalArrangement = Arrangement.SpaceEvenly,
@@ -123,7 +123,7 @@ fun BarraFlutuante(itens: List<ItemNav>, selecionado: Int, onEscolher: (Int) -> 
             Modifier.width(48.dp).height(30.dp).clip(RoundedCornerShape(50))
                 .background(if (sel) DegradeDestaque else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))),
             contentAlignment = Alignment.Center,
-        ) { Icone(item.desenho, if (sel) Color.White else Cinza) }
+        ) { Icone(item.desenho, if (sel) SobreDestaque else Cinza) }
         Text(
             item.titulo, color = if (sel) Texto else Cinza, fontSize = 11.sp, maxLines = 1,
             fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal, modifier = Modifier.padding(top = 3.dp),

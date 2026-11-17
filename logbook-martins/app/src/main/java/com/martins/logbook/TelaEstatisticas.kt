@@ -46,10 +46,8 @@ import java.time.format.TextStyle
 import java.util.Locale
 
 /** Tons de vermelho a vinho, mais um cinza para "outros" (fatias da pizza). */
-private val CORES_PIZZA = listOf(
-    Color(0xFFFF5C6C), Color(0xFFC2183B), Color(0xFFFF9A8B), Color(0xFF7A0F28), Color(0xFFFFC9C0),
-    Color(0xFFE0284A), Color(0xFF8A7F83),
-)
+private val CORES_PIZZA: List<Color>
+  get() = listOf(Destaque, DestaqueEscuro, Coral) + Aparencia.paleta.brilhos + Color(0xFF8A7F83)
 private val PT = Locale.forLanguageTag("pt-BR")
 
 private enum class PeriodoNumeros(val titulo: String, val meses: Long?) {
@@ -265,7 +263,7 @@ fun Barras(dados: List<Pair<String, Int>>, modifier: Modifier = Modifier) {
         Box(
             Modifier.fillMaxWidth(0.72f).fillMaxHeight(0.78f * n / maximo + 0.01f)
                 .clip(RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp))
-                .background(if (n > 0) Brush.verticalGradient(listOf(Color(0xFFFF8A7A), Destaque, DestaqueEscuro)) else Brush.linearGradient(listOf(Superficie2, Superficie2))),
+                .background(if (n > 0) Brush.verticalGradient(listOf(Coral, Destaque, DestaqueEscuro)) else Brush.linearGradient(listOf(Superficie2, Superficie2))),
         )
         Text(rotulo, color = Cinza, fontSize = 10.sp, maxLines = 1, modifier = Modifier.padding(top = 4.dp))
       }

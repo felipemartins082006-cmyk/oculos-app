@@ -51,7 +51,7 @@ fun Segmentos(opcoes: List<String>, selecionado: Int, onEscolher: (Int) -> Unit)
               .padding(vertical = 9.dp),
           contentAlignment = Alignment.Center,
       ) {
-        Text(o, color = if (sel) Color.White else Cinza, fontWeight = FontWeight.SemiBold,
+        Text(o, color = if (sel) SobreDestaque else Cinza, fontWeight = FontWeight.SemiBold,
             fontSize = if (opcoes.size > 3) 13.sp else 14.sp, maxLines = 1)
       }
     }

@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -75,7 +77,14 @@ private class EscolherArquivo : ActivityResultContracts.OpenDocument() {
 
 
 @Composable
-fun TelaDados(lb: Logbook, diario: Diario, todas: List<Serie>, recebido: Recebido? = null, onRecebidoLido: () -> Unit = {}) {
+fun TelaDados(
+    lb: Logbook,
+    diario: Diario,
+    todas: List<Serie>,
+    recebido: Recebido? = null,
+    onRecebidoLido: () -> Unit = {},
+    onAparencia: () -> Unit = {},
+) {
   val ctx = LocalContext.current
   val escopo = rememberCoroutineScope()
   var texto by remember { mutableStateOf("") }
@@ -161,6 +170,20 @@ fun TelaDados(lb: Logbook, diario: Diario, todas: List<Serie>, recebido: Recebid
               "desde ${dataCurta(dias.min())}",
           color = Cinza, fontSize = 14.sp,
       )
+    }
+
+    item {
+      Cartao(onClick = onAparencia) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          Text("🎨", fontSize = 26.sp)
+          Spacer(Modifier.width(12.dp))
+          Column(Modifier.weight(1f)) {
+            Text("Aparência e tema", color = Texto, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Text("Cores, foto de fundo da galeria, opacidade", color = Cinza, fontSize = 13.sp)
+          }
+          Text("›", color = Cinza, fontSize = 24.sp)
+        }
+      }
     }
 
     if (desfazivel > 0) item {
