@@ -74,6 +74,10 @@ Diferenças em relação ao Android:
   **não contar** (só registrado, ex.: rendimento que fica investido). As entradas aparecem sozinhas no
   Extrato (marcadas "automática") e entram nos gráficos, no patrimônio e na planilha. Se a mesma renda
   também vier num extrato importado, o app avisa e pergunta qual manter, para não contar duas vezes.
+- **Nome e itens do lançamento**: ao registrar ou editar um gasto/entrada (também pelo Extrato: tocar, ou
+  segurar › Editar) há o campo "Nome (o que foi)" e o botão "Detalhar itens", para colocar cada item com nome e
+  valor; o total dos itens vira o valor do lançamento. A busca do Extrato encontra pelo nome do item, e a
+  planilha exportada traz os itens.
 - **Formas de pagamento**: ao registrar um gasto, o app pergunta "Como você pagou?" (Pix, Débito,
   Crédito, Dinheiro, Vale-refeição, Vale-alimentação, Boleto, TED, Desconto em folha) e, conforme a
   forma, "De qual banco?", "Qual cartão de crédito?" ou "Qual vale?", com "+ Novo" para cadastrar na
@@ -129,6 +133,13 @@ Ou seja: mexeu na versão web, é só compilar de novo.
     cd android && ./gradlew assembleRelease
 
 O APK sai em `android/app/build/outputs/apk/release/app-release.apk`.
+
+## Desempenho
+
+O Início só é recalculado quando algo muda; os gráficos são atualizados no lugar (sem recriar) e os que estão
+fora da tela são preparados nos momentos livres do celular. No modo com imagem de fundo, o efeito de vidro dos
+cartões não usa desfoque em tempo real (o mais pesado para rolar). Medido com o processador 6× mais lento:
+abrir o Início caiu de ~600 ms para ~55 ms, e os engasgos ao rolar caíram de ~30 para ~4 a cada 100 quadros.
 
 ## Rodar no navegador (para testar)
 

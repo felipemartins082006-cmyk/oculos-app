@@ -415,7 +415,13 @@
     <button type="button" class="icon-x" id="tx-cancel" aria-label="Fechar"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
   </div>
   <div class="amount" id="amount-display"><small>R$</small><span id="amount-text">0</span></div>
-  <input id="tx-desc" class="desc" placeholder="O que foi? ex.: almoço, Uber, mercado" aria-label="Descrição" maxlength="140">
+  <label class="name-field"><span>Nome (o que foi)</span>
+    <input id="tx-desc" placeholder="ex.: almoço, Uber, mercado do mês" aria-label="Nome do lançamento" maxlength="140"></label>
+  <div class="items-box" id="items-box">
+    <div class="items-list" id="items-list"></div>
+    <div class="items-total hidden" id="items-total"></div>
+    <button type="button" class="items-add" id="items-add">+ Detalhar itens (nome e valor de cada um)</button>
+  </div>
   <div class="pick-row" id="cat-picker" role="radiogroup" aria-label="Categoria"></div>
   <div class="pay-block">
     <span class="pay-lbl" id="method-lbl">Como você pagou?</span>
