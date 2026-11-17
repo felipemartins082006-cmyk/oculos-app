@@ -89,6 +89,11 @@ Diferenças em relação ao Android:
 - **Consolidação "Quanto você recebe por mês"**: salário, outras rendas, renda fixa e proventos, cada um
   separado, com o total. Uma chave liga ou desliga "Contar os rendimentos no dia a dia" e uma barrinha
   escolhe quanto contar (0–100%); o que for contado vira um saldo do dia separado ("Rendimentos").
+- **Aba Patrimônio** (Investimentos › Patrimônio): o patrimônio investido cresce **todo dia** só com os
+  proventos/dividendos: proventos do mês ÷ dias do mês (30, 31, 28…), somados dia a dia. No mês seguinte os
+  proventos acompanham o patrimônio (ex.: 500 → 505 → 510…). O aporte do salário não entra aqui. Opção de incluir
+  o rendimento da renda fixa. Gráfico dia a dia (até hoje + projeção) e tabela dos próximos 12 meses.
+- **Início só com o dinheiro**: o cartão principal é o "Saldo em conta"; os investimentos ficam na aba Patrimônio.
 - **Aporte que cresce**: o aporte do mês é a parte do salário + os rendimentos dos investimentos, que voltam a
   ser investidos. Como o valor investido aumenta, os rendimentos e o aporte sobem mês a mês (ex.: 3.000 + 796,
   depois 3.000 + 840, 3.000 + 883…). A aba Investimentos mostra o aporte deste mês, o gráfico dos próximos 12

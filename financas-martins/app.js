@@ -498,10 +498,8 @@
       if (d >= r.from) series.push({ d, v: Math.round(bal * 100) / 100 });
     }
     if (startBal === null) startBal = bal;
-    const invAdd = db.invest?.addToWealth && !ui.bank ? invTotals().amount : 0;
-    if (invAdd) series.forEach(p => { p.v = r2(p.v + invAdd); });
-    const wealth = bal + invAdd, wDelta = wealth - (startBal + invAdd);
-    $('#hero-label').textContent = invAdd ? 'Patrimônio total · com investimentos' : 'Patrimônio total';
+    const wealth = bal, wDelta = wealth - startBal;
+    $('#hero-label').textContent = vrOnly ? 'Saldo do vale' : 'Saldo em conta';
 
     // cartão principal
     const [int, cents] = fmt(Math.abs(wealth)).replace('R$', '').trim().split(',');
@@ -1877,6 +1875,10 @@
   }
 
   function renderInvest() {
+    $$('#inv-tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === invTab));
+    $('#tab-pat').classList.toggle('hidden', invTab !== 'pat');
+    $('#tab-inv').classList.toggle('hidden', invTab !== 'inv');
+    if (invTab === 'pat') { renderPatrimony(); return; }
     const iv = invCfg(), tt = invTotals();
     const fixaShare = tt.amount ? tt.fixaAmt / tt.amount : 0;
     const proj = aporteProjection(12), apM = proj.list[0]?.ap || 0;
@@ -1906,7 +1908,6 @@
     $('#rate-cdi').value = String(iv.rates.cdi).replace('.', ',');
     $('#rate-selic').value = String(iv.rates.selic).replace('.', ',');
     $('#rate-ipca').value = String(iv.rates.ipca).replace('.', ',');
-    $('#inv-wealth').classList.toggle('on', !!iv.addToWealth);
     // gráfico: renda fixa estimada + proventos lançados, últimos 12 meses
     const months = []; const now = new Date();
     for (let i = 11; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); months.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}`); }
@@ -1954,7 +1955,81 @@
     if (!isFinite(v) || v < 0) { toast('Taxa inválida'); renderInvest(); return; }
     invCfg().rates[k] = v; save(); renderInvest(); toast('Taxa atualizada');
   }));
-  $('#inv-wealth').addEventListener('click', () => { const iv = invCfg(); iv.addToWealth = !iv.addToWealth; save(); renderInvest(); toast(iv.addToWealth ? 'Investimentos somados ao patrimônio' : 'Patrimônio sem os investimentos'); });
+  // abas dentro de Investimentos
+  let invTab = 'pat';
+  $('#inv-tabs').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; invTab = b.dataset.tab; renderInvest(); window.scrollTo({ top: 0 }); });
+  $('#pat-fixa').addEventListener('click', () => { const iv = invCfg(); iv.patFixa = !iv.patFixa; save(); renderInvest(); toast(iv.patFixa ? 'Rendimento da renda fixa incluído' : 'Só proventos e dividendos'); });
+
+  /* ---------- Patrimônio: cresce todo dia com os proventos ----------
+     Proventos do mês ÷ dias do mês, somados ao patrimônio a cada dia.
+     No mês seguinte os proventos acompanham o patrimônio (500 → 510 → …). Aporte do salário não entra. */
+  function patrimonyCalc(monthsAhead = 12) {
+    const iv = invCfg(), hs = iv.holdings;
+    const base = r2(hs.reduce((a, h) => a + (+h.amount || 0), 0));
+    const P0 = r2(hs.filter(h => h.kind === 'variavel').reduce((a, h) => a + provAvg(h), 0) + (iv.patFixa ? hs.filter(h => h.kind === 'fixa').reduce((a, h) => a + holdingMonthly(h), 0) : 0));
+    const today = todayStr();
+    if (!iv.patStart || iv.patStart > today) { iv.patStart = today; save(); }
+    const start = iv.patStart;
+    const endD = new Date(+today.slice(0, 4), +today.slice(5, 7) - 1 + monthsAhead + 1, 0);
+    const end = ds(endD);
+    let pat = base, month = null, monthP = P0;
+    const days = [], months = [];
+    for (let d = start; d <= end; d = addDays(d, 1)) {
+      const k = d.slice(0, 7);
+      if (k !== month) {
+        if (month) months[months.length - 1].end = r2(pat);
+        // no começo de cada mês, os proventos acompanham o tamanho do patrimônio
+        monthP = month && base > 0 ? r2(P0 * pat / base) : P0;
+        month = k; months.push({ k, prov: monthP, perDay: r2(monthP / dimOf(d)), dim: dimOf(d), startPat: r2(pat) });
+      }
+      const daily = monthP / dimOf(d);
+      pat += daily;
+      days.push({ d, pat: r2(pat), daily: r2(daily), future: d > today });
+    }
+    if (months.length) months[months.length - 1].end = r2(pat);
+    const todayRow = days.find(x => x.d === today) || { pat: base, daily: 0 };
+    return { base, P0, start, days, months, today: todayRow, gained: r2(todayRow.pat - base) };
+  }
+  function renderPatrimony() {
+    const iv = invCfg();
+    $('#pat-fixa').classList.toggle('on', !!iv.patFixa);
+    if (!iv.holdings.length) {
+      $('#pat-hero').innerHTML = `<span class="hero-label">Patrimônio em investimentos</span><div class="inc-big">${fmt(0)}</div><p class="pat-empty">Cadastre suas aplicações na aba <b>Investimentos</b>. Na renda variável, lance os proventos de cada mês: eles fazem o patrimônio crescer todo dia aqui.</p>`;
+      $('#pat-table').innerHTML = ''; setChart('pat', $('#chart-pat'), { type: 'line', data: { labels: [], datasets: [] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } } });
+      return;
+    }
+    const pc = patrimonyCalc(12);
+    const cur = pc.months.find(m => m.k === todayStr().slice(0, 7)) || pc.months[0];
+    const next = pc.months[pc.months.indexOf(cur) + 1];
+    $('#pat-hero').innerHTML = `
+      <div class="hero-head"><span class="hero-label">Patrimônio em investimentos</span><span class="chip-delta">+${fmt(pc.today.daily)} hoje</span></div>
+      <div class="inc-big">${fmt(pc.today.pat)}</div>
+      <p class="pat-sub">Começou em ${fmt(pc.base)} no dia ${shortDate(pc.start)} · já cresceu ${fmt(pc.gained)} com ${iv.patFixa ? 'proventos e renda fixa' : 'proventos'}</p>
+      <div class="hero-row">
+        <div><small>Proventos do mês</small><b>${fmt(cur?.prov || 0)}</b></div>
+        <div><small>Por dia</small><b>${fmt(cur?.perDay || 0)}</b></div>
+        <div><small>Mês que vem</small><b>${fmt(next?.prov || 0)}</b></div>
+      </div>`;
+    // tabela: próximos meses
+    const rows = pc.months.filter(m => m.k >= todayStr().slice(0, 7)).slice(0, 13);
+    $('#pat-table').innerHTML = `<div class="pt-row pt-head"><span>Mês</span><span>Proventos</span><span>Por dia</span><span>Patrimônio no fim</span></div>` +
+      rows.map((m, i) => `<div class="pt-row ${i === 0 ? 'now' : ''}"><span>${i === 0 ? 'Este mês' : `${MES[+m.k.slice(5) - 1]}/${m.k.slice(2, 4)}`}</span><span>${fmt(m.prov)}</span><span>${fmt(m.perDay)} <small>÷${m.dim}</small></span><b>${fmt(m.end)}</b></div>`).join('');
+    // gráfico: até hoje (cheio) + projeção (tracejado)
+    const t0 = addDays(todayStr(), -60), t1 = addDays(todayStr(), 90);
+    const D = pc.days.filter(x => x.d >= t0 && x.d <= t1), A1 = themeAccent();
+    const past = D.map(x => x.future ? null : x.pat), fut = D.map((x, i) => x.future || (D[i + 1]?.future && !x.future) ? x.pat : null);
+    setChart('pat', $('#chart-pat'), {
+      type: 'line',
+      data: { labels: D.map(x => { const d = pd(x.d); return `${d.getDate()} ${MES[d.getMonth()]}`; }), datasets: [
+        { label: 'Até hoje', data: past, borderColor: A1, borderWidth: 2.6, pointRadius: 0, tension: 0.2, fill: true, backgroundColor: fillGrad(A1, 0.28), spanGaps: false },
+        { label: 'Projeção', data: fut, borderColor: 'rgba(255,255,255,0.45)', borderWidth: 2, borderDash: [5, 5], pointRadius: 0, tension: 0.2, spanGaps: false },
+      ] },
+      options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { display: false }, tooltip: { ...tooltip, filter: i => i.parsed.y != null, callbacks: { title: it => dayLabel(D[it[0].dataIndex].d), label: c => `${D[c.dataIndex].future ? 'Projeção' : 'Patrimônio'}: ${fmt(c.parsed.y)}`, footer: it => `+${fmt(D[it[0].dataIndex].daily)} nesse dia` } } },
+        scales: { ...axes(), x: { ...axes().x, ticks: { maxTicksLimit: 6, maxRotation: 0 } }, y: { ...axes().y, beginAtZero: false } } },
+      plugins: [crosshair],
+    });
+  }
 
   const invEd = { editing: null, kind: 'fixa', index: 'cdi', history: [] };
   function openInv(h, kind) {
@@ -2012,7 +2087,7 @@
   $('#inv-backdrop').addEventListener('click', closeInv);
   $('#inv-delete').addEventListener('click', async () => {
     if (!invEd.editing || !(await ask({ title: `Excluir “${invEd.editing.name}”?`, text: 'Os proventos lançados nela também saem.', ok: 'Excluir', danger: true }))) return;
-    invCfg().holdings = invCfg().holdings.filter(h => h.id !== invEd.editing.id); save(); closeInv(); render(); toast('Aplicação excluída');
+    invCfg().holdings = invCfg().holdings.filter(h => h.id !== invEd.editing.id); invCfg().patStart = todayStr(); save(); closeInv(); render(); toast('Aplicação excluída');
   });
   $('#inv-sheet').addEventListener('submit', e => {
     e.preventDefault();
@@ -2022,6 +2097,7 @@
     const data = { name, kind: h.kind, amount: r2(h.amount), index: h.kind === 'fixa' ? h.index : null, rate: h.kind === 'fixa' ? h.rate : null, avg: h.kind === 'variavel' ? h.avg : null, history: h.kind === 'variavel' ? h.history : [] };
     const iv = invCfg();
     if (invEd.editing) Object.assign(iv.holdings.find(x => x.id === invEd.editing.id), data); else iv.holdings.push({ id: uid(), ...data });
+    iv.patStart = todayStr();
     save(); closeInv(); render(); toast(`${name}: ${fmt(holdingMonthly(data))} por mês`);
   });
 

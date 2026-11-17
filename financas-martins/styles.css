@@ -786,3 +786,20 @@ html.has-wall .consol, html.has-wall .cs-count, html.has-wall .split-box { backd
 .ap-steps span { color: var(--lime); font-size: 11px; font-weight: 700; }
 .ap-sum { margin: 12px 0 0; font-size: 13.5px; color: var(--text-2); line-height: 1.45; }
 .ap-sum b { color: var(--text); }
+
+/* ---------- aba Patrimônio ---------- */
+.inv-tabs { margin-bottom: 14px; }
+.inv-tabs button.active { background: var(--bg-4); color: var(--text); box-shadow: 0 2px 8px rgba(0, 0, 0, .3); }
+.pat-hero { position: relative; overflow: hidden; border-radius: var(--r-lg); padding: 20px; color: #fff; background: var(--grad-hero); box-shadow: 0 24px 60px -24px rgba(0, 0, 0, .8); }
+.pat-hero .inc-big { margin-bottom: 4px; }
+.pat-sub { margin: 0 0 14px; font-size: 12.5px; color: rgba(255, 255, 255, .8); }
+.pat-empty { margin: 4px 0 0; font-size: 13.5px; color: rgba(255, 255, 255, .85); line-height: 1.45; }
+.pat-table { display: grid; font-size: 13px; }
+.pt-row { display: grid; grid-template-columns: 64px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.25fr); gap: 6px; padding: 9px 2px; border-top: 1px solid var(--line); align-items: center; font-variant-numeric: tabular-nums; }
+.pt-row > * { text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pt-row > :first-child { text-align: left; font-weight: 700; color: var(--text-2); }
+.pt-row small { color: var(--muted); font-size: 10.5px; }
+.pt-row.now { background: rgba(var(--accent-rgb), .07); border-radius: 10px; border-top-color: transparent; }
+.pt-row.now > :first-child { color: var(--lime); }
+.pt-head { border-top: 0; color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+.pt-head > * { white-space: normal; line-height: 1.2; }

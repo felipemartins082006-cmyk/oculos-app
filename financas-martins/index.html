@@ -63,7 +63,7 @@
       <!-- cartão principal -->
       <div class="hero" id="hero">
         <div class="hero-head">
-          <span class="hero-label" id="hero-label">Patrimônio total</span>
+          <span class="hero-label" id="hero-label">Saldo em conta</span>
           <span class="chip-delta" id="hero-delta"></span>
         </div>
         <div class="hero-value" id="hero-value"></div>
@@ -135,7 +135,7 @@
       </div>
 
       <div class="card">
-        <div class="card-head"><div><h3>Patrimônio no tempo</h3><p>Contas + investimentos − cartão em aberto</p></div></div>
+        <div class="card-head"><div><h3>Saldo em conta no tempo</h3><p>Dinheiro nas contas − cartão em aberto (investimentos ficam na aba Patrimônio)</p></div></div>
         <div class="chart-box tall"><canvas id="chart-wealth"></canvas></div>
       </div>
 
@@ -188,6 +188,34 @@
 
   <!-- ============ INVESTIMENTOS ============ -->
   <section id="view-invest" class="view">
+    <div class="seg inv-tabs" id="inv-tabs" role="tablist">
+      <button type="button" data-tab="pat" role="tab">Patrimônio</button>
+      <button type="button" data-tab="inv" role="tab">Investimentos</button>
+    </div>
+
+    <!-- Aba Patrimônio: cresce todo dia só com os proventos -->
+    <div id="tab-pat">
+      <div class="pat-hero" id="pat-hero"></div>
+      <div class="card">
+        <div class="card-head"><div><h3>Patrimônio dia a dia</h3><p>Proventos do mês ÷ dias do mês, somados todo dia</p></div></div>
+        <div class="legend-inline"><span><i style="background:var(--lime)"></i>Até hoje</span><span><i style="background:rgba(255,255,255,.35)"></i>Projeção</span></div>
+        <div class="chart-box tall"><canvas id="chart-pat"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div><h3>Proventos mês a mês</h3><p>Conforme o patrimônio cresce, os proventos crescem junto</p></div></div>
+        <div class="pat-table" id="pat-table"></div>
+      </div>
+      <div class="card">
+        <div class="toggle-row" style="margin-top:0">
+          <div class="grow"><b>Incluir o rendimento da renda fixa</b><small>Desligado: entram só os proventos e dividendos da renda variável</small></div>
+          <button class="switch" id="pat-fixa" role="switch" aria-label="Incluir rendimento da renda fixa"><i></i></button>
+        </div>
+        <p class="theme-note">Aqui não entra o aporte do salário, só o que os investimentos pagam. Quando você atualiza o valor de uma aplicação, o patrimônio recomeça a contar a partir daquele dia com o novo valor.</p>
+      </div>
+    </div>
+
+    <!-- Aba Investimentos -->
+    <div id="tab-inv" class="hidden">
     <div class="inv-hero" id="inv-hero"></div>
     <div class="card aporte-card" id="aporte-card"></div>
     <div id="consol-inv"></div>
@@ -210,11 +238,8 @@
         <label class="flbl">Selic (% a.a.)<input id="rate-selic" inputmode="decimal"></label>
         <label class="flbl">IPCA (% a.a.)<input id="rate-ipca" inputmode="decimal"></label>
       </div>
-      <div class="toggle-row">
-        <div class="grow"><b>Somar investimentos ao patrimônio</b><small>O total investido entra no “Patrimônio total” do Início</small></div>
-        <button class="switch" id="inv-wealth" role="switch" aria-label="Somar investimentos ao patrimônio"><i></i></button>
-      </div>
       <p class="theme-note">Valores brutos, antes do imposto de renda. Renda fixa: estimativa pela taxa. Renda variável: média do que você lançou.</p>
+    </div>
     </div>
   </section>
 
