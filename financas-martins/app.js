@@ -485,9 +485,11 @@
     const T = totals(txs), P = prevOk ? totals(all.filter(t => inRange(t, r.prev))) : null;
 
     // patrimônio dia a dia
-    const initial = db.banks.filter(b => !ui.bank || b.id === ui.bank).reduce((s, b) => s + (+b.initial || 0), 0);
+    // o vale (VR/VA) fica fora do patrimônio, que é só dinheiro
+    const vrOnly = ui.bank && ['vr', 'va'].includes(bankById(ui.bank)?.type);
+    const initial = db.banks.filter(b => (!ui.bank || b.id === ui.bank) && (vrOnly || !['vr', 'va'].includes(b.type))).reduce((s, b) => s + (+b.initial || 0), 0);
     const byDay = {};
-    for (const t of all) if (countsForWealth(t)) byDay[t.date] = (byDay[t.date] || 0) + t.amount;
+    for (const t of all) if (countsForWealth(t) && (vrOnly || !isVRtx(t))) byDay[t.date] = (byDay[t.date] || 0) + t.amount;
     let bal = initial, startBal = null;
     const series = [];
     for (let d = min; d <= r.to; d = addDays(d, 1)) {
@@ -505,9 +507,13 @@
     const [int, cents] = fmt(Math.abs(wealth)).replace('R$', '').trim().split(',');
     $('#hero-value').innerHTML = `<small>${wealth < 0 ? '−R$' : 'R$'}</small>${esc(int)}<span style="opacity:.6;font-size:24px">,${esc(cents || '00')}</span>`;
     $('#hero-delta').textContent = `${wDelta >= 0 ? '▲' : '▼'} ${fmtShort(Math.abs(wDelta))} no período`;
-    $('#hero-in').textContent = fmtShort(T.inc);
-    $('#hero-out').textContent = fmtShort(T.out);
-    $('#hero-net').textContent = fmtShort(T.net);
+    // dinheiro e vale (VR/VA) não se misturam: o cartão mostra só o dinheiro e o vale vem numa linha à parte
+    const TM = totals(txs.filter(t => !isVRtx(t))), TV = totals(txs.filter(isVRtx));
+    $('#hero-in').textContent = fmtShort(TM.inc);
+    $('#hero-out').textContent = fmtShort(TM.out);
+    $('#hero-net').textContent = fmtShort(TM.net);
+    $('#hero-vr').classList.toggle('hidden', !(TV.inc || TV.out));
+    $('#hero-vr').innerHTML = `<b>Vale (VR/VA), à parte:</b> entrou ${fmtShort(TV.inc)} · gastou ${fmtShort(TV.out)} · sobrou ${fmtShort(TV.net)}`;
     setChart('spark', $('#chart-spark'), {
       type: 'line',
       data: { labels: series.map(p => p.d), datasets: [{ data: series.map(p => p.v), borderColor: 'rgba(255,255,255,0.95)', borderWidth: 2.2, pointRadius: 0, tension: 0.35, fill: true, backgroundColor: fillGrad('#ffffff', 0.28) }] },
@@ -551,7 +557,7 @@
     $('#fixed-legend').innerHTML = fv.map(i => `<li><i style="background:${i.color}"></i>${i.name}<b>${pct((fixed + variable) ? i.value / (fixed + variable) : 0)}</b></li>`).join('');
 
     // quanto guardou (medidor)
-    const rate = T.inc > 0 ? T.net / T.inc : 0;
+    const rate = TM.inc > 0 ? TM.net / TM.inc : 0;
     const shown = Math.max(0, Math.min(1, rate));
     const A1 = themeAccent(), A2 = themeAccent2();
     const gaugeFill = c => { const { ctx, chartArea } = c.chart; if (!chartArea) return A2; const g = ctx.createLinearGradient(chartArea.left, 0, chartArea.right, 0); g.addColorStop(0, A2); g.addColorStop(1, A1); return g; };
@@ -560,9 +566,9 @@
       data: { datasets: [{ data: [shown, 1 - shown], backgroundColor: c => c.dataIndex === 0 ? gaugeFill(c) : '#232733', borderWidth: 0, borderRadius: 10 }] },
       options: { responsive: true, maintainAspectRatio: false, rotation: -90, circumference: 180, cutout: '78%', plugins: { legend: { display: false }, tooltip: { enabled: false } }, events: [] },
     });
-    $('#gauge-value').textContent = T.inc > 0 ? pct(rate) : '—';
+    $('#gauge-value').textContent = TM.inc > 0 ? pct(rate) : '—';
     $('#gauge-value').style.color = rate < 0 ? 'var(--out)' : '';
-    $('#gauge-note').textContent = T.inc > 0 ? (T.net >= 0 ? `${fmtShort(T.net)} sobraram` : `${fmtShort(-T.net)} além do que entrou`) : 'Sem entradas no período';
+    $('#gauge-note').textContent = TM.inc > 0 ? (TM.net >= 0 ? `${fmtShort(TM.net)} sobraram (sem o VR)` : `${fmtShort(-TM.net)} além do que entrou`) : 'Sem entradas no período';
 
     // de onde vem (pizza)
     const src = {};
@@ -1798,6 +1804,29 @@
     return { amount: r2(sum(hs, h => +h.amount || 0)), fixaAmt: r2(sum(fixa, h => +h.amount || 0)), varAmt: r2(sum(vari, h => +h.amount || 0)), fixaM: fm, varM: vm, monthly: r2(fm + vm) };
   }
   const aportes = () => incomes().filter(s => investPart(s) > 0 && (!s.end || s.end >= todayStr()));
+  // Aporte do mês = parte do salário + rendimentos reinvestidos. O que é aportado também passa a render,
+  // então os rendimentos (e o aporte) crescem mês a mês.
+  function aporteProjection(n = 12) {
+    const tt = invTotals(), iv = invCfg();
+    const sal = r2(aportes().reduce((a, s) => a + investPart(s), 0));
+    const keep = iv.count?.on ? 1 - (iv.count.pct ?? 100) / 100 : 1; // o que vai para o dia a dia não é reinvestido
+    const r = tt.amount > 0 ? tt.monthly / tt.amount : 0;
+    let bal = tt.amount; const now = new Date(); const out = [];
+    for (let i = 0; i < n; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      const ret = r2(bal * r), re = r2(ret * keep), ap = r2(sal + re);
+      bal = r2(bal + ap);
+      out.push({ k: `${d.getFullYear()}-${pad(d.getMonth() + 1)}`, sal, ret, re, ap, bal, monthlyAfter: r2(bal * r) });
+    }
+    return { sal, r, keep, list: out };
+  }
+  // VR/VA: entrada de benefício, compra paga com vale ou numa conta de vale
+  function isVRtx(t) {
+    if (t.cat === 'beneficios') return true;
+    if (t.method === 'vr' || t.method === 'va') return true;
+    const b = bankById(t.bank);
+    return b?.type === 'vr' || b?.type === 'va';
+  }
 
   // Consolidação: tudo o que entra por mês, separado, e o que conta no dia a dia
   function renderConsol(el) {
@@ -1806,24 +1835,27 @@
     const srcs = incomes().filter(s => (!s.end || s.end >= todayStr()) && s.monthly > 0);
     if (!srcs.length && !iv.holdings.length) { el.innerHTML = ''; return; }
     const row = (ic, color, name, sub, value, tag) => `<div class="cs-row"><span class="tile sm" style="background:${alpha(color, .14)};color:${color}">${svg(ic)}</span><div class="grow"><b>${esc(name)}</b>${sub ? `<small>${sub}</small>` : ''}</div><div class="cs-v"><b>${fmt(value)}</b>${tag ? `<span class="cs-tag ${tag[0]}">${tag[1]}</span>` : ''}</div></div>`;
-    let total = 0, counted = 0;
-    const lines = srcs.map(s => {
-      total += s.monthly;
+    let total = 0, counted = 0, vTotal = 0, vCounted = 0;
+    const srcRow = s => {
       const live = s.mode !== 'off';
-      if (live) counted += freeMonthly(s);
       const part = investPart(s);
       const ty = INC_TYPES[s.type];
       return row(ty.ic, CAT[ty.cat].color, s.name, part ? `${fmt(part)} vai para investir · ${fmt(freeMonthly(s))} livre` : '', s.monthly, live ? ['on', s.mode === 'daily' ? 'no dia a dia' : `dia ${s.payday}`] : ['off', 'não conta']);
-    });
+    };
+    const money = srcs.filter(s => s.type !== 'vr'), vale = srcs.filter(s => s.type === 'vr');
+    const lines = money.map(s => { total += s.monthly; if (s.mode !== 'off') counted += freeMonthly(s); return srcRow(s); });
+    const vLines = vale.map(s => { vTotal += s.monthly; if (s.mode !== 'off') vCounted += freeMonthly(s); return srcRow(s); });
     const cnt = iv.count?.on ? r2(tt.monthly * (iv.count.pct ?? 100) / 100) : 0;
     counted += cnt; total += tt.monthly;
-    if (iv.holdings.some(h => h.kind === 'fixa')) lines.push(row('trend', '#38d9a9', 'Renda fixa', `rendimento estimado de ${fmt(tt.fixaAmt)}`, tt.fixaM, null));
-    if (iv.holdings.some(h => h.kind === 'variavel')) lines.push(row('wallet', '#d4fc79', 'Renda variável', `média de proventos de ${fmt(tt.varAmt)}`, tt.varM, null));
+    const reinv = r2(tt.monthly - cnt);
+    const invTag = reinv > 0 ? ['re', cnt > 0 ? 'parte reinvestida' : 'reinvestido'] : ['on', 'no dia a dia'];
+    if (iv.holdings.some(h => h.kind === 'fixa')) lines.push(row('trend', '#38d9a9', 'Renda fixa', `rendimento estimado de ${fmt(tt.fixaAmt)}`, tt.fixaM, invTag));
+    if (iv.holdings.some(h => h.kind === 'variavel')) lines.push(row('wallet', '#d4fc79', 'Renda variável', `média de proventos de ${fmt(tt.varAmt)}`, tt.varM, invTag));
     const pctv = iv.count?.pct ?? 100;
     el.innerHTML = `<div class="card consol">
-      <div class="card-head"><div><h3>Quanto você recebe por mês</h3><p>Tudo junto, mas cada coisa no seu lugar</p></div></div>
-      ${lines.join('')}
-      <div class="cs-total"><span>Total por mês</span><b>${fmt(total)}</b></div>
+      <div class="card-head"><div><h3>Quanto você recebe por mês</h3><p>Dinheiro e vale ficam separados, cada coisa no seu lugar</p></div></div>
+      ${lines.length ? `<div class="cs-group">Dinheiro</div>${lines.join('')}<div class="cs-total"><span>Total em dinheiro</span><b>${fmt(total)}</b></div>` : ''}
+      ${vLines.length ? `<div class="cs-group">Vale-refeição / alimentação</div>${vLines.join('')}<div class="cs-total vale"><span>Total em vale <small>(não soma com o dinheiro)</small></span><b>${fmt(vTotal)}</b></div>` : ''}
       ${iv.holdings.length ? `<div class="cs-count">
         <div class="toggle-row" style="margin-top:0">
           <div class="grow"><b>Contar os rendimentos no dia a dia</b><small>${iv.count?.on ? `${pctv}% dos rendimentos (${fmt(cnt)}/mês) viram o saldo “Rendimentos”, ${fmt(cnt / dimOf(todayStr()))} por dia` : 'Desligado: os rendimentos só aparecem aqui'}</small></div>
@@ -1831,7 +1863,8 @@
         </div>
         <label class="cs-slider ${iv.count?.on ? '' : 'hidden'}"><span>Quanto contar <b data-cs="pctv">${pctv}%</b></span><input type="range" min="0" max="100" step="5" value="${pctv}" data-cs="pct"></label>
       </div>` : ''}
-      <div class="cs-day"><span>Entra no dia a dia</span><b>${fmt(counted)}/mês · ${fmt(counted / dimOf(todayStr()))}/dia</b></div>
+      <div class="cs-day"><span>Dinheiro no dia a dia</span><b>${fmt(counted)}/mês · ${fmt(counted / dimOf(todayStr()))}/dia</b></div>
+      ${vLines.length ? `<div class="cs-day vale"><span>Vale no dia a dia</span><b>${fmt(vCounted)}/mês · ${fmt(vCounted / dimOf(todayStr()))}/dia</b></div>` : ''}
     </div>`;
     el.querySelector('[data-cs="toggle"]')?.addEventListener('click', () => {
       iv.count.on = !iv.count.on;
@@ -1846,7 +1879,7 @@
   function renderInvest() {
     const iv = invCfg(), tt = invTotals();
     const fixaShare = tt.amount ? tt.fixaAmt / tt.amount : 0;
-    const ap = aportes(), apM = ap.reduce((a, s) => a + investPart(s), 0);
+    const proj = aporteProjection(12), apM = proj.list[0]?.ap || 0;
     $('#inv-hero').innerHTML = `
       <span class="hero-label">Total investido</span>
       <div class="inc-big">${fmt(tt.amount)}</div>
@@ -1858,6 +1891,7 @@
         <div><small>Aporte por mês</small><b>${apM ? fmtShort(apM) : '—'}</b></div>
       </div>`;
     renderConsol($('#consol-inv'));
+    renderAporte(proj, tt);
     const item = h => {
       const m = holdingMonthly(h);
       const sub = h.kind === 'fixa' ? `${String(h.rate ?? '').replace('.', ',')}${INDEXES[h.index]?.unit || ''} · ${pct1(holdingAnnual(h))} ao ano` : `${(h.history || []).length ? `média de ${(h.history || []).length} lançamento(s)` : 'média informada'}`;
@@ -1886,6 +1920,32 @@
       ] },
       options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
         plugins: { legend: { display: false }, tooltip: { ...tooltip, callbacks: { title: it => { const k = months[it[0].dataIndex]; return `${MES_LONGO[+k.slice(5) - 1]} de ${k.slice(0, 4)}`; }, label: c => `${c.dataset.label}: ${fmt(c.parsed.y)}`, footer: it => `Total: ${fmt(it.reduce((a, c) => a + c.parsed.y, 0))}` } } },
+        scales: { x: { ...axes().x, stacked: true }, y: { ...axes().y, stacked: true } } },
+    });
+  }
+  function renderAporte(proj, tt) {
+    const card = $('#aporte-card');
+    if (!proj.sal && !tt.amount) { card.classList.add('hidden'); return; }
+    card.classList.remove('hidden');
+    const L = proj.list, first = L[0], last = L[L.length - 1];
+    const kept = Math.round(proj.keep * 100);
+    card.innerHTML = `
+      <div class="card-head"><div><h3>Seu aporte cresce todo mês</h3><p>Do salário + os rendimentos, que voltam para os investimentos</p></div></div>
+      <div class="ap-now"><small>Aporte deste mês</small><b>${fmt(first.ap)}</b>
+        <span>${fmt(first.sal)} do salário + ${fmt(first.re)} dos rendimentos${kept < 100 ? ` (${kept}% reinvestido)` : ''}</span></div>
+      <div class="legend-inline"><span><i style="background:#9db8ff"></i>Do salário</span><span><i style="background:var(--lime)"></i>Dos rendimentos</span></div>
+      <div class="chart-box short"><canvas id="chart-aporte"></canvas></div>
+      <div class="ap-steps">${L.slice(0, 4).map((x, i) => `<div><small>${i === 0 ? 'Este mês' : MES_LONGO[+x.k.slice(5) - 1].replace(/^./, c => c.toUpperCase())}</small><b>${fmtShort(x.ap)}</b><span>+${fmtShort(x.re)} rend.</span></div>`).join('')}</div>
+      <p class="ap-sum">Em 12 meses você terá cerca de <b>${fmt(last.bal)}</b> investidos, rendendo <b>${fmt(last.monthlyAfter)}</b> por mês, e o aporte terá subido para <b>${fmt(last.ap)}</b>.</p>
+      <p class="theme-note">Projeção com a taxa média atual dos seus investimentos (${(proj.r * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}% ao mês), sem imposto. ${proj.sal ? '' : 'Cadastre em Sua renda quanto do salário vai para investir.'}</p>`;
+    setChart('aporte', $('#chart-aporte'), {
+      type: 'bar',
+      data: { labels: L.map(x => monthLabel(x.k)), datasets: [
+        { label: 'Do salário', data: L.map(x => x.sal), backgroundColor: '#9db8ff', borderRadius: 4, borderSkipped: false, maxBarThickness: 22 },
+        { label: 'Dos rendimentos', data: L.map(x => x.re), backgroundColor: themeAccent(), borderRadius: 4, borderSkipped: false, maxBarThickness: 22 },
+      ] },
+      options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { display: false }, tooltip: { ...tooltip, callbacks: { title: it => { const k = L[it[0].dataIndex].k; return `${MES_LONGO[+k.slice(5) - 1]} de ${k.slice(0, 4)}`; }, label: c => `${c.dataset.label}: ${fmt(c.parsed.y)}`, footer: it => `Aporte: ${fmt(L[it[0].dataIndex].ap)} · Investido: ${fmt(L[it[0].dataIndex].bal)}` } } },
         scales: { x: { ...axes().x, stacked: true }, y: { ...axes().y, stacked: true } } },
     });
   }

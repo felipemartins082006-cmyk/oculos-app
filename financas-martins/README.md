@@ -89,6 +89,12 @@ Diferenças em relação ao Android:
 - **Consolidação "Quanto você recebe por mês"**: salário, outras rendas, renda fixa e proventos, cada um
   separado, com o total. Uma chave liga ou desliga "Contar os rendimentos no dia a dia" e uma barrinha
   escolhe quanto contar (0–100%); o que for contado vira um saldo do dia separado ("Rendimentos").
+- **Aporte que cresce**: o aporte do mês é a parte do salário + os rendimentos dos investimentos, que voltam a
+  ser investidos. Como o valor investido aumenta, os rendimentos e o aporte sobem mês a mês (ex.: 3.000 + 796,
+  depois 3.000 + 840, 3.000 + 883…). A aba Investimentos mostra o aporte deste mês, o gráfico dos próximos 12
+  meses e quanto você terá investido. Se parte dos rendimentos for para o dia a dia, só o resto é reinvestido.
+- **VR/VA nunca se mistura com o dinheiro**: o Início mostra entrou/saiu/sobrou e o patrimônio só do dinheiro,
+  com o vale numa linha à parte; na consolidação, dinheiro e vale têm totais separados.
 - **Saldo do dia (cada renda separada)**: salário, VR, rendimentos e outras fontes viram saldos
   separados no Início. Todo dia entra a parte de cada um e saem os gastos daquele saldo; o que sobra
   (ou falta) passa para o dia seguinte. Ex.: ganha 70, gasta 50 → sobra 20, e amanhã fica 70 + 20 = 90.

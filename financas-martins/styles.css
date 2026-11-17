@@ -763,3 +763,26 @@ html.has-wall .day-head { text-shadow: 0 1px 8px rgba(0, 0, 0, .6); }
 .prov-row button { border: 0; background: none; color: var(--muted); font-size: 20px; }
 #inv-sheet .seg button.active, #split-mode button.active { background: var(--bg-4); color: var(--text); box-shadow: 0 2px 8px rgba(0, 0, 0, .3); }
 html.has-wall .consol, html.has-wall .cs-count, html.has-wall .split-box { backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+
+/* ---------- VR à parte e aporte crescente ---------- */
+.hero-vr { margin: 10px 2px 0; font-size: 12.5px; color: rgba(255, 255, 255, .82); }
+.hero-vr b { color: #fff; }
+.cs-group { margin: 12px 0 2px; font-size: 11.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.cs-group:first-of-type { margin-top: 0; }
+.cs-total small { font-weight: 600; color: var(--muted); font-size: 11.5px; }
+.cs-total.vale b { color: #5ee49a; }
+.cs-day.vale b { color: #5ee49a; }
+.cs-day + .cs-day { margin-top: 6px; }
+.cs-tag.re { background: rgba(157, 184, 255, .16); color: #9db8ff; }
+.aporte-card { margin-top: 12px; }
+.ap-now { display: flex; flex-direction: column; gap: 2px; background: var(--bg-3); border-radius: 16px; padding: 12px 14px; margin-bottom: 12px; }
+.ap-now small { color: var(--muted); font-size: 12px; font-weight: 700; }
+.ap-now b { font-size: 28px; font-weight: 800; letter-spacing: -0.03em; color: var(--lime); }
+.ap-now span { color: var(--text-2); font-size: 13px; }
+.ap-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 10px; }
+.ap-steps div { background: var(--bg-3); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.ap-steps small { color: var(--muted); font-size: 11px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ap-steps b { font-size: 14px; }
+.ap-steps span { color: var(--lime); font-size: 11px; font-weight: 700; }
+.ap-sum { margin: 12px 0 0; font-size: 13.5px; color: var(--text-2); line-height: 1.45; }
+.ap-sum b { color: var(--text); }
