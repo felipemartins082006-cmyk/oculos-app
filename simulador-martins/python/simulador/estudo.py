@@ -17,8 +17,8 @@ from .dados import Base
 from .monte_carlo import Config, Plano, preparar, simular
 
 NOMES_OBJ = {
-    "max_sharpe": "máximo Sharpe", "min_variancia": "mínima variância", "risco_alvo": "máximo retorno com risco-alvo",
-    "paridade_risco": "paridade de risco", "min_cvar": "mínimo CVaR 95%", "max_sortino": "máximo Sortino",
+    "max_sharpe": "máximo Sharpe (retorno acima do CDI por unidade de risco)", "min_variancia": "mínima variância", "risco_alvo": "máximo retorno com risco-alvo",
+    "paridade_risco": "paridade de risco", "min_cvar": "mínimo CVaR 95% (perda média nos 5% piores meses)", "max_sortino": "máximo Sortino",
     "max_utilidade": "máxima utilidade média-variância", "por_meta": "melhor para o objetivo do plano (Monte Carlo)",
 }
 
@@ -40,7 +40,7 @@ def otimizar_bloco(base, op: dict, plano: Plano, cfg: Config):
     obj = op.get("objetivo", "max_sharpe")
     fr = None
     if obj == "por_meta":
-        sub = Config(**{**cfg.__dict__, "desde": 1990})
+        sub = Config(**{**cfg.__dict__, "desde": 1995, "janela_anos": None, "curto": "cortar", "estender": False})
         fr, w = O.por_meta(base, list(R.columns), X, plano, sub, op.get("criterio", "prob_meta"), op.get("pontos", 15), rf,
                            op.get("cenarios", 20_000), queda_max=op.get("queda_max"), p10_min=op.get("p10_min"),
                            minimo=kw["minimo"], maximo=kw["maximo"], media=kw["media"], cov=kw["cov"])
@@ -87,7 +87,7 @@ def executar(caminho: str | Path, base: Base | None = None, verbose: bool = True
     carteiras.update(cfgj.get("comparar_com", {}))
 
     log(f"• Monte Carlo: {cfg.cenarios:,} cenários × {len(carteiras)} carteiras ({cfg.modelo})".replace(",", "."))
-    J = preparar(base, carteiras, cfg.desde, cfg.cambio, cfg.estender)
+    J = preparar(base, carteiras, cfg.inicio(base.retornos.index[-1]), cfg.cambio, modo=cfg.modo())
     res = simular(base, carteiras, plano, cfg, janela=J, progresso=verbose)
 
     rob = {}
@@ -122,7 +122,19 @@ def executar(caminho: str | Path, base: Base | None = None, verbose: bool = True
              f"{f', saques de {REL._brl(plano.saque, False)}/mês a partir do ano {plano.saque_ano:g}' if plano.saque_ano is not None else ''}. "
              f"Valores {'em reais de hoje' if plano.real else 'nominais'}.</p>"
              f"<p>{cfg.cenarios:_} cenários com {res.modelo_desc}, janela histórica de {J.meses[0]} a {J.meses[-1]} ({len(J.meses)} meses)"
-             f"{f', limitada por {J.limitante}' if J.limitante else ''}. Processado em {res.segundos:.0f} s.</p>").replace("_", ".")
+             f"{f', contagem a partir de {J.limitante}' if J.limitante else ''}. Processado em {_tempo(res.segundos)}.</p>").replace("_", ".")
+    if J.pedido is not None and J.meses[0] > J.pedido:
+        texto += f'<p class="aviso">Você pediu histórico desde {J.pedido.year}, mas os ativos só permitem contar a partir de {J.meses[0]}.</p>'
+    if J.jovens:
+        texto += ('<p class="aviso">Ativos mais novos que a janela: entram quando passam a existir; antes disso, o peso deles é dividido entre os demais ativos da carteira: '
+                  + ", ".join(f"{c} desde {m}" for c, m in J.jovens) + ".</p>")
+        R0 = J.R.iloc[0]
+        for i, n in enumerate(J.nomes):
+            disp = [c for k, c in enumerate(J.codigos) if J.W[i, k] > 0 and not np.isnan(R0[c])]
+            soma = sum(J.W[i, J.codigos.index(c)] for c in disp)
+            if soma < 0.999:
+                texto += (f'<p class="aviso">Em {J.meses[0]}, <b>{n}</b> começa com só {soma:.0%} dos pesos-alvo existindo ({", ".join(disp)}); '
+                          'esses ativos valem 100% da carteira até os outros começarem. Se tiveram um período excepcional, isso pesa no resultado.</p>')
     if len(J.meses) < 216:
         texto += f'<p class="aviso">Janela de {len(J.meses) / 12:.0f} anos: os resultados refletem muito esse período. Veja a tabela de robustez e o backtest.</p>'
     if J.estimados:
@@ -144,9 +156,14 @@ def executar(caminho: str | Path, base: Base | None = None, verbose: bool = True
 
     cols = [c for c in ["P5", "P10", "P25", "P50", "P75", "P90", "P95", "ret. a.a. P50", "queda máx. P50", "prob. perda", "prob. > CDI", "prob. meta", "prob. dinheiro acabar", "IC95 P50"] if c in s.columns]
     fmt = {c: (REL._pct if (c.startswith("prob") or c.startswith("ret") or c.startswith("queda")) else REL._brl) for c in cols}
+    NOMES_COL = {"P5": "P5 (5% abaixo)", "P10": "P10 (pessimista)", "P25": "P25", "P50": "P50 (mediana)", "P75": "P75", "P90": "P90 (otimista)",
+                 "P95": "P95 (5% acima)", "ret. a.a. P50": "Retorno ao ano (mediana)", "queda máx. P50": "Queda máxima (mediana)",
+                 "prob. perda": "Prob. de perda", "prob. > CDI": "Prob. de superar o CDI", "prob. meta": "Prob. de atingir a meta",
+                 "prob. dinheiro acabar": "Prob. de o dinheiro acabar", "IC95 P50": "Intervalo de confiança 95% da mediana"}
     secoes.append(("Monte Carlo", f"{cfg.cenarios:,} cenários".replace(",", "."),
-                   REL.tabela(s[cols].astype(object).where(s[cols].notna(), np.nan), fmt) + REL.leque(res) + REL.histograma(res) +
-                   "<p>IC95 P50: intervalo de confiança da mediana pelo número de cenários (erro de Monte Carlo).</p>"))
+                   REL.tabela(s[cols].astype(object).where(s[cols].notna(), np.nan).rename(columns=NOMES_COL), {NOMES_COL[c]: f for c, f in fmt.items()}) + REL.leque(res) + REL.histograma(res) +
+                   "<p>P5, P10... P95 são percentis: ordenando todos os cenários, P10 é o valor que só 10% ficam abaixo e P50 é a mediana. "
+                   "O intervalo de confiança mostra o erro da própria simulação (quanto a mediana poderia mudar rodando de novo).</p>"))
 
     if rob:
         tab = pd.DataFrame({m: v["P50"] for m, v in rob.items()}).T
@@ -160,7 +177,7 @@ def executar(caminho: str | Path, base: Base | None = None, verbose: bool = True
     met_t = met.T
     fm = {}
     for c in met_t.columns:
-        fm[c] = (lambda v: f"{v:.2f}") if c in ("sharpe", "sortino", "beta vs Ibovespa", "correlação c/ Ibovespa") else (lambda v: f"{v:.0f}") if c in ("maior tempo abaixo do topo (meses)", "meses") else REL._pct
+        fm[c] = (lambda v: f"{v:.2f}") if c in ("sharpe (retorno por risco)", "sortino (só quedas)", "beta vs Ibovespa (sensibilidade à bolsa)", "correlação c/ Ibovespa") else (lambda v: f"{v:.0f}") if c in ("maior tempo abaixo do topo (meses)", "meses") else REL._pct
     secoes.append(("Backtest", f"{J.meses[0]} a {J.meses[-1]}, rebalanceamento mensal, em R$",
                    REL.linhas_backtest(P) + REL.tabela(met_t, fm) + "<p>Retorno por ano:</p>" + REL.tabela(anos, {"*": REL._pct})))
 
@@ -198,6 +215,7 @@ def executar(caminho: str | Path, base: Base | None = None, verbose: bool = True
                            f"erro mediano do retorno anual {REL._pct(val['erro_ret'].abs().median())}, erro médio {REL._pct(val['erro_ret'].mean())}, "
                            f"correlação mediana {val['correlacao'].median():.2f}.</p>"))
 
+    secoes.append(("Glossário", "siglas e termos", REL.GLOSSARIO))
     secoes.append(("Metodologia", "", """<ul>
 <li>Dados: TradingView (preços com dividendos reinvestidos), complemento Yahoo + Fundamentus validado, CVM (fundos e informe de FIIs) e Banco Central (CDI, IPCA). Ativos em dólar convertidos pelo câmbio do mês.</li>
 <li>Monte Carlo com números aleatórios comuns: todas as carteiras e o CDI usam os mesmos sorteios.</li>
@@ -212,6 +230,10 @@ def executar(caminho: str | Path, base: Base | None = None, verbose: bool = True
     saida.write_text(REL.montar(cfgj.get("titulo", "Estudo de carteiras"), secoes, cfgj.get("subtitulo", "")), encoding="utf-8")
     log(f"• Relatório: {saida} ({time.time() - t0:.0f} s)")
     return saida
+
+
+def _tempo(seg: float) -> str:
+    return f"{seg:.0f} s" if seg < 120 else f"{seg / 60:.1f} min" if seg < 7200 else f"{seg / 3600:.1f} h"
 
 
 def _pct_or_brl(v, meta):

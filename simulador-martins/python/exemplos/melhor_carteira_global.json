@@ -1,5 +1,5 @@
 {
-  "titulo": "Qual a melhor carteira para chegar a R$ 1 milhão?",
+  "titulo": "Qual a melhor carteira para chegar a R$ 3 milhões em 40 anos?",
   "subtitulo": "Universo amplo (ETFs da B3 e dos EUA, ouro, Treasuries, IFIX e CDI), escolhida pela chance de atingir a meta com risco aceitável",
   "carteiras": {
     "Equilibrado BR": {
@@ -91,8 +91,8 @@
   "plano": {
     "inicial": 10000,
     "aporte": 1000,
-    "anos": 20,
-    "meta": 1000000,
+    "anos": 40,
+    "meta": 3000000,
     "corrige": true,
     "real": true
   },
@@ -100,8 +100,9 @@
     "modelo": "blocos",
     "bloco": 12,
     "cenarios": 200000,
-    "desde": 2000,
-    "ajuste": -1.0
+    "desde": 1995,
+    "ajuste": -1.0,
+    "curto": "redistribuir"
   },
   "robustez": [
     "bootstrap",

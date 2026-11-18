@@ -36,9 +36,9 @@ const TIPOS = {
   commodity: ['Commodity', 'indice'], moeda: ['Moeda', 'indice'], rf: ['Renda fixa', 'rf'],
 };
 const GRUPOS = [ // chips do seletor
-  ['', 'Todos'], ['acao', 'Ações BR'], ['fii', 'FIIs'], ['fii:papel', 'FIIs de papel'], ['fii:tijolo', 'FIIs de tijolo'], ['fii:hibrido', 'FIIs híbridos'],
-  ['fiagro|fiinfra', 'Fiagro e Infra'], ['etf', 'ETFs B3'],
-  ['fundo_rf', 'Fundos RF'], ['fundo_mm', 'Multimercados'], ['fundo_acoes|fundo_cambial', 'Fundos de ações e cambiais'],
+  ['', 'Todos'], ['acao', 'Ações BR'], ['fii', 'FIIs (fundos imobiliários)'], ['fii:papel', 'FIIs de papel (recebíveis)'], ['fii:tijolo', 'FIIs de tijolo (imóveis)'], ['fii:hibrido', 'FIIs híbridos'],
+  ['fiagro|fiinfra', 'Fiagro (agro) e FI-Infra (infraestrutura)'], ['etf', 'ETFs B3 (fundos de índice)'],
+  ['fundo_rf', 'Fundos de renda fixa'], ['fundo_mm', 'Multimercados'], ['fundo_acoes|fundo_cambial', 'Fundos de ações e cambiais'],
   ['acao_us', 'Ações EUA'], ['etf_us', 'ETFs EUA'], ['cripto', 'Cripto'], ['indice|commodity|moeda', 'Índices, ouro e moedas'], ['rf', 'Renda fixa (modelo)'],
 ];
 const CLASSES = [ // barra de alocação
@@ -248,10 +248,10 @@ const PADRAO = {
     { nome: 'S&P 500', itens: [{ t: 'SPY', p: 100 }] },
   ],
   ativa: 0, ver: 0, an: 0,
-  inicial: 10000, aporte: 1000, anos: 20, meta: 1000000, reaj: 0, corrige: true,
+  inicial: 10000, aporte: 1000, anos: 40, meta: 2000000, reaj: 0, corrige: true, versao: 3,
   saqueOn: false, saqueAno: 25, saque: 5000, saqueCorrige: true,
-  metodo: 'boot', bloco: 12, desde: 2010, rebal: 1, cambio: 1, ajuste: 0, taxa: 0, ir: 0, n: 5000, real: true,
-  btModo: 'unit', btEscala: 'log', btDesde: 2010, btBench: ['CDI', 'IPCA', 'IBOV', 'SPY'], estender: false,
+  metodo: 'boot', bloco: 12, janela: 40, curto: 'redistribuir', rebal: 1, cambio: 1, ajuste: 0, taxa: 0, ir: 0, n: 100000, real: true,
+  btModo: 'unit', btEscala: 'log', btJanela: 40, btBench: ['CDI', 'IPCA', 'IBOV', 'SPY'],
   ot: { fonte: 'filtro', classes: ['fii:papel'], minAnos: 5, maxUniv: 60, janela: 6, cart: 0, obj: 'sharpe', volAlvo: 8, pesoMax: 20, maxAtivos: 8, reamostra: true, estender: false },
 };
 let S = carregar();
@@ -261,6 +261,13 @@ function carregar() {
     if (x && Array.isArray(x.carteiras) && x.carteiras.length) {
       x.carteiras.forEach((c) => { c.itens = (c.itens || []).filter((i) => info(i.t)); });
       const p = JSON.parse(JSON.stringify(PADRAO));
+      if (x.versao !== 3) { // ajustes da versão 4: horizonte de 40 anos, janela em anos, ativos novos entram quando começam
+        if (!x.anos || x.anos === 20) x.anos = 40;
+        if (x.meta === 1000000) x.meta = 2000000;
+        x.curto = x.estender ? 'estimar' : 'redistribuir';
+        x.janela = 40; x.btJanela = 40; x.n = Math.max(x.n || 0, 100000); x.versao = 3;
+        delete x.desde; delete x.btDesde; delete x.estender;
+      }
       return { ...p, ...x, ot: { ...p.ot, ...(x.ot || {}) } };
     }
   } catch (e) { /* sem armazenamento */ }
@@ -274,42 +281,54 @@ function salvar() {
 const cartAtiva = () => S.carteiras[S.ativa];
 
 // ---------------------------------------------------------------- preparação dos dados
-// Junta os ativos de várias carteiras numa janela em comum e devolve retornos mensais em reais.
-function preparar(carts, desde, cambio = 1, estender = false) {
+// Junta os ativos das carteiras numa janela e devolve retornos mensais em reais.
+// modo para ativos mais novos que a janela:
+//   'redistribuir' (padrão): a janela começa no ativo mais antigo de cada carteira; enquanto um ativo
+//                  ainda não existia, o peso dele é dividido proporcionalmente entre os que existiam;
+//   'cortar': a janela começa no ativo mais novo (só meses em que todos existem);
+//   'estimar': os anos que faltam são estimados por modelo de fatores.
+function preparar(carts, desde, cambio = 1, modo = 'cortar') {
+  if (modo === true) modo = 'estimar'; if (modo === false) modo = 'cortar';
+  const estender = modo === 'estimar', redis = modo === 'redistribuir';
   const sr = (t) => (estender && !['CDI', 'IPCA', 'USDBRL'].includes(t) ? serieEstendida(t) : serie(t));
   const cs = carts.map((c) => ({ ...c, itens: c.itens.filter((i) => i.p > 0 && info(i.t)) })).filter((c) => c.itens.length);
   if (!cs.length) return { erro: 'Adicione ativos com peso maior que zero.' };
   const uni = [...new Set(cs.flatMap((c) => c.itens.map((i) => i.t)))];
   const reais = uni.filter((t) => !t.startsWith('RF:'));
-  let ini = idx(`${desde}-01`), fim = Infinity, limitante = null, novo = -Infinity;
-  for (const t of [...reais, 'CDI', 'IPCA', 'USDBRL']) {
-    const s = sr(t);
-    if (s.i0 > novo) { novo = s.i0; limitante = t; }
-    ini = Math.max(ini, s.i0); fim = Math.min(fim, s.i1);
+  const sc = serie('CDI'), si = serie('IPCA'), sf = serie('USDBRL');
+  const desdeI = idx(`${desde}-01`);
+  let ini = Math.max(desdeI, sc.i0, si.i0, sf.i0), fim = Math.min(sc.i1, si.i1, sf.i1), limitante = null, novo = -Infinity;
+  for (const t of reais) fim = Math.min(fim, sr(t).i1);
+  if (redis) {
+    // cada carteira precisa ter pelo menos um ativo existindo: começa no ativo mais antigo dela
+    for (const c of cs) {
+      const rf = c.itens.some((i) => i.t.startsWith('RF:'));
+      const c0 = rf ? -Infinity : Math.min(...c.itens.map((i) => sr(i.t).i0));
+      if (c0 > novo) { novo = c0; limitante = c.itens.reduce((a, i) => (sr(i.t).i0 < sr(a).i0 ? i.t : a), c.itens.find((i) => !i.t.startsWith('RF:'))?.t || c.itens[0].t); }
+    }
+    ini = Math.max(ini, novo);
+  } else {
+    for (const t of reais) { const s = sr(t); if (s.i0 > novo) { novo = s.i0; limitante = t; } ini = Math.max(ini, s.i0); }
   }
-  const ss = reais.map(sr), sc = serie('CDI'), si = serie('IPCA'), sf = serie('USDBRL');
+  const ss = reais.map(sr);
   const meses = [];
   for (let mi = ini; mi <= fim; mi++) {
     if (isNaN(val(sc, mi)) || isNaN(val(si, mi)) || isNaN(val(sf, mi))) continue;
-    if (ss.some((s) => isNaN(val(s, mi)))) continue;
+    if (!redis && ss.some((s) => isNaN(val(s, mi)))) continue;
+    if (redis && cs.some((c) => c.itens.every((i) => !i.t.startsWith('RF:') && isNaN(val(sr(i.t), mi))))) continue;
     meses.push(mi);
   }
   const L = meses.length;
-  if (L < 24) return { erro: `Os ativos escolhidos só têm ${L} meses de histórico em comum (o mais recente é ${rotuloAtivo(limitante)}). Escolha ativos mais antigos ou uma janela maior.`, meses };
+  if (L < 24) return { erro: `Os ativos escolhidos só têm ${L} meses de histórico na janela (limitado por ${rotuloAtivo(limitante)}). Escolha ativos mais antigos ou uma janela maior.`, meses };
   const cdi = new Float64Array(L), ipca = new Float64Array(L), fx = new Float64Array(L);
   meses.forEach((mi, j) => { cdi[j] = val(sc, mi); ipca[j] = val(si, mi); fx[j] = val(sf, mi); });
   const R = uni.map((t) => {
     const a = info(t), r = new Float64Array(L);
     if (a.tipo === 'rf') {
-      for (let j = 0; j < L; j++) {
-        r[j] = a.rf === 'CDI' ? cdi[j] * a.taxa / 100 : a.rf === 'IPCA' ? (1 + ipca[j]) * Math.pow(1 + a.taxa / 100, 1 / 12) - 1 : Math.pow(1 + a.taxa / 100, 1 / 12) - 1;
-      }
+      for (let j = 0; j < L; j++) r[j] = a.rf === 'CDI' ? cdi[j] * a.taxa / 100 : a.rf === 'IPCA' ? (1 + ipca[j]) * Math.pow(1 + a.taxa / 100, 1 / 12) - 1 : Math.pow(1 + a.taxa / 100, 1 / 12) - 1;
     } else {
       const s = sr(t);
-      for (let j = 0; j < L; j++) {
-        const x = val(s, meses[j]);
-        r[j] = a.moeda === 'USD' && cambio ? (1 + x) * (1 + fx[j]) - 1 : x;
-      }
+      for (let j = 0; j < L; j++) { const x = val(s, meses[j]); r[j] = isNaN(x) ? NaN : a.moeda === 'USD' && cambio ? (1 + x) * (1 + fx[j]) - 1 : x; }
     }
     return r;
   });
@@ -319,35 +338,109 @@ function preparar(carts, desde, cambio = 1, estender = false) {
     for (const i of c.itens) w[uni.indexOf(i.t)] += i.p / soma;
     return w;
   });
+  // retorno mensal de cada carteira (pesos redistribuídos entre os ativos que existiam no mês)
   const P = W.map((w) => {
     const p = new Float64Array(L);
-    for (let k = 0; k < uni.length; k++) if (w[k]) for (let j = 0; j < L; j++) p[j] += w[k] * R[k][j];
+    for (let j = 0; j < L; j++) {
+      let s = 0, sw = 0;
+      for (let k = 0; k < uni.length; k++) if (w[k] && !isNaN(R[k][j])) { s += w[k] * R[k][j]; sw += w[k]; }
+      p[j] = sw > 0 ? s / sw : 0;
+    }
     return p;
   });
+  // por carteira: retorno de cada ativo com os meses faltantes preenchidos pelo retorno da própria carteira
+  // (equivale a redistribuir o peso; usado no rebalanceamento por ativo)
+  const Rc = redis ? W.map((w, c) => R.map((r, k) => (w[k] ? Float64Array.from(r, (x, j) => (isNaN(x) ? P[c][j] : x)) : null))) : null;
+  const jovens = [];
+  if (redis) for (const t of reais) { const s0 = sr(t).i0; if (s0 > meses[0]) { let falta = 0; for (const mi of meses) if (mi < s0) falta++; jovens.push({ t, desde: s0, falta }); } }
+  jovens.sort((a, b) => b.desde - a.desde);
   const estimados = {};
   if (estender) for (const t of reais) { const e = sr(t); if (e.estimados) { let n = 0; for (const mi of meses) if (mi < serie(t).i0) n++; if (n) estimados[t] = n; } }
   return {
-    cs, uni, R, risco, W, P, meses, cdi, ipca, fx, L, ini: meses[0], fim: meses[L - 1],
-    limitante: novo > idx(`${desde}-01`) ? limitante : null, estimados,
+    cs, uni, R, Rc, risco, W, P, meses, cdi, ipca, fx, L, ini: meses[0], fim: meses[L - 1], modo,
+    limitante: meses[0] > desdeI ? limitante : null, estimados, jovens,
   };
+}
+// como cada carteira começa a janela: que parte dos pesos-alvo já existia (o resto foi redistribuído)
+function inicioCarteiras(H) {
+  if (!H.jovens || !H.jovens.length) return '';
+  const partes = H.cs.map((c, ci) => {
+    const disp = H.uni.map((t, k) => (H.W[ci][k] > 0 && !isNaN(H.R[k][0]) ? k : -1)).filter((k) => k >= 0);
+    const soma = disp.reduce((a, k) => a + H.W[ci][k], 0);
+    if (soma > 0.999) return '';
+    return `${esc(c.nome)} começa com ${pct(soma, 0)} dos pesos-alvo existindo (${disp.map((k) => esc(rotuloAtivo(H.uni[k]))).join(', ')}), que valem 100% da carteira até os outros ativos começarem`;
+  }).filter(Boolean);
+  return partes.length ? `Em ${rotulo(H.ini)}: ${partes.join('; ')}. Se esses primeiros ativos tiveram um período muito bom ou muito ruim, isso pesa no resultado; compare com "Cortar a janela".` : '';
+}
+// lista de ativos de uma carteira mais novos que o início pedido (para avisos)
+function ativosNovos(itens, desde) {
+  const d0 = idx(`${desde}-01`);
+  return itens.filter((i) => !i.t.startsWith('RF:') && info(i.t) && serie(i.t).i0 > d0).map((i) => ({ t: i.t, desde: serie(i.t).i0 })).sort((a, b) => b.desde - a.desde);
+}
+
+// ---------------------------------------------------------------- acumuladores de distribuição
+// Até EXATO cenários: guarda todos os valores (percentis exatos). Acima: histograma de NB faixas
+// montado a partir dos primeiros PILOTO cenários; erro dos percentis bem menor que 0,1%.
+const EXATO = 200000, PILOTO = 20000, NB = 20000;
+function acumNovo(tipo, n) { return { tipo, n: 0, exato: n <= EXATO, v: new Float64Array(Math.min(n, EXATO)), h: null, lo: 0, hi: 0, zeros: 0, soma: 0, ord: null }; }
+function acumTf(a, x) { return a.tipo === 'log' ? Math.log(x) : a.tipo === 'log1p' ? Math.log1p(x) : x; }
+function acumInv(a, y) { return a.tipo === 'log' ? Math.exp(y) : a.tipo === 'log1p' ? Math.expm1(y) : y; }
+function acumBin(a, x) {
+  if (a.tipo === 'log' && x <= 0) { a.zeros++; return; }
+  const y = acumTf(a, x); let i = Math.floor((y - a.lo) / (a.hi - a.lo) * NB);
+  if (i < 0) i = 0; else if (i >= NB) i = NB - 1;
+  a.h[i]++;
+}
+function acumAdd(a, x) {
+  a.soma += x;
+  if (a.n < a.v.length) a.v[a.n] = x;
+  a.n++;
+  if (a.exato) return;
+  if (a.h) { acumBin(a, x); return; }
+  if (a.n === PILOTO) {
+    let mn = Infinity, mx = -Infinity;
+    for (let i = 0; i < PILOTO; i++) { const v = a.v[i]; if (a.tipo === 'log' && v <= 0) continue; const y = acumTf(a, v); if (y < mn) mn = y; if (y > mx) mx = y; }
+    if (!isFinite(mn)) { mn = 0; mx = 1; }
+    const span = Math.max(mx - mn, 1e-6);
+    a.lo = mn - span * 0.6; a.hi = mx + span * 0.6;
+    if (a.tipo === 'lin') { a.lo = Math.min(a.lo, -1); a.hi = Math.max(a.hi, 0); }
+    a.h = new Float64Array(NB);
+    for (let i = 0; i < PILOTO; i++) acumBin(a, a.v[i]);
+  }
+}
+function acumFecha(a) { if (a.exato) a.ord = a.v.slice(0, a.n).sort(); return a; }
+function acumQ(a, q) {
+  if (a.exato) return quantil(a.ord, q);
+  let alvo = q * (a.n - 1);
+  if (alvo < a.zeros) return 0;
+  alvo -= a.zeros;
+  for (let i = 0; i < NB; i++) {
+    if (alvo < a.h[i]) { const y = a.lo + (i + (alvo + 0.5) / a.h[i]) / NB * (a.hi - a.lo); return acumInv(a, y); }
+    alvo -= a.h[i];
+  }
+  return acumInv(a, a.hi);
 }
 
 // ---------------------------------------------------------------- Monte Carlo
 function simular(H, o, progresso) {
   const nC = H.cs.length, K = H.uni.length, L = H.L, N = o.anos * 12, nS = o.n;
-  const nCam = Math.min(nS, 10000); // caminhos guardados para o gráfico (os percentis finais usam todos)
+  const nCam = Math.min(nS, 10000); // caminhos guardados para o gráfico do leque
   const ajM = Math.pow(1 + o.ajuste / 100, 1 / 12);
   const taxaM = Math.pow(1 + o.taxa / 100, -1 / 12);
   const parametrico = o.metodo === 'normal' || o.metodo === 't';
   const porAtivo = !parametrico && o.rebal !== 1;
-  // retornos ajustados (ajuste só nos ativos de risco)
-  const R2 = H.R.map((r, k) => (H.risco[k] && o.ajuste ? r.map((x) => (1 + x) * ajM - 1) : r));
-  const P2 = H.W.map((w) => {
+  const ks = H.W.map((w) => { const l = []; for (let k = 0; k < K; k++) if (w[k] > 0) l.push(k); return l; });
+  // retornos ajustados por carteira (ajuste só nos ativos de risco; meses faltantes já redistribuídos)
+  const R2 = H.cs.map((_, c) => H.R.map((r, k) => {
+    if (!H.W[c][k]) return null;
+    const base = H.Rc ? H.Rc[c][k] : r;
+    return H.risco[k] && o.ajuste ? base.map((x) => (1 + x) * ajM - 1) : base;
+  }));
+  const P2 = H.cs.map((_, c) => {
     const p = new Float64Array(L);
-    for (let k = 0; k < K; k++) if (w[k]) for (let j = 0; j < L; j++) p[j] += w[k] * R2[k][j];
+    for (const k of ks[c]) for (let j = 0; j < L; j++) p[j] += H.W[c][k] * R2[c][k][j];
     return p;
   });
-  // modelo paramétrico: média e covariância de [carteiras..., CDI, IPCA]
   let mu, Lc, Dm = 1;
   if (parametrico) {
     const cols = [...P2, H.cdi, H.ipca]; Dm = cols.length;
@@ -359,23 +452,23 @@ function simular(H, o, progresso) {
     }
     Lc = cholesky(cov, Dm);
   }
-  const ks = H.W.map((w) => { const l = []; for (let k = 0; k < K; k++) if (w[k] > 0) l.push(k); return l; });
-
   const passo = Math.max(1, Math.ceil(N / 120));
   const pontos = []; for (let m = 0; m <= N; m += passo) pontos.push(m);
   if (pontos[pontos.length - 1] !== N) pontos.push(N);
   const Pn = pontos.length;
   const cam = H.cs.map(() => new Float32Array(nCam * Pn));
   const somaCdi = new Float64Array(Pn), somaInv = new Float64Array(Pn);
-  const fin = H.cs.map(() => new Float64Array(nS)), finCdi = new Float64Array(nS), invF = new Float64Array(nS);
-  const anu = H.cs.map(() => new Float64Array(nS)), qd = H.cs.map(() => new Float64Array(nS));
-  const ruina = H.cs.map(() => new Int32Array(nS)), ruinaCdi = new Int32Array(nS);
+  const aFin = H.cs.map(() => acumNovo('log', nS)), aAnu = H.cs.map(() => acumNovo('log1p', nS)), aQd = H.cs.map(() => acumNovo('lin', nS));
+  const aCdi = acumNovo('log', nS);
+  const perde = new Float64Array(nC), bate = new Float64Array(nC), meta = new Float64Array(nC), ruin = new Float64Array(nC);
+  let ruinCdi = 0;
   const mSaque = o.saqueOn ? Math.max(1, Math.round(o.saqueAno * 12)) : Infinity;
   const x = new Float64Array(Dm), z = new Float64Array(Dm);
   const hold = H.cs.map(() => new Float64Array(K));
   const V = new Float64Array(nC), nivel = new Float64Array(nC), topo = new Float64Array(nC), queda = new Float64Array(nC), cresce = new Float64Array(nC);
   const morto = new Int32Array(nC);
   const ir = o.ir / 100, lTaxa = Math.log(taxaM);
+  const passoProg = Math.max(500, Math.min(20000, Math.floor(nS / 400)));
 
   for (let s = 0; s < nS; s++) {
     let vc = o.inicial, inf = 1, invNom = o.inicial, invReal = o.inicial, saqNom = 0, pos = 0, resta = 0, kk = 1, mortoCdi = 0;
@@ -384,11 +477,10 @@ function simular(H, o, progresso) {
       if (porAtivo) for (const k of ks[c]) hold[c][k] = o.inicial * H.W[c][k];
     }
     const base = s * Pn, guarda = s < nCam;
-    if (progresso && s % 2000 === 0) progresso(s / nS);
+    if (progresso && s % passoProg === 0) progresso(s / nS);
     if (guarda) for (let c = 0; c < nC; c++) cam[c][base] = V[c];
     somaCdi[0] += vc; somaInv[0] += o.inicial;
     for (let m = 1; m <= N; m++) {
-      // ----- sorteio do mês (o mesmo para todas as carteiras)
       let rc, ri;
       if (parametrico) {
         let e = 1;
@@ -406,18 +498,16 @@ function simular(H, o, progresso) {
       const ap = retirando ? 0 : o.aporte * (o.corrige ? inf : 1) * Math.pow(1 + o.reaj / 100, Math.floor((m - 1) / 12));
       const sq = retirando ? o.saque * (o.saqueCorrige ? inf : 1) : 0;
       invNom += ap; invReal += ap / inf; saqNom += sq;
-      // ----- CDI com o mesmo plano
       if (!mortoCdi) {
         vc = vc * (1 + rc) + ap;
         if (sq) { if (vc >= sq) vc -= sq; else { vc = 0; mortoCdi = m; } }
       }
-      // ----- carteiras
       for (let c = 0; c < nC; c++) {
         if (morto[c]) continue;
         let r;
         if (porAtivo) {
-          const h = hold[c]; let t0 = 0, t1 = 0;
-          for (const k of ks[c]) { t0 += h[k]; h[k] *= 1 + R2[k][pos]; t1 += h[k]; }
+          const h = hold[c], Rcc = R2[c]; let t0 = 0, t1 = 0;
+          for (const k of ks[c]) { t0 += h[k]; h[k] *= 1 + Rcc[k][pos]; t1 += h[k]; }
           r = t0 > 0 ? t1 / t0 - 1 : 0;
           let tot = t1 * taxaM;
           for (const k of ks[c]) h[k] *= taxaM;
@@ -446,17 +536,16 @@ function simular(H, o, progresso) {
         kk++;
       }
     }
-    // ----- IR no resgate final (sobre o ganho nominal)
     const baseIR = Math.max(0, invNom - saqNom);
     const liq = (v) => (ir > 0 ? v - ir * Math.max(0, v - baseIR) : v);
-    const d = o.real ? inf : 1;
+    const d = o.real ? inf : 1, inv = o.real ? invReal : invNom, fc = liq(vc) / d;
     for (let c = 0; c < nC; c++) {
-      fin[c][s] = liq(V[c]) / d; anu[c][s] = Math.exp(cresce[c] / N * 12) - 1; qd[c][s] = Math.expm1(queda[c]); ruina[c][s] = morto[c];
+      const f = liq(V[c]) / d;
+      acumAdd(aFin[c], f); acumAdd(aAnu[c], Math.exp(cresce[c] / N * 12) - 1); acumAdd(aQd[c], Math.expm1(queda[c]));
+      if (f < inv) perde[c]++; if (f > fc) bate[c]++; if (o.meta > 0 && f >= o.meta) meta[c]++; if (morto[c]) ruin[c]++;
     }
-    finCdi[s] = liq(vc) / d; invF[s] = o.real ? invReal : invNom; ruinaCdi[s] = mortoCdi;
+    acumAdd(aCdi, fc); if (mortoCdi) ruinCdi++;
   }
-
-  // ----- resumo por carteira
   const QS = [0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95];
   const col = new Float32Array(nCam);
   const res = H.cs.map((cart, c) => {
@@ -466,50 +555,44 @@ function simular(H, o, progresso) {
       col.sort();
       QS.forEach((q, i) => { faixas[i][k] = quantil(col, q); });
     }
-    let perde = 0, bate = 0, meta = 0, ruin = 0;
-    for (let s = 0; s < nS; s++) {
-      if (fin[c][s] < invF[s]) perde++;
-      if (fin[c][s] > finCdi[s]) bate++;
-      if (o.meta > 0 && fin[c][s] >= o.meta) meta++;
-      if (ruina[c][s]) ruin++;
-    }
-    const ord = Float64Array.from(fin[c]).sort(), oa = Float64Array.from(anu[c]).sort(), oq = Float64Array.from(qd[c]).sort();
     return {
-      nome: cart.nome, faixas, cam: cam[c], fin: fin[c], ord, oa, oq,
-      pPerde: perde / nS, pCdi: bate / nS, pMeta: o.meta > 0 ? meta / nS : null, pRuina: ruin / nS,
+      nome: cart.nome, faixas, cam: cam[c], aFin: acumFecha(aFin[c]), aAnu: acumFecha(aAnu[c]), aQd: acumFecha(aQd[c]),
+      pPerde: perde[c] / nS, pCdi: bate[c] / nS, pMeta: o.meta > 0 ? meta[c] / nS : null, pRuina: ruin[c] / nS,
     };
   });
-  const ordCdi = Float64Array.from(finCdi).sort();
-  let rc = 0; for (let s = 0; s < nS; s++) if (ruinaCdi[s]) rc++;
   return {
     res, N, Pn, pontos, nS, nCam, QS, cdi: Array.from(somaCdi, (v) => v / nS), inv: Array.from(somaInv, (v) => v / nS),
-    ordCdi, pRuinaCdi: rc / nS, porAtivo, parametrico,
+    aCdi: acumFecha(aCdi), pRuinaCdi: ruinCdi / nS, porAtivo, parametrico, exato: nS <= EXATO,
   };
 }
-// funções de leitura (não viajam do worker): percentis do patrimônio, do retorno anual e da queda
+// funções de leitura (não viajam do worker)
 function hidratar(R) {
-  for (const r of R.res) { r.q = (p) => quantil(r.ord, p); r.qa = (p) => quantil(r.oa, p); r.qd = (p) => quantil(r.oq, p); }
-  R.cdiQ = (p) => quantil(R.ordCdi, p);
+  for (const r of R.res) {
+    r.q = (p) => acumQ(r.aFin, p); r.qa = (p) => acumQ(r.aAnu, p); r.qd = (p) => acumQ(r.aQd, p);
+    r.fin = r.aFin.v.subarray(0, Math.min(r.aFin.n, r.aFin.v.length)); // amostra (até 200 mil) para o histograma
+  }
+  R.cdiQ = (p) => acumQ(R.aCdi, p);
   return R;
 }
 
-// Monte Carlo num Web Worker (a tela continua respondendo); se não houver Worker, roda direto.
-let worker = null;
+// Monte Carlo num Web Worker (a tela continua respondendo e dá para parar); sem Worker, roda direto.
+let worker = null, cancelar = null;
 function criarWorker() {
   try {
-    const src = [quantil, media, cholesky, gauss, simular].map((f) => f.toString()).join('\n') +
-      '\nlet gaussExtra = null;\nonmessage = (e) => { const { H, o } = e.data; const R = simular(H, o, (p) => postMessage({ p })); postMessage({ R }); };';
+    const src = [quantil, media, cholesky, gauss, acumNovo, acumTf, acumInv, acumBin, acumAdd, acumFecha, simular].map((f) => f.toString()).join('\n') +
+      `\nconst EXATO = ${EXATO}, PILOTO = ${PILOTO}, NB = ${NB};\nlet gaussExtra = null;\nonmessage = (e) => { const { H, o } = e.data; const R = simular(H, o, (p) => postMessage({ p })); postMessage({ R }); };`;
     const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
     return new Worker(url);
   } catch (e) { return null; }
 }
 function simularAssincrono(H, o, aoProgresso) {
-  const Hw = { cs: H.cs.map((c) => ({ nome: c.nome })), uni: H.uni, R: H.R, risco: H.risco, W: H.W, cdi: H.cdi, ipca: H.ipca, L: H.L };
+  const Hw = { cs: H.cs.map((c) => ({ nome: c.nome })), uni: H.uni, R: H.R, Rc: H.Rc, risco: H.risco, W: H.W, cdi: H.cdi, ipca: H.ipca, L: H.L };
   return new Promise((ok, falha) => {
     if (worker === null) worker = criarWorker() || false;
     if (!worker) { setTimeout(() => { try { ok(simular(Hw, o, aoProgresso)); } catch (e) { falha(e); } }, 20); return; }
-    worker.onmessage = (e) => { if (e.data.p !== undefined) aoProgresso(e.data.p); else ok(e.data.R); };
-    worker.onerror = (e) => { worker.terminate(); worker = false; try { ok(simular(Hw, o, aoProgresso)); } catch (x) { falha(x); } e.preventDefault(); };
+    cancelar = () => { worker.terminate(); worker = null; cancelar = null; falha(new Error('cancelado')); };
+    worker.onmessage = (e) => { if (e.data.p !== undefined) aoProgresso(e.data.p); else { cancelar = null; ok(e.data.R); } };
+    worker.onerror = (e) => { worker.terminate(); worker = false; cancelar = null; try { ok(simular(Hw, o, aoProgresso)); } catch (x) { falha(x); } e.preventDefault(); };
     worker.postMessage({ H: Hw, o });
   });
 }
@@ -545,15 +628,22 @@ function desenharAbasCarteiras() {
 function desenharCarteira() {
   const c = cartAtiva();
   desenharAbasCarteiras();
-  $('holdings').innerHTML = c.itens.length ? `<thead><tr><th>Ativo</th><th>Classe</th><th>Peso</th><th></th></tr></thead><tbody>` +
+  const d0 = idx(`${desdeDe(S.janela)}-01`);
+  $('holdings').innerHTML = c.itens.length ? `<thead><tr><th>Ativo</th><th class="hide-s">Classe</th><th>Desde</th><th>Peso</th><th></th></tr></thead><tbody>` +
     c.itens.map((it, i) => {
       const a = info(it.t), cl = TIPOS[a.tipo], fundo = a.tipo === 'rf' || a.tipo.startsWith('fundo');
+      const i0 = a.tipo === 'rf' ? serie('CDI').i0 : serie(it.t).i0, novo = i0 > d0;
       return `<tr><td class="t"><span class="tk">${esc(fundo ? a.n.slice(0, 30) : a.t)}</span><span class="nm">${esc(a.tipo === 'rf' ? 'Renda fixa por modelo' : fundo ? (a.gestor || a.setor) : a.n)}</span></td>
-        <td><span class="cls"><i class="sw" style="background:${corClasse[cl[1]]}"></i>${cl[0]}</span></td>
+        <td class="hide-s"><span class="cls"><i class="sw" style="background:${corClasse[cl[1]]}"></i>${cl[0]}</span></td>
+        <td><span class="desde${novo ? ' novo' : ''}" title="${novo ? 'Mais novo que a janela escolhida' : 'Cobre a janela escolhida'}">${novo ? '⚠ ' : ''}${Math.floor(i0 / 12)}</span></td>
         <td><label class="w"><input type="number" inputmode="decimal" min="0" max="100" step="1" data-i="${i}" value="${+it.p.toFixed(2)}" aria-label="Peso de ${esc(a.n)} em %"><span>%</span></label></td>
         <td><button class="rm" type="button" data-rm="${i}" aria-label="Remover ${esc(a.n)}"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></td></tr>`;
     }).join('') + '</tbody>'
     : '<tbody><tr><td class="empty">Carteira vazia. Escolha um modelo pronto ou adicione ativos.</td></tr></tbody>';
+  const novos = ativosNovos(c.itens, desdeDe(S.janela));
+  $('cart-aviso').hidden = !novos.length;
+  $('cart-aviso').innerHTML = novos.length ? `<b>Atenção:</b> ${novos.length === 1 ? 'este ativo é mais novo' : 'estes ativos são mais novos'} que a janela de ${S.janela} anos (desde ${desdeDe(S.janela)}): ${novos.map((n) => `${esc(rotuloAtivo(n.t))} (desde ${rotulo(n.desde)})`).join(', ')}. ` +
+    ({ redistribuir: 'Na simulação e no histórico, a contagem começa no ativo mais antigo e eles entram quando passam a existir; antes disso, o peso deles é dividido entre os outros.', cortar: 'Com "Cortar a janela", a contagem começa no mais novo deles.', estimar: 'Com "Estimar por fatores", os anos que faltam são estimados (não são dados reais).' }[S.curto]) : '';
   desenharSoma();
   desenharPresets();
 }
@@ -635,12 +725,12 @@ let resumoT;
 function agendarResumo() { clearTimeout(resumoT); resumoT = setTimeout(desenharResumo, 250); }
 function desenharResumo() {
   const linhas = S.carteiras.map((c, i) => {
-    const H = preparar([c], 2000, 1);
+    const H = preparar([c], Math.floor(BASE / 12), 1, S.curto === 'estimar' ? 'cortar' : S.curto);
     if (H.erro) return `<tr><td class="t"><span class="pdot" style="background:${CORES_CART[i]}"></span>${esc(c.nome)}</td><td colspan="6" class="t" style="color:var(--muted);white-space:normal">${esc(H.erro)}</td></tr>`;
     const m = metricas(Array.from(H.P[0]), Array.from(H.cdi));
     return `<tr><td class="t"><span class="pdot" style="background:${CORES_CART[i]}"></span>${esc(c.nome)}</td><td class="${m.cagr < 0 ? 'neg' : ''}">${pct(m.cagr)}</td><td>${pct(m.vol)}</td><td>${num(m.sharpe)}</td><td class="neg">${pct(m.maxdd, 0)}</td><td>${rotulo(H.ini)}</td><td>${H.L}</td></tr>`;
   });
-  $('tbl-resumo').innerHTML = `<thead><tr><th>Carteira</th><th>Ret. a.a.</th><th>Vol.</th><th>Sharpe</th><th>Queda máx.</th><th>Desde</th><th>Meses</th></tr></thead><tbody>${linhas.join('')}</tbody>`;
+  $('tbl-resumo').innerHTML = `<thead><tr><th>Carteira</th><th>Retorno ao ano</th><th>Volatilidade</th><th>Sharpe (retorno por risco)</th><th>Queda máxima</th><th>Desde</th><th>Meses</th></tr></thead><tbody>${linhas.join('')}</tbody>`;
   $('resumo-meta').textContent = `até ${rotulo(FIM_DADOS)}`;
 }
 function desenharBase() {
@@ -699,10 +789,10 @@ function tamanhoTexto(a) {
   const f = FII[a.t];
   if (f) {
     const m = { papel: 'papel', tijolo: 'tijolo', hibrido: 'híbrido', desenvolvimento: 'desenvolvimento' }[f[0]] || '';
-    return [m && `mandato ${m}`, f[3] ? `P/VP ${num(f[3])}` : '', f[4] ? `${f[4].toLocaleString('pt-BR')} cotistas` : '', a.tam ? `negocia ${curto(a.tam)}/dia` : ''].filter(Boolean).join(' · ');
+    return [m && `mandato ${m}`, f[3] ? `P/VP (preço ÷ valor patrimonial) ${num(f[3])}` : '', f[4] ? `${f[4].toLocaleString('pt-BR')} cotistas` : '', a.tam ? `negocia ${curto(a.tam)}/dia` : ''].filter(Boolean).join(' · ');
   }
   if (!a.tam) return '';
-  if (a.tipo.startsWith('fundo')) return `PL ${curto(a.tam)} · ${a.cot.toLocaleString('pt-BR')} cotistas`;
+  if (a.tipo.startsWith('fundo')) return `PL (patrimônio líquido) ${curto(a.tam)} · ${a.cot.toLocaleString('pt-BR')} cotistas`;
   if (a.tipo === 'acao_us') return `valor de mercado US$ ${(a.tam / 1e9).toLocaleString('pt-BR', { maximumFractionDigits: 0 })} bi`;
   return `negocia ${a.moeda === 'USD' ? 'US$ ' + (a.tam / 1e6).toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + ' mi' : curto(a.tam)}/dia`;
 }
@@ -727,7 +817,7 @@ function desenharLista() {
   $('list-count').textContent = `${itens.length.toLocaleString('pt-BR')} ativos`;
   const mostra = itens.slice(0, limite);
   $('btn-more').hidden = itens.length <= limite;
-  $('list').innerHTML = `<thead><tr><th>Ativo</th><th class="hide-s">Classe · setor</th><th>Ret. a.a.</th><th>Vol.</th><th>Desde</th></tr></thead><tbody>` +
+  $('list').innerHTML = `<thead><tr><th>Ativo</th><th class="hide-s">Classe · setor</th><th>Retorno ao ano</th><th>Volatilidade</th><th>Desde</th></tr></thead><tbody>` +
     (mostra.map((a) => {
       const e = estatAtivo(a.t), on = sel.has(a.t), cl = TIPOS[a.tipo], fundo = a.tipo.startsWith('fundo');
       return `<tr class="${on ? 'sel' : ''}" data-t="${esc(a.t)}" tabindex="0" role="checkbox" aria-checked="${on}">
@@ -773,10 +863,14 @@ function marcarVelho() { if (ultimo) $('stale').hidden = false; }
 ligarDinheiro('in-inicial', 'inicial'); ligarDinheiro('in-aporte', 'aporte'); ligarDinheiro('in-meta', 'meta'); ligarDinheiro('in-saque', 'saque');
 ligarDecimal('in-reaj', 'reaj', -10, 20); ligarDecimal('in-taxa', 'taxa', 0, 10); ligarDecimal('in-ir', 'ir', 0, 50);
 ligarDecimal('in-saque-ano', 'saqueAno', 0, 50);
-ligarCheck('in-corrige', 'corrige'); ligarCheck('in-estender', 'estender'); ligarCheck('in-real', 'real'); ligarCheck('in-saque-corrige', 'saqueCorrige'); ligarCheck('in-saque-on', 'saqueOn');
-ligarSeg('seg-metodo', 'metodo'); ligarSeg('seg-bloco', 'bloco'); ligarSeg('seg-desde', 'desde'); ligarSeg('seg-rebal', 'rebal');
+ligarCheck('in-corrige', 'corrige'); ligarCheck('in-real', 'real'); ligarCheck('in-saque-corrige', 'saqueCorrige'); ligarCheck('in-saque-on', 'saqueOn');
+ligarSeg('seg-metodo', 'metodo'); ligarSeg('seg-bloco', 'bloco'); ligarSeg('seg-janela', 'janela', () => { mudouParam(); desenharCarteira(); }); ligarSeg('seg-curto', 'curto', () => { mudouParam(); desenharCarteira(); agendarResumo(); }); ligarSeg('seg-rebal', 'rebal');
 ligarSeg('seg-cambio', 'cambio'); ligarSeg('seg-n', 'n');
 $('in-anos').value = S.anos; $('in-ajuste').value = S.ajuste;
+// janela em anos -> ano inicial (os dados começam em 1995; a contagem nunca vai antes do ativo mais antigo)
+const desdeDe = (anos) => Math.max(Math.floor(BASE / 12), Math.floor(FIM_DADOS / 12) - anos + 1);
+const NOME_CURTO = { redistribuir: 'ativos novos entram quando começam', cortar: 'janela cortada no ativo mais novo', estimar: 'anos faltantes estimados por fatores' };
+let velocidade = 0; // cenários × meses × carteiras por ms (medido na última simulação)
 const mostraAnos = () => { $('out-anos').textContent = `${S.anos} ${S.anos === 1 ? 'ano' : 'anos'}`; };
 const mostraAjuste = () => { $('out-ajuste').textContent = `${S.ajuste > 0 ? '+' : ''}${num(S.ajuste, 1)} p.p.`; };
 mostraAnos(); mostraAjuste();
@@ -795,6 +889,16 @@ function atualizarAjudas() {
   $('seg-rebal').classList.toggle('dim', param);
   $('rebal-help').textContent = param ? 'Nos modelos Normal e t-Student a carteira é rebalanceada todo mês.' : S.rebal === 0 ? 'Os pesos derivam com o mercado; os aportes seguem os pesos-alvo.' : '';
   $('saque-body').classList.toggle('dim', !S.saqueOn);
+  const d0 = desdeDe(S.janela);
+  $('janela-help').textContent = `Usa o passado desde ${d0}${d0 > Math.floor(FIM_DADOS / 12) - S.janela + 1 ? ' (os dados começam em 1995, início do Plano Real)' : ''}. Se nenhum ativo da carteira for tão antigo, a contagem começa no ativo mais antigo.`;
+  $('curto-help').textContent = {
+    redistribuir: 'A contagem começa no ativo mais antigo da carteira. Um ativo mais novo entra no mês em que passa a existir; antes disso, o peso dele é dividido entre os outros ativos. Assim você vê a performance de todos.',
+    cortar: 'Só usa os meses em que todos os ativos existiam: a janela começa no ativo mais novo (mais curta, mas sem redistribuição).',
+    estimar: 'Estima os anos que faltam de cada ativo por modelo de fatores (IFIX, CDI, IPCA, Ibovespa, S&P). Os meses estimados não são dados reais.',
+  }[S.curto];
+  const carga = S.n * S.anos * 12 * Math.max(1, S.carteiras.length), ms = velocidade ? carga / velocidade : carga / 3e5;
+  const tempo = ms < 60e3 ? `${Math.max(1, Math.round(ms / 1000))} s` : ms < 3600e3 ? `${Math.round(ms / 60e3)} min` : `${(ms / 3600e3).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} h`;
+  $('n-help').textContent = `Mais cenários reduzem o erro da própria simulação. Estimativa neste aparelho: ~${tempo}${velocidade ? '' : ' (medida após a primeira simulação)'}. Acima de 200 mil, os percentis vêm de um histograma fino (erro menor que 0,1%). Dá para parar a qualquer momento.`;
 }
 atualizarAjudas();
 $('btn-sim').addEventListener('click', () => rodar(true));
@@ -804,23 +908,31 @@ let ultimo = null;
 function rodar(rolar) {
   const erro = (m) => { $('err').textContent = m; $('err').hidden = !m; };
   if (S.inicial <= 0 && S.aporte <= 0) return erro('Coloque um aporte inicial ou mensal.');
-  const H = preparar(S.carteiras, S.desde, S.cambio, S.estender);
+  const H = preparar(S.carteiras, desdeDe(S.janela), S.cambio, S.curto);
   if (H.erro) return erro(H.erro);
   erro('');
   const btn = $('btn-sim');
   btn.disabled = true; $('btn-sim-label').textContent = 'Processando… 0%';
+  $('prog').hidden = false; $('btn-parar').hidden = false; $('prog-barra').style.width = '0%';
   const t0 = performance.now(), o = JSON.parse(JSON.stringify(S));
-  simularAssincrono(H, o, (p) => { $('btn-sim-label').textContent = `Processando… ${Math.round(p * 100)}%`; })
+  const fmtT = (ms) => (ms < 60e3 ? `${Math.round(ms / 1000)} s` : ms < 3600e3 ? `${Math.round(ms / 60e3)} min` : `${(ms / 3600e3).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} h`);
+  simularAssincrono(H, o, (p) => {
+    const dec = performance.now() - t0, falta = p > 0.005 ? dec * (1 - p) / p : 0;
+    $('btn-sim-label').textContent = `Processando… ${(p * 100).toLocaleString('pt-BR', { maximumFractionDigits: p < 0.1 ? 1 : 0 })}%${falta > 3000 ? ` · faltam ~${fmtT(falta)}` : ''}`;
+    $('prog-barra').style.width = `${(p * 100).toFixed(2)}%`;
+  })
     .then((R) => {
       ultimo = { H, R: hidratar(R), o, ms: performance.now() - t0 };
+      velocidade = (o.n * o.anos * 12 * H.cs.length) / Math.max(1, ultimo.ms); atualizarAjudas();
       if (S.ver >= H.cs.length) S.ver = 0;
       $('stale').hidden = true;
       desenharSimulacao();
       if (rolar && window.innerWidth < 1000) $('res').scrollIntoView({ behavior: 'smooth', block: 'start' });
     })
-    .catch((e) => erro(`Não foi possível simular: ${e.message || e}`))
-    .finally(() => { btn.disabled = false; $('btn-sim-label').textContent = 'Rodar novamente'; });
+    .catch((e) => erro(e.message === 'cancelado' ? 'Simulação interrompida.' : `Não foi possível simular: ${e.message || e}`))
+    .finally(() => { btn.disabled = false; $('btn-sim-label').textContent = 'Rodar novamente'; $('prog').hidden = true; $('btn-parar').hidden = true; });
 }
+$('btn-parar').addEventListener('click', () => { if (cancelar) cancelar(); });
 
 // ---------------------------------------------------------------- SIMULAÇÃO: resultados
 function desenharSimulacao() {
@@ -832,25 +944,30 @@ function desenharSimulacao() {
     ['Cenários', R.nS.toLocaleString('pt-BR')], ['Horizonte', `${R.N} meses`],
     ['Janela', `${rotulo(H.ini)}–${rotulo(H.fim)} (${H.L} m)`], ['Modelo', metodoNome],
     ['Rebal.', R.parametrico || o.rebal === 1 ? 'mensal' : o.rebal ? `${o.rebal} m` : 'nunca'],
-    ['Base', o.real ? 'real (IPCA)' : 'nominal'], ['Tempo', `${Math.round(ultimo.ms)} ms`],
-  ].map(([k, v]) => `<span>${k}: <b>${v}</b></span>`).join('') + (H.limitante ? `<span>Janela limitada por: <b>${esc(rotuloAtivo(H.limitante))}</b></span>` : '');
+    ['Base', o.real ? 'real (descontada a inflação, IPCA)' : 'nominal'], ['Tempo', ultimo.ms < 60e3 ? `${(ultimo.ms / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} s` : `${Math.round(ultimo.ms / 60e3)} min`],
+    ['Ativos novos', NOME_CURTO[H.modo] || ''], ['Percentis', R.exato ? 'exatos' : 'histograma de 20 mil faixas'],
+  ].map(([k, v]) => `<span>${k}: <b>${v}</b></span>`).join('') + (H.limitante ? `<span>Contagem começa em ${rotulo(H.ini)}, por: <b>${esc(rotuloAtivo(H.limitante))}</b></span>` : '');
   if (Object.keys(H.estimados || {}).length) $('runline').innerHTML += `<span>Meses estimados por fatores: <b>${Object.entries(H.estimados).map(([t, n]) => `${esc(rotuloAtivo(t))} ${n}`).join(', ')}</b></span>`;
-  const anosJ = H.L / 12;
-  $('aviso').hidden = anosJ >= 18;
-  $('aviso').textContent = anosJ >= 18 ? '' : `Atenção: o sorteio usa só ${num(anosJ, 0)} anos de história (${rotulo(H.ini)} a ${rotulo(H.fim)}). O resultado reflete muito o que aconteceu nesse período. Para um cenário mais prudente, use um ajuste negativo no retorno esperado, o modelo t-Student ou ativos com histórico mais longo.`;
+  const anosJ = H.L / 12, avisos = [];
+  if (H.ini > idx(`${desdeDe(o.janela)}-01`)) avisos.push(`Você pediu ${o.janela} anos de passado, mas os ativos só permitem contar a partir de ${rotulo(H.ini)} (${num(anosJ, 0)} anos).`);
+  if (H.jovens && H.jovens.length) avisos.push(`Ativos mais novos que a janela (entram quando começam; antes disso o peso deles vai para os demais): ${H.jovens.map((j) => `${esc(rotuloAtivo(j.t))} desde ${rotulo(j.desde)}`).join(', ')}.`, inicioCarteiras(H));
+  if (anosJ < 18) avisos.push(`O sorteio usa só ${num(anosJ, 0)} anos de história: o resultado reflete muito esse período. Para um cenário mais prudente, use ajuste negativo no retorno, o modelo t-Student ou ativos mais antigos.`);
+  const av2 = avisos.filter(Boolean);
+  $('aviso').hidden = !av2.length;
+  $('aviso').innerHTML = av2.length ? `<b>Atenção.</b> ${av2.join(' ')}` : '';
 
   const nC = H.cs.length;
   const linhas = [
-    ['Patrimônio P50', (r) => r.q(0.5), curto, 'max', () => curto(R.cdiQ(0.5))],
-    ['P10 (pessimista)', (r) => r.q(0.1), curto, 'max', () => curto(R.cdiQ(0.1))],
-    ['P90 (otimista)', (r) => r.q(0.9), curto, 'max', () => curto(R.cdiQ(0.9))],
-    ['Retorno a.a. (P50)', (r) => r.qa(0.5), (v) => pct(v), 'max', null],
-    ['Queda máxima (P50)', (r) => r.qd(0.5), (v) => pct(v, 0), 'max', null],
-    o.saqueOn ? ['Prob. de o dinheiro acabar', (r) => r.pRuina, (v) => pct(v, 0), 'min', () => pct(R.pRuinaCdi, 0)]
-      : ['Prob. de perda', (r) => r.pPerde, (v) => pct(v, 0), 'min', null],
-    ['Prob. de superar o CDI', (r) => r.pCdi, (v) => pct(v, 0), 'max', null],
+    ['Patrimônio mediano (P50: metade acima, metade abaixo)', (r) => r.q(0.5), curto, 'max', () => curto(R.cdiQ(0.5))],
+    ['P10, pessimista (só 10% terminam abaixo)', (r) => r.q(0.1), curto, 'max', () => curto(R.cdiQ(0.1))],
+    ['P90, otimista (só 10% terminam acima)', (r) => r.q(0.9), curto, 'max', () => curto(R.cdiQ(0.9))],
+    ['Retorno ao ano, mediano', (r) => r.qa(0.5), (v) => pct(v), 'max', null],
+    ['Queda máxima do topo ao fundo, mediana', (r) => r.qd(0.5), (v) => pct(v, 0), 'max', null],
+    o.saqueOn ? ['Probabilidade de o dinheiro acabar', (r) => r.pRuina, (v) => pct(v, 0), 'min', () => pct(R.pRuinaCdi, 0)]
+      : ['Probabilidade de perda (terminar abaixo do aportado)', (r) => r.pPerde, (v) => pct(v, 0), 'min', null],
+    ['Probabilidade de superar o CDI (renda fixa de referência)', (r) => r.pCdi, (v) => pct(v, 0), 'max', null],
   ];
-  if (o.meta > 0) linhas.push(['Prob. de atingir a meta', (r) => r.pMeta, (v) => pct(v, 0), 'max', null]);
+  if (o.meta > 0) linhas.push(['Probabilidade de atingir a meta', (r) => r.pMeta, (v) => pct(v, 0), 'max', null]);
   $('tbl-cmp').innerHTML = `<thead><tr><th></th>${R.res.map((r, c) => `<th><span class="pdot" style="background:${CORES_CART[c]}"></span>${esc(r.nome.slice(0, 16))}</th>`).join('')}<th>CDI</th></tr></thead><tbody>` +
     linhas.map(([n, f, fmt, melhor, cdiF]) => {
       const vs = R.res.map((r) => f(r)), alvo = nC > 1 ? (melhor === 'max' ? Math.max(...vs) : Math.min(...vs)) : null;
@@ -863,17 +980,17 @@ function desenharSimulacao() {
   const cor = (p, alto) => (alto ? p >= 0.6 : p <= 0.1) ? 'pos' : (alto ? p < 0.4 : p > 0.25) ? 'neg' : 'amb';
   const kpi = (k, v, s, cls = '', extra = '') => `<div class="kpi ${extra}"><span class="k">${k}</span><span class="v ${cls}">${v}</span><span class="s">${s}</span></div>`;
   $('kpis').innerHTML =
-    kpi('Patrimônio mediano (P50)', brl(r.q(0.5)), `em ${o.anos} ${o.anos === 1 ? 'ano' : 'anos'} · ${base}${o.ir ? ' · após IR' : ''}`, '', 'lead') +
-    kpi('Intervalo P10–P90', `${curto(r.q(0.1))} – ${curto(r.q(0.9))}`, '80% dos cenários', '', 'lead sm') +
+    kpi('Patrimônio mediano (P50, cenário do meio)', brl(r.q(0.5)), `em ${o.anos} ${o.anos === 1 ? 'ano' : 'anos'} · ${base}${o.ir ? ' · após IR (Imposto de Renda)' : ''}`, '', 'lead') +
+    kpi('Intervalo P10–P90 (percentis 10 e 90)', `${curto(r.q(0.1))} – ${curto(r.q(0.9))}`, '8 em cada 10 cenários ficam nessa faixa', '', 'lead sm') +
     kpi('Total aportado', curto(R.inv[R.Pn - 1]), base) +
-    kpi('Retorno a.a. (P50)', pct(r.qa(0.5)), o.real ? 'acima do IPCA, após custos' : 'nominal, após custos', r.qa(0.5) < 0 ? 'neg' : '') +
-    kpi('Queda máxima (P50)', pct(r.qd(0.5), 0), `pior 10%: ${pct(r.qd(0.1), 0)}`, 'neg') +
-    (o.saqueOn ? kpi('Prob. de o dinheiro acabar', pct(r.pRuina, 0), `saque de ${curto(o.saque)}/mês a partir do ano ${o.saqueAno}`, cor(r.pRuina, false))
-      : kpi('Prob. de perda', pct(r.pPerde, 0), 'terminar abaixo do aportado', cor(r.pPerde, false))) +
-    kpi('Prob. de superar o CDI', pct(r.pCdi, 0), 'mesmos aportes e saques', cor(r.pCdi, true)) +
-    kpi('Cenário ruim (P5)', curto(r.q(0.05)), '1 em cada 20 termina abaixo') +
-    kpi('Mesmo plano no CDI (P50)', curto(R.cdiQ(0.5)), o.ir ? 'após IR' : 'sem IR') +
-    (r.pMeta !== null ? kpi('Prob. de atingir a meta', pct(r.pMeta, 0), `meta ${curto(o.meta)}`, cor(r.pMeta, true)) : kpi('Prob. de atingir a meta', '—', 'defina uma meta'));
+    kpi('Retorno ao ano (a.a.), mediano', pct(r.qa(0.5)), o.real ? 'acima da inflação (IPCA), após custos' : 'nominal, após custos', r.qa(0.5) < 0 ? 'neg' : '') +
+    kpi('Queda máxima, mediana', pct(r.qd(0.5), 0), `maior perda do topo ao fundo; nos 10% piores: ${pct(r.qd(0.1), 0)}`, 'neg') +
+    (o.saqueOn ? kpi('Probabilidade de o dinheiro acabar', pct(r.pRuina, 0), `saque de ${curto(o.saque)}/mês a partir do ano ${o.saqueAno}`, cor(r.pRuina, false))
+      : kpi('Probabilidade de perda', pct(r.pPerde, 0), 'terminar abaixo do aportado', cor(r.pPerde, false))) +
+    kpi('Probabilidade de superar o CDI', pct(r.pCdi, 0), 'mesmos aportes e saques no CDI (Certificado de Depósito Interbancário)', cor(r.pCdi, true)) +
+    kpi('Cenário ruim (P5, percentil 5)', curto(r.q(0.05)), '1 em cada 20 cenários termina abaixo') +
+    kpi('Mesmo plano no CDI (mediana)', curto(R.cdiQ(0.5)), o.ir ? 'após IR (Imposto de Renda)' : 'sem IR (Imposto de Renda)') +
+    (r.pMeta !== null ? kpi('Probabilidade de atingir a meta', pct(r.pMeta, 0), `meta ${curto(o.meta)}`, cor(r.pMeta, true)) : kpi('Probabilidade de atingir a meta', '—', 'defina uma meta'));
   $('fan-meta').textContent = base;
   desenharLeque(); desenharHistograma(); desenharPercentis();
 }
@@ -881,8 +998,8 @@ $('seg-ver').addEventListener('click', (e) => { const b = e.target.closest('butt
 
 function desenharPercentis() {
   const { R, o } = ultimo, r = R.res[S.ver];
-  const linhas = [['P5', 0.05], ['P10', 0.1], ['P25', 0.25], ['P50', 0.5], ['P75', 0.75], ['P90', 0.9], ['P95', 0.95]];
-  $('tbl-pct').innerHTML = `<thead><tr><th>Pctl.</th><th>Patrimônio (R$)</th><th>Ret. a.a.</th><th>Queda máx.</th></tr></thead><tbody>` +
+  const linhas = [['P5 (5% abaixo)', 0.05], ['P10 (10% abaixo)', 0.1], ['P25 (25% abaixo)', 0.25], ['P50 (mediana)', 0.5], ['P75 (75% abaixo)', 0.75], ['P90 (90% abaixo)', 0.9], ['P95 (95% abaixo)', 0.95]];
+  $('tbl-pct').innerHTML = `<thead><tr><th>Percentil</th><th>Patrimônio (R$)</th><th>Retorno ao ano</th><th>Queda máxima</th></tr></thead><tbody>` +
     linhas.map(([n, q]) => { const a = r.qa(q); return `<tr class="${q === 0.5 ? 'tot' : ''}"><td class="t">${n}</td><td>${Math.round(r.q(q)).toLocaleString('pt-BR')}</td><td class="${a < 0 ? 'neg' : ''}">${pct(a)}</td><td>${pct(r.qd(1 - q), 0)}</td></tr>`; }).join('') + '</tbody>';
   $('pct-meta').textContent = o.real ? 'R$ de hoje' : 'R$ nominais';
   $('pct-help').textContent = `Cada coluna é ordenada separadamente. Retorno a.a. é o da carteira${o.real ? ' acima do IPCA' : ''}, após custos e sem efeito dos aportes. Nos percentis altos aparecem as menores quedas.`;
@@ -932,7 +1049,7 @@ function desenharLeque() {
   svg += `<g class="fcur" style="display:none"><line class="fcur-l" y1="${mt}" y2="${mt + ih}" stroke="var(--rule-2)"/><circle class="fcur-c" r="4.5" fill="${corA}" stroke="var(--panel)" stroke-width="2"/></g>`;
   svg += `<rect x="${ml}" y="${mt}" width="${iw}" height="${ih}" fill="transparent"/></svg>`;
   box.innerHTML = svg;
-  $('fan-leg').innerHTML = `<span><i class="ln" style="border-color:${corA}"></i>${esc(r.nome)} (mediana)</span><span><i style="background:${corA};opacity:.35"></i>P25–P75</span><span><i style="background:${corA};opacity:.15"></i>P10–P90</span>` +
+  $('fan-leg').innerHTML = `<span><i class="ln" style="border-color:${corA}"></i>${esc(r.nome)} (mediana)</span><span><i style="background:${corA};opacity:.35"></i>P25–P75 (metade central dos cenários)</span><span><i style="background:${corA};opacity:.15"></i>P10–P90 (8 em cada 10 cenários)</span>` +
     R.res.map((x2, c) => (c === c0 ? '' : `<span><i class="ln" style="border-color:${CORES_CART[c]}"></i>${esc(x2.nome)} (mediana)</span>`)).join('') +
     `<span><i class="ln" style="border-color:var(--bm1);border-top-style:dashed"></i>CDI (média)</span><span><i class="ln" style="border-color:var(--muted);border-top-style:dotted"></i>Total aportado</span>`;
   const el = box.querySelector('svg'), cur = el.querySelector('.fcur'), cl = el.querySelector('.fcur-l'), cc = el.querySelector('.fcur-c');
@@ -945,7 +1062,7 @@ function desenharLeque() {
     cc.setAttribute('cx', x(R.pontos[k])); cc.setAttribute('cy', y(p50[k]));
     const mes = R.pontos[k], an = Math.floor(mes / 12), re = mes % 12;
     const q = mes === 0 ? 'Hoje' : `${an ? `${an} ${an === 1 ? 'ano' : 'anos'}` : ''}${an && re ? ' e ' : ''}${re ? `${re} ${re === 1 ? 'mês' : 'meses'}` : ''}`;
-    $('readout').innerHTML = `<b>${q}</b> · P50 <b>${curto(p50[k])}</b> · P10–P90 ${curto(p10[k])}–${curto(p90[k])}` +
+    $('readout').innerHTML = `<b>${q}</b> · mediana (P50) <b>${curto(p50[k])}</b> · 8 em 10 entre ${curto(p10[k])} e ${curto(p90[k])}` +
       R.res.map((x2, c) => (c === c0 ? '' : ` · ${esc(x2.nome.slice(0, 12))} ${curto(x2.faixas[3][k])}`)).join('') + ` · CDI ${curto(R.cdi[k])} · aportado ${curto(R.inv[k])}`;
   };
   el.addEventListener('pointerdown', mover); el.addEventListener('pointermove', mover);
@@ -968,10 +1085,10 @@ function desenharHistograma() {
     const xx = x(v), a = xx > W * 0.75 ? 'end' : xx < W * 0.25 ? 'start' : 'middle';
     return `<line x1="${xx}" x2="${xx}" y1="${mt - 2}" y2="${mt + ih}" stroke="${cor}" stroke-width="1.5" stroke-dasharray="4 3"/><text x="${xx}" y="${mt - 5}" text-anchor="${a}" style="fill:${cor}">${esc(t)}</text>`;
   };
-  svg += marca(r.q(0.5), 'var(--ink)', 'P50');
+  svg += marca(r.q(0.5), 'var(--ink)', 'mediana');
   if (Math.abs(x(inv) - x(r.q(0.5))) > 50) svg += marca(inv, 'var(--muted)', 'aportado');
   if (o.meta > 0 && Math.abs(x(o.meta) - x(r.q(0.5))) > 40) svg += marca(o.meta, 'var(--amber)', 'meta');
-  svg += `<text x="${ml}" y="${Hh - 6}">${esc(eixoBRL(lo))}</text><text x="${W / 2}" y="${Hh - 6}" text-anchor="middle">P50 ${esc(eixoBRL(r.q(0.5)))}</text><text x="${W - mr}" y="${Hh - 6}" text-anchor="end">${esc(eixoBRL(hi))}</text></svg>`;
+  svg += `<text x="${ml}" y="${Hh - 6}">${esc(eixoBRL(lo))}</text><text x="${W / 2}" y="${Hh - 6}" text-anchor="middle">mediana ${esc(eixoBRL(r.q(0.5)))}</text><text x="${W - mr}" y="${Hh - 6}" text-anchor="end">${esc(eixoBRL(hi))}</text></svg>`;
   box.innerHTML = svg;
   $('hist-meta').textContent = `P1–P99 · ${nb} faixas`;
   $('hist-help').textContent = 'Frequência dos cenários por patrimônio final. Em vermelho, os que terminaram abaixo do total aportado. Os 1% extremos de cada lado ficam fora.';
@@ -1021,13 +1138,18 @@ function graficoLinhas(box, series, meses, op) {
 }
 
 // ---------------------------------------------------------------- HISTÓRICO (backtest)
-const BENCH = [['CDI', 'CDI', 'var(--bm1)'], ['IPCA', 'IPCA (inflação)', 'var(--bm2)'], ['IBOV', 'Ibovespa', 'var(--bm3)'], ['SPY', 'S&P 500 em R$ (SPY)', 'var(--bm4)']];
+const BENCH = [['CDI', 'CDI (renda fixa)', 'var(--bm1)'], ['IPCA', 'IPCA (inflação)', 'var(--bm2)'], ['IBOV', 'Ibovespa (bolsa BR)', 'var(--bm3)'], ['SPY', 'S&P 500 em R$ (bolsa EUA)', 'var(--bm4)']];
 $('bt-bench').innerHTML = BENCH.map(([k, n, c]) => `<label><input type="checkbox" value="${k}" ${S.btBench.includes(k) ? 'checked' : ''}><span class="swl" style="background:${c}"></span>${n}</label>`).join('');
 $('bt-bench').addEventListener('change', () => { S.btBench = [...$('bt-bench').querySelectorAll('input:checked')].map((i) => i.value); salvar(); desenharHistorico(); });
-ligarSeg('seg-bt-modo', 'btModo', desenharHistorico); ligarSeg('seg-bt-escala', 'btEscala', desenharHistorico); ligarSeg('seg-bt-desde', 'btDesde', desenharHistorico);
+ligarSeg('seg-bt-modo', 'btModo', desenharHistorico); ligarSeg('seg-bt-escala', 'btEscala', desenharHistorico); ligarSeg('seg-bt-janela', 'btJanela', desenharHistorico);
 
 function desenharHistorico() {
-  const H = preparar(S.carteiras, S.btDesde, S.cambio);
+  const H = preparar(S.carteiras, desdeDe(S.btJanela), S.cambio, S.curto === 'estimar' ? 'cortar' : S.curto);
+  const av = [];
+  if (!H.erro && H.ini > idx(`${desdeDe(S.btJanela)}-01`)) av.push(`A contagem começa em ${rotulo(H.ini)}, quando começa o ativo mais antigo de cada carteira.`);
+  if (!H.erro && H.jovens && H.jovens.length) av.push(`Entram depois, quando passam a existir (antes disso o peso deles fica com os demais): ${H.jovens.map((j) => `${esc(rotuloAtivo(j.t))} em ${rotulo(j.desde)}`).join(', ')}.`, inicioCarteiras(H));
+  const av2 = av.filter(Boolean);
+  $('bt-aviso').hidden = !av2.length; $('bt-aviso').innerHTML = av2.length ? `<b>Atenção.</b> ${av2.join(' ')}` : '';
   if (H.erro) {
     ['bt-chart', 'dd-chart'].forEach((id) => { $(id).innerHTML = `<p class="empty-note">${esc(H.erro)}</p>`; });
     $('tbl-met').innerHTML = ''; $('tbl-anos').innerHTML = ''; $('bt-leg').innerHTML = ''; return;
@@ -1075,10 +1197,10 @@ function desenharHistorico() {
   const cdi = Array.from(H.cdi), okIbov = !rIbov.some(isNaN);
   const ms = lst.map((s) => ({ s, m: metricas(s.r, cdi, okIbov ? rIbov : null) }));
   const linhas = [
-    ['Retorno a.a.', (m) => pct(m.cagr)], ['Volatilidade a.a.', (m) => pct(m.vol)], ['Sharpe', (m) => num(m.sharpe)], ['Sortino', (m) => num(m.sortino)],
+    ['Retorno ao ano (a.a.)', (m) => pct(m.cagr)], ['Volatilidade ao ano (quanto oscila)', (m) => pct(m.vol)], ['Sharpe (retorno acima do CDI por unidade de risco)', (m) => num(m.sharpe)], ['Sortino (como o Sharpe, só contando quedas)', (m) => num(m.sortino)],
     ['Queda máxima', (m) => pct(m.maxdd)], ['Maior tempo abaixo do topo', (m) => `${m.durdd} m`], ['Pior mês', (m) => pct(m.pior)], ['Melhor mês', (m) => pct(m.melhor)],
-    ['VaR 95% (mês)', (m) => pct(m.var95)], ['CVaR 95% (mês)', (m) => pct(m.cvar95)], ['Meses positivos', (m) => pct(m.pos, 0)],
-    ['Beta vs Ibovespa', (m) => num(m.beta)], ['Correlação c/ Ibovespa', (m) => num(m.corr)],
+    ['VaR 95% (perda mensal superada só em 5% dos meses)', (m) => pct(m.var95)], ['CVaR 95% (perda média nos 5% piores meses)', (m) => pct(m.cvar95)], ['Meses positivos', (m) => pct(m.pos, 0)],
+    ['Beta vs Ibovespa (sensibilidade à bolsa: 1 = igual)', (m) => num(m.beta)], ['Correlação c/ Ibovespa', (m) => num(m.corr)],
   ];
   $('tbl-met').innerHTML = `<thead><tr><th></th>${ms.map(({ s }) => `<th><span class="pdot" style="background:${s.cor}"></span>${esc(s.nome.slice(0, 14))}</th>`).join('')}</tr></thead><tbody>` +
     linhas.map(([n, f]) => `<tr><td class="t">${n}</td>${ms.map(({ s, m }) => `<td style="${s.cart ? '' : 'color:var(--muted)'}">${f(m)}</td>`).join('')}</tr>`).join('') + '</tbody>';
@@ -1293,7 +1415,7 @@ function otimizarRobusto(R, op, rfm, aoProgresso) {
 
 // interface
 const OT_CLASSES = [['acao', 'Ações BR'], ['fii', 'Todos os FIIs'], ['fii:papel', 'FIIs de papel'], ['fii:tijolo', 'FIIs de tijolo'], ['fii:hibrido', 'FIIs híbridos'],
-  ['fiagro|fiinfra', 'Fiagro e Infra'], ['etf', 'ETFs B3'], ['fundo_rf', 'Fundos RF'], ['fundo_mm', 'Multimercados'], ['fundo_acoes', 'Fundos de ações'],
+  ['fiagro|fiinfra', 'Fiagro e Infra'], ['etf', 'ETFs B3'], ['fundo_rf', 'Fundos de renda fixa'], ['fundo_mm', 'Multimercados'], ['fundo_acoes', 'Fundos de ações'],
   ['acao_us', 'Ações EUA'], ['etf_us', 'ETFs EUA'], ['cripto', 'Cripto'], ['indice|commodity|moeda', 'Índices, ouro e moedas']];
 let otPronto = false, otUltimo = null;
 function prepararOtimizador() {
@@ -1405,15 +1527,15 @@ function desenharOtimizacao() {
   const o = otUltimo, O_ = S.ot; if (!o) return;
   const nomeObj = { sharpe: 'máximo Sharpe', minvar: 'mínimo risco', paridade: 'paridade de risco', alvo: `risco-alvo ${num(O_.volAlvo, 0)}%` }[O_.obj];
   $('ot-runline').innerHTML = [['Objetivo', nomeObj + (O_.reamostra ? ' · reamostrado 50×' : '')], ['Universo', `${o.K} ativos`], ['Janela', `${rotulo(o.meses[0])}–${rotulo(o.meses[o.L - 1])} (${o.L} m)`],
-    ['Limites', `peso ≤ ${num(O_.pesoMax, 0)}%${O_.maxAtivos ? `, até ${O_.maxAtivos} ativos` : ''}`], ['Encolhimento Ledoit-Wolf', pct(o.delta, 0)], ['Tempo', `${Math.round(o.ms)} ms`]]
+    ['Limites', `peso ≤ ${num(O_.pesoMax, 0)}%${O_.maxAtivos ? `, até ${O_.maxAtivos} ativos` : ''}`], ['Encolhimento da covariância (Ledoit-Wolf)', pct(o.delta, 0)], ['Tempo', `${Math.round(o.ms)} ms`]]
     .map(([k, v]) => `<span>${k}: <b>${v}</b></span>`).join('') +
     (o.semPremio ? '<span class="stale" style="display:block;margin-top:6px">Nenhum ativo do universo tem retorno esperado acima do CDI nesta janela, então não existe carteira de máximo Sharpe: foi usada a de mínimo risco. Considere incluir o CDI ou outras classes no universo.</span>' : '');
   const n = o.w.filter((x) => x > 0).length;
   const kpi = (k, v, s_, cls = '') => `<div class="kpi"><span class="k">${k}</span><span class="v ${cls}">${v}</span><span class="s">${s_}</span></div>`;
-  $('ot-kpis').innerHTML = kpi('Retorno a.a. (estimado)', pct(o.est.ret), 'médias encolhidas') + kpi('Volatilidade a.a.', pct(o.est.vol), 'covariância Ledoit-Wolf') +
-    kpi('Sharpe', num(o.est.sharpe), o.wRef ? `${esc(o.refNome)}: ${num(o.wRef.sharpe)}` : 'vs CDI') + kpi('Queda máxima (histórico)', pct(o.mh.maxdd, 0), `${n} ativos`, 'neg');
+  $('ot-kpis').innerHTML = kpi('Retorno ao ano (estimado)', pct(o.est.ret), 'médias encolhidas (James-Stein)') + kpi('Volatilidade ao ano', pct(o.est.vol), 'quanto oscila; covariância Ledoit-Wolf') +
+    kpi('Sharpe (retorno por risco)', num(o.est.sharpe), o.wRef ? `${esc(o.refNome)}: ${num(o.wRef.sharpe)}` : 'vs CDI') + kpi('Queda máxima (histórico)', pct(o.mh.maxdd, 0), `${n} ativos`, 'neg');
   const ord = [...o.w.keys()].filter((k) => o.w[k] > 0).sort((a, b) => o.w[b] - o.w[a]);
-  $('ot-pesos').innerHTML = `<thead><tr><th>Ativo</th><th class="hide-s">Classe</th><th>Peso</th><th>Ret. a.a.</th><th>Vol.</th></tr></thead><tbody>` +
+  $('ot-pesos').innerHTML = `<thead><tr><th>Ativo</th><th class="hide-s">Classe</th><th>Peso</th><th>Retorno ao ano</th><th>Volatilidade</th></tr></thead><tbody>` +
     ord.map((k) => { const a = info(o.uni[k]), is = o.isolados[k]; return `<tr><td class="t"><span class="tk">${esc(rotuloAtivo(o.uni[k]))}</span><span class="nm">${esc(a.tipo.startsWith('fundo') ? a.gestor : a.n)}</span></td><td class="hide-s"><span class="cls"><i class="sw" style="background:${corClasse[TIPOS[a.tipo][1]]}"></i>${TIPOS[a.tipo][0]}</span></td><td><b>${pct(o.w[k], 1)}</b></td><td>${pct(is.ret)}</td><td>${pct(is.vol, 0)}</td></tr>`; }).join('') + '</tbody>';
   $('ot-pesos-meta').textContent = `${n} ativos`;
   $('ot-salvar').innerHTML = S.carteiras.map((c, i) => `<button class="btn" type="button" data-slot="${i}">Substituir ${LETRAS[i]} (${esc(c.nome.slice(0, 12))})</button>`).join('') +
@@ -1443,7 +1565,7 @@ function desenharOtimizacao() {
   // fora da amostra
   if (o.wf) {
     $('ot-wf-meta').textContent = o.wf.meta;
-    $('ot-wf').innerHTML = `<thead><tr><th></th><th>Treino</th><th>Depois</th><th class="hide-s">Vol. depois</th><th>Queda depois</th></tr></thead><tbody>` +
+    $('ot-wf').innerHTML = `<thead><tr><th></th><th>Treino</th><th>Depois</th><th class="hide-s">Volatilidade depois</th><th>Queda depois</th></tr></thead><tbody>` +
       o.wf.map((l) => `<tr><td class="t" style="white-space:normal">${esc(l.n)}</td><td>${pct(l.treino)}</td><td class="${l.depois.cagr < 0 ? 'neg' : 'pos'}"><b>${pct(l.depois.cagr)}</b></td><td class="hide-s">${pct(l.depois.vol)}</td><td>${pct(l.depois.maxdd)}</td></tr>`).join('') + '</tbody>';
   } else { $('ot-wf').innerHTML = '<tbody><tr><td class="empty">Janela curta demais para o teste (precisa de 48+ meses).</td></tr></tbody>'; $('ot-wf-meta').textContent = ''; }
 }

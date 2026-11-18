@@ -39,7 +39,7 @@ def get(url, tentativas=4):
 
 
 def yahoo(ticker):
-    p1 = int(dt.datetime(1999, 12, 1).timestamp()); p2 = int(time.time())
+    p1 = int(dt.datetime(1994, 12, 1).timestamp()); p2 = int(time.time())
     b = get(f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}.SA?period1={p1}&period2={p2}&interval=1mo&events=split")
     if not b:
         return None, []

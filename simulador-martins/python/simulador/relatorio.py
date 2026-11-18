@@ -64,10 +64,10 @@ def leque(res) -> str:
 def histograma(res) -> str:
     fig, ax = plt.subplots(figsize=(9, 3.2))
     for i, n in enumerate(res.nomes):
-        f = res.finais[:, i]
+        f = res.fin[i].valores()
         lo, hi = np.quantile(f, [0.005, 0.995])
         ax.hist(np.clip(f, lo, hi), bins=80, alpha=0.45, color=CORES[i % len(CORES)], label=n, density=True)
-    ax.axvline(res.investido.mean(), color="#8b95a3", ls=":", lw=1.2, label="aportado")
+    ax.axvline(res.investido, color="#8b95a3", ls=":", lw=1.2, label="aportado")
     if res.plano.meta:
         ax.axvline(res.plano.meta, color="#9a5b06", ls="--", lw=1.2, label="meta")
     ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda v, _: _brl(v))); ax.set_yticks([])
@@ -118,6 +118,18 @@ def tabela(df: pd.DataFrame, fmt: dict | None = None, indice=True) -> str:
         corpo.append("<tr>" + (f'<td class="t">{html.escape(str(i))}</td>' if indice else "") + "".join(cels) + "</tr>")
     return f'<div class="tw"><table><thead><tr>{cab}</tr></thead><tbody>{"".join(corpo)}</tbody></table></div>'
 
+
+GLOSSARIO = """<ul>
+<li><b>a.a.</b>: ao ano. <b>p.p.</b>: pontos percentuais.</li>
+<li><b>CDI</b> (Certificado de Depósito Interbancário): taxa entre bancos, referência da renda fixa. <b>IPCA</b> (Índice Nacional de Preços ao Consumidor Amplo): a inflação oficial. <b>IR</b>: Imposto de Renda.</li>
+<li><b>B3</b>: a bolsa brasileira. <b>CVM</b> (Comissão de Valores Mobiliários): o regulador. <b>Ibovespa</b>: principal índice de ações da B3. <b>IFIX</b>: índice de fundos imobiliários. <b>S&amp;P 500</b>: 500 maiores empresas dos EUA.</li>
+<li><b>FII</b> (Fundo de Investimento Imobiliário): <i>de papel</i> investe em CRI (Certificados de Recebíveis Imobiliários); <i>de tijolo</i>, em imóveis. <b>Fiagro</b>: fundo do agronegócio. <b>FI-Infra</b>: fundo de debêntures de infraestrutura. <b>ETF</b> (Exchange Traded Fund): fundo de índice negociado em bolsa.</li>
+<li><b>Percentil</b> (P5, P10, P50, P90...): ordenando os cenários, P10 é o valor que só 10% ficam abaixo; P50 é a mediana.</li>
+<li><b>Volatilidade</b>: quanto oscila ao ano. <b>Queda máxima</b> (drawdown): maior perda do topo ao fundo. <b>Sharpe</b>: retorno acima do CDI por unidade de volatilidade. <b>Sortino</b>: como o Sharpe, só com as quedas.</li>
+<li><b>VaR 95%</b> (Value at Risk, valor em risco): perda mensal superada só em 5% dos meses. <b>CVaR</b> (VaR condicional): perda média nesses piores meses. <b>Beta</b>: sensibilidade ao Ibovespa.</li>
+<li><b>Monte Carlo</b>: simular muitos futuros possíveis por sorteio. <b>Bootstrap</b>: sorteio de meses reais do passado. <b>GARCH</b> (heterocedasticidade condicional autorregressiva generalizada): volatilidade que muda com o tempo. <b>Mudança de regime</b>: alternância entre mercado calmo e em crise.</li>
+<li><b>Fronteira eficiente</b>: maior retorno para cada nível de risco. <b>Paridade de risco</b>: cada ativo contribui igual para o risco. <b>James-Stein / Ledoit-Wolf</b>: encolhimento de médias e covariâncias para reduzir erro de estimação. <b>Reamostragem (Michaud)</b>: média de otimizações em versões sorteadas do histórico. <b>Fora da amostra</b>: teste num período não usado para escolher a carteira.</li>
+</ul>"""
 
 CSS = """
 :root{--bg:#eef0f3;--panel:#fff;--panel2:#f6f7f9;--ink:#0e1726;--ink2:#3b4656;--muted:#6b7584;--rule:#e1e4e9;--accent:#1d3b66;--pos:#16794a;--neg:#b42318}

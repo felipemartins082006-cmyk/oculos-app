@@ -27,7 +27,30 @@ def test_cdi_deterministico():
 def test_todos_os_modelos():
     for m in modelos.MODELOS:
         r = simular(BASE, CART, Plano(anos=10), Config(modelo=m, cenarios=2000, desde=2010), progresso=False)
-        assert np.isfinite(r.finais).all() and (r.finais >= 0).all()
+        for i in range(len(r.nomes)):
+            f = r.fin[i].valores()
+            assert np.isfinite(f).all() and (f >= 0).all()
+
+
+def test_histograma_bate_com_exato():
+    import simulador.monte_carlo as MC
+    plano = Plano(anos=10)
+    ex = simular(BASE, CART, plano, Config(cenarios=300_000, semente=1), progresso=False).resumo()
+    MC.EXATO, antigo = 100_000, MC.EXATO          # força o modo histograma
+    try:
+        hi = simular(BASE, CART, plano, Config(cenarios=300_000, semente=1), progresso=False).resumo()
+    finally:
+        MC.EXATO = antigo
+    for q in ("P10", "P50", "P90"):
+        assert abs(hi.loc["A", q] / ex.loc["A", q] - 1) < 0.002
+
+
+def test_redistribuir_ativo_novo():
+    from simulador.monte_carlo import preparar
+    J = preparar(BASE, {"X": {"SPY": 50, "CPTS11": 50}}, 1995, modo="redistribuir")
+    assert J.meses[0].year == 1995 and any(c == "CPTS11" for c, _ in J.jovens)
+    Jc = preparar(BASE, {"X": {"SPY": 50, "CPTS11": 50}}, 1995, modo="cortar")
+    assert Jc.meses[0].year >= 2020
 
 
 def test_aposentadoria():

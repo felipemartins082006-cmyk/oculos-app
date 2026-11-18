@@ -22,7 +22,7 @@ A base de dados é o `../data.js` (o mesmo arquivo do app). Para baixar tudo de 
 python -m simulador info                                  # o que tem na base
 python -m simulador buscar --tipo fii --mandato papel     # FIIs de papel
 python -m simulador buscar logística --tipo fii
-python -m simulador simular exemplos/fiis_papel.json --cenarios 1000000
+python -m simulador simular exemplos/fiis_papel.json --cenarios 100000000   # 100 milhões (~1 h)
 python -m simulador estudo exemplos/fiis_papel.json       # otimiza, simula, testa e gera o relatório
 python -m simulador validar-proxy                         # qualidade da extensão de histórico
 ```
@@ -48,8 +48,16 @@ saques), a simulação (modelo, nº de cenários, janela) e os modelos de robust
 | `backtest.py` | Backtest com Sharpe, Sortino, drawdown, VaR/CVaR, beta, retorno por ano |
 | `relatorio.py` | Relatório HTML de arquivo único com gráficos |
 
-Desempenho medido: 1 milhão de cenários × 3 carteiras × 20 anos em ~20 s (bootstrap); estudo completo
-com 200 mil cenários, 6 modelos de robustez e otimizações em ~35 s.
+Desempenho medido (bootstrap, 3 carteiras, 40 anos): 10 milhões de cenários em ~6 min, então
+100 milhões em ~1 h. Até 2 milhões os percentis são exatos; acima, vêm de histogramas de 50 mil
+faixas (diferença medida contra o exato: menos de 0,2%), com memória constante. As probabilidades
+(perda, superar o CDI, meta) são contadas cenário a cenário. Estudo completo com 200 mil cenários,
+6 modelos de robustez e otimizações em ~1 min.
+
+**Janela e ativos novos** (`"simulacao"`): `"desde": 1995` ou `"janela_anos": 20`; `"curto"`:
+`"redistribuir"` (padrão: cada ativo entra quando passa a existir e, antes disso, o peso dele vai
+para os demais), `"cortar"` (só meses em que todos existem) ou `"estimar"` (modelo de fatores).
+O relatório avisa quais ativos são mais novos e com que parte dos pesos cada carteira começa.
 
 ## Cuidados
 

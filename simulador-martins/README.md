@@ -68,8 +68,17 @@ teste fora da amostra; salva o resultado como carteira.
 **FIIs** — mandato (papel, tijolo, híbrido), segmento, P/VP e cotistas pelo informe mensal da CVM;
 filtros "FIIs de papel/tijolo/híbridos" no seletor e no otimizador.
 
-**Monte Carlo** — até 100 mil cenários no celular (em segundo plano, com progresso) e opção de
-estender históricos curtos por modelo de fatores (validado fora da amostra).
+**Monte Carlo** — de 10 mil a 100 milhões de cenários (em segundo plano, com progresso, tempo
+restante e botão Parar). Até 200 mil os percentis são exatos; acima, vêm de um histograma de 20 mil
+faixas (erro menor que 0,1%), então a memória não cresce. Horizonte padrão de 40 anos (até 60).
+
+**Janela histórica** — em anos (5 a 40), com dados desde 1995 (Plano Real). Ativos mais novos que a
+janela: por padrão a contagem começa no ativo mais antigo de cada carteira e os mais novos **entram
+quando passam a existir** (antes disso, o peso deles é dividido entre os demais). O app avisa quais
+ativos são mais novos, desde quando, e com que parte dos pesos cada carteira começa. Alternativas:
+cortar a janela no ativo mais novo ou estimar os anos faltantes por modelo de fatores.
+
+**Siglas** — explicadas entre parênteses nos rótulos e num glossário na aba Metodologia.
 
 **Versão Python** (`python/`) — milhões de cenários, 7 modelos (inclui GARCH e mudança de regime),
 otimização por meta com restrição de queda, mínimo CVaR, relatório HTML. Veja `python/README.md`.

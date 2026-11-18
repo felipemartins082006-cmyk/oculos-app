@@ -59,6 +59,7 @@
             <div class="alloc-leg" id="alloc-leg"></div>
           </div>
           <div class="tbl-wrap"><table id="holdings"></table></div>
+          <p class="stale" id="cart-aviso" hidden style="margin:10px 14px 0"></p>
           <div class="sum" id="sum"></div>
           <div class="btns">
             <button class="btn grow primary" id="btn-add" type="button"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Adicionar ativos</button>
@@ -93,7 +94,7 @@
             <div class="form">
               <div class="field"><label class="lbl" for="in-inicial">Aporte inicial</label><div class="inp"><span>R$</span><input id="in-inicial" inputmode="numeric" autocomplete="off"></div></div>
               <div class="field"><label class="lbl" for="in-aporte">Aporte mensal</label><div class="inp"><span>R$</span><input id="in-aporte" inputmode="numeric" autocomplete="off"></div></div>
-              <div class="field full"><label class="lbl" for="in-anos">Horizonte</label><div class="range"><input type="range" id="in-anos" min="1" max="50" step="1"><output id="out-anos" for="in-anos"></output></div></div>
+              <div class="field full"><label class="lbl" for="in-anos">Horizonte</label><div class="range"><input type="range" id="in-anos" min="1" max="60" step="1"><output id="out-anos" for="in-anos"></output></div></div>
               <div class="field"><label class="lbl" for="in-meta">Meta (opcional)</label><div class="inp"><span>R$</span><input id="in-meta" inputmode="numeric" autocomplete="off" placeholder="1.000.000"></div></div>
               <div class="field"><label class="lbl" for="in-reaj">Aumento real do aporte</label><div class="inp"><input id="in-reaj" inputmode="decimal" autocomplete="off"><span>% a.a.</span></div></div>
             </div>
@@ -117,7 +118,7 @@
           <div class="ph"><h2>Modelo</h2></div>
           <div class="pb">
             <div class="field">
-              <span class="lbl">Modelo de retornos</span>
+              <span class="lbl">Modelo de retornos (como sortear o futuro)</span>
               <div class="seg full wrap" id="seg-metodo">
                 <button type="button" data-v="boot">Bootstrap</button>
                 <button type="button" data-v="bloco">Blocos</button>
@@ -133,16 +134,23 @@
               </div>
             </div>
             <div class="field">
-              <span class="lbl">Janela histórica</span>
-              <div class="seg full" id="seg-desde">
-                <button type="button" data-v="2000">2000</button><button type="button" data-v="2005">2005</button><button type="button" data-v="2010">2010</button><button type="button" data-v="2015">2015</button><button type="button" data-v="2020">2020</button>
+              <span class="lbl">Janela histórica (quantos anos de passado usar)</span>
+              <div class="seg full" id="seg-janela">
+                <button type="button" data-v="5">5 anos</button><button type="button" data-v="10">10</button><button type="button" data-v="20">20</button><button type="button" data-v="30">30</button><button type="button" data-v="40">40</button>
               </div>
-              <p class="help">Começa no ano escolhido ou no início do ativo mais novo, o que vier depois.</p>
+              <p class="help" id="janela-help"></p>
             </div>
             <div class="field">
-              <span class="lbl">Rebalanceamento</span>
+              <span class="lbl">Ativos mais novos que a janela</span>
+              <div class="seg full wrap" id="seg-curto">
+                <button type="button" data-v="redistribuir">Entram quando começam</button><button type="button" data-v="cortar">Cortar a janela</button><button type="button" data-v="estimar">Estimar por fatores</button>
+              </div>
+              <p class="help" id="curto-help"></p>
+            </div>
+            <div class="field">
+              <span class="lbl">Rebalanceamento (voltar aos pesos-alvo)</span>
               <div class="seg full" id="seg-rebal">
-                <button type="button" data-v="1">Mensal</button><button type="button" data-v="3">Trim.</button><button type="button" data-v="12">Anual</button><button type="button" data-v="0">Nunca</button>
+                <button type="button" data-v="1">Mensal</button><button type="button" data-v="3">Trimestral</button><button type="button" data-v="12">Anual</button><button type="button" data-v="0">Nunca</button>
               </div>
               <p class="help" id="rebal-help"></p>
             </div>
@@ -155,22 +163,23 @@
             <div class="field">
               <label class="lbl" for="in-ajuste">Ajuste no retorno esperado</label>
               <div class="range"><input type="range" id="in-ajuste" min="-6" max="4" step="0.5"><output id="out-ajuste" for="in-ajuste"></output></div>
-              <p class="help">Desloca o retorno dos ativos de risco (não mexe no CDI nem na renda fixa por modelo). Negativo = mais conservador que o passado.</p>
+              <p class="help">Desloca o retorno dos ativos de risco, em p.p. (pontos percentuais) ao ano. Não mexe no CDI nem na renda fixa por modelo. Negativo = mais conservador que o passado.</p>
             </div>
             <div class="form">
-              <div class="field"><label class="lbl" for="in-taxa">Custo anual extra</label><div class="inp"><input id="in-taxa" inputmode="decimal" autocomplete="off"><span>% a.a.</span></div></div>
-              <div class="field"><label class="lbl" for="in-ir">IR sobre o ganho</label><div class="inp"><input id="in-ir" inputmode="decimal" autocomplete="off"><span>%</span></div></div>
+              <div class="field"><label class="lbl" for="in-taxa">Custo anual extra (% a.a., ao ano)</label><div class="inp"><input id="in-taxa" inputmode="decimal" autocomplete="off"><span>% a.a.</span></div></div>
+              <div class="field"><label class="lbl" for="in-ir">IR (Imposto de Renda) sobre o ganho</label><div class="inp"><input id="in-ir" inputmode="decimal" autocomplete="off"><span>%</span></div></div>
             </div>
             <p class="help">Custo extra: taxa de custódia, consultoria etc. (fundos já vêm líquidos das próprias taxas). IR: cobrado uma vez no resgate final sobre o ganho nominal, nas carteiras e no CDI. Use 0 para ignorar.</p>
             <div class="field">
-              <span class="lbl">Cenários</span>
-              <div class="seg full wrap" id="seg-n"><button type="button" data-v="5000">5 mil</button><button type="button" data-v="10000">10 mil</button><button type="button" data-v="20000">20 mil</button><button type="button" data-v="50000">50 mil</button><button type="button" data-v="100000">100 mil</button></div>
-              <p class="help">Mais cenários reduzem o erro da própria simulação. 100 mil levam alguns segundos no celular; a versão Python roda milhões.</p>
+              <span class="lbl">Cenários (rodadas)</span>
+              <div class="seg full wrap" id="seg-n"><button type="button" data-v="10000">10 mil</button><button type="button" data-v="100000">100 mil</button><button type="button" data-v="1000000">1 milhão</button><button type="button" data-v="10000000">10 milhões</button><button type="button" data-v="100000000">100 milhões</button></div>
+              <p class="help" id="n-help"></p>
             </div>
-            <label class="chk"><span>Estender históricos curtos<small>Estima os anos antes do início de cada ativo por modelo de fatores (IFIX, CDI, IPCA, Ibovespa, S&amp;P). Os meses estimados não são dados reais.</small></span><input type="checkbox" id="in-estender"></label>
-            <label class="chk"><span>Valores reais<small>Resultados em reais de hoje (descontado o IPCA)</small></span><input type="checkbox" id="in-real"></label>
+            <label class="chk"><span>Valores reais<small>Resultados em reais de hoje, descontada a inflação (IPCA, índice oficial de inflação)</small></span><input type="checkbox" id="in-real"></label>
             <p class="err" id="err" hidden></p>
             <button class="run" id="btn-sim" type="button"><svg class="ic" viewBox="0 0 24 24"><path d="M6 4l14 8-14 8z"/></svg><span id="btn-sim-label">Rodar simulação</span></button>
+            <div class="progresso" id="prog" hidden><i id="prog-barra"></i></div>
+            <button class="btn" id="btn-parar" type="button" hidden>Parar simulação</button>
           </div>
         </section>
       </div>
@@ -215,9 +224,10 @@
         <div class="pb row-ctl">
           <div class="field"><span class="lbl">Valores</span><div class="seg" id="seg-bt-modo"><button type="button" data-v="unit">R$ 10 mil investidos</button><button type="button" data-v="plano">Com o seu plano</button></div></div>
           <div class="field"><span class="lbl">Escala</span><div class="seg" id="seg-bt-escala"><button type="button" data-v="lin">Linear</button><button type="button" data-v="log">Log</button></div></div>
-          <div class="field"><span class="lbl">Janela</span><div class="seg" id="seg-bt-desde"><button type="button" data-v="2000">2000</button><button type="button" data-v="2005">2005</button><button type="button" data-v="2010">2010</button><button type="button" data-v="2015">2015</button><button type="button" data-v="2020">2020</button></div></div>
+          <div class="field"><span class="lbl">Janela (anos de passado)</span><div class="seg" id="seg-bt-janela"><button type="button" data-v="5">5</button><button type="button" data-v="10">10</button><button type="button" data-v="20">20</button><button type="button" data-v="30">30</button><button type="button" data-v="40">40</button></div></div>
           <div class="field"><span class="lbl">Comparar com</span><div class="checks" id="bt-bench"></div></div>
         </div>
+        <p class="stale" id="bt-aviso" hidden style="margin:0 14px 10px"></p>
         <div class="readout" id="bt-readout">Toque ou passe o cursor no gráfico para ver cada mês.</div>
         <div class="chart" id="bt-chart"></div>
         <div class="legend" id="bt-leg"></div>
@@ -291,10 +301,10 @@
           <div class="ph"><h2>Objetivo e limites</h2></div>
           <div class="pb">
             <div class="field"><span class="lbl">Objetivo</span>
-              <div class="seg full wrap" id="seg-ot-obj"><button type="button" data-v="sharpe">Máx. Sharpe</button><button type="button" data-v="minvar">Mín. risco</button><button type="button" data-v="paridade">Paridade de risco</button><button type="button" data-v="alvo">Risco-alvo</button></div>
+              <div class="seg full wrap" id="seg-ot-obj"><button type="button" data-v="sharpe">Máx. Sharpe (retorno por risco)</button><button type="button" data-v="minvar">Mín. risco</button><button type="button" data-v="paridade">Paridade de risco</button><button type="button" data-v="alvo">Risco-alvo</button></div>
               <p class="help" id="ot-obj-help"></p></div>
             <div class="form">
-              <div class="field" id="f-ot-vol"><label class="lbl" for="ot-vol">Volatilidade-alvo</label><div class="inp"><input id="ot-vol" inputmode="decimal"><span>% a.a.</span></div></div>
+              <div class="field" id="f-ot-vol"><label class="lbl" for="ot-vol">Volatilidade-alvo (oscilação ao ano)</label><div class="inp"><input id="ot-vol" inputmode="decimal"><span>% a.a.</span></div></div>
               <div class="field"><label class="lbl" for="ot-peso">Peso máximo</label><div class="inp"><input id="ot-peso" inputmode="decimal"><span>%</span></div></div>
               <div class="field"><label class="lbl" for="ot-nmax">Nº máximo de ativos</label><div class="inp"><input id="ot-nmax" inputmode="numeric"></div></div>
             </div>
@@ -333,6 +343,44 @@
   <!-- ======================= METODOLOGIA ======================= -->
   <section class="view" id="v-metodo" role="tabpanel">
     <div class="col">
+      <section class="panel">
+        <div class="ph"><h2>Glossário</h2><span class="meta">siglas e termos usados no app</span></div>
+        <div class="tbl-wrap"><table class="glos"><tbody>
+          <tr><td class="t"><b>a.a.</b></td><td class="t">Ao ano.</td></tr>
+          <tr><td class="t"><b>p.p.</b></td><td class="t">Pontos percentuais: de 8% para 10% são 2 p.p.</td></tr>
+          <tr><td class="t"><b>CDI</b></td><td class="t">Certificado de Depósito Interbancário: taxa de juros entre bancos, referência da renda fixa (anda junto com a Selic).</td></tr>
+          <tr><td class="t"><b>IPCA</b></td><td class="t">Índice Nacional de Preços ao Consumidor Amplo: a inflação oficial do Brasil (IBGE).</td></tr>
+          <tr><td class="t"><b>IR</b></td><td class="t">Imposto de Renda.</td></tr>
+          <tr><td class="t"><b>B3</b></td><td class="t">Brasil, Bolsa, Balcão: a bolsa de valores brasileira.</td></tr>
+          <tr><td class="t"><b>CVM</b></td><td class="t">Comissão de Valores Mobiliários: o órgão que regula o mercado; publica os dados dos fundos.</td></tr>
+          <tr><td class="t"><b>FII</b></td><td class="t">Fundo de Investimento Imobiliário. <b>De papel</b>: investe em títulos de crédito imobiliário (CRI). <b>De tijolo</b>: em imóveis (galpões, shoppings, escritórios). <b>Híbrido</b>: mistura os dois.</td></tr>
+          <tr><td class="t"><b>CRI</b></td><td class="t">Certificado de Recebíveis Imobiliários: título de dívida lastreado em créditos de imóveis.</td></tr>
+          <tr><td class="t"><b>Fiagro</b></td><td class="t">Fundo de Investimento nas Cadeias Produtivas Agroindustriais (agronegócio).</td></tr>
+          <tr><td class="t"><b>FI-Infra</b></td><td class="t">Fundo de investimento em debêntures de infraestrutura (isentas de IR para pessoa física).</td></tr>
+          <tr><td class="t"><b>ETF</b></td><td class="t">Exchange Traded Fund: fundo de índice negociado na bolsa (ex.: BOVA11 segue o Ibovespa; SPY segue o S&amp;P 500).</td></tr>
+          <tr><td class="t"><b>S&amp;P 500</b></td><td class="t">Índice das 500 maiores empresas dos EUA (Standard &amp; Poor's).</td></tr>
+          <tr><td class="t"><b>IFIX</b></td><td class="t">Índice de Fundos Imobiliários da B3.</td></tr>
+          <tr><td class="t"><b>Ibovespa</b></td><td class="t">Principal índice de ações da B3.</td></tr>
+          <tr><td class="t"><b>JCP</b></td><td class="t">Juros sobre Capital Próprio: forma de distribuir lucro, como o dividendo, mas com IR de 15%.</td></tr>
+          <tr><td class="t"><b>P/VP</b></td><td class="t">Preço sobre Valor Patrimonial: abaixo de 1, a cota está mais barata que o patrimônio do fundo.</td></tr>
+          <tr><td class="t"><b>PL</b></td><td class="t">Patrimônio Líquido de um fundo.</td></tr>
+          <tr><td class="t"><b>Percentil (P5, P10, P50, P90...)</b></td><td class="t">Ordenando todos os cenários, P10 é o valor que só 10% ficam abaixo; P50 é a mediana (o cenário do meio); P90, só 10% ficam acima.</td></tr>
+          <tr><td class="t"><b>Volatilidade</b></td><td class="t">Quanto o investimento oscila ao longo do ano (desvio-padrão anualizado). Maior volatilidade = mais sobe e desce.</td></tr>
+          <tr><td class="t"><b>Queda máxima (drawdown)</b></td><td class="t">A maior perda do topo ao fundo antes de recuperar.</td></tr>
+          <tr><td class="t"><b>Sharpe</b></td><td class="t">Índice de Sharpe: quanto a carteira rende acima do CDI para cada unidade de volatilidade. Maior é melhor.</td></tr>
+          <tr><td class="t"><b>Sortino</b></td><td class="t">Como o Sharpe, mas só considera as oscilações para baixo.</td></tr>
+          <tr><td class="t"><b>VaR / CVaR</b></td><td class="t">Value at Risk (valor em risco): a perda mensal que só foi superada em 5% dos meses. CVaR (VaR condicional): a perda média nesses 5% piores meses.</td></tr>
+          <tr><td class="t"><b>Beta</b></td><td class="t">Sensibilidade ao Ibovespa: beta 1 sobe e cai como a bolsa; 0,5, metade disso.</td></tr>
+          <tr><td class="t"><b>Monte Carlo</b></td><td class="t">Simular milhares (ou milhões) de futuros possíveis sorteando retornos, para ver a distribuição dos resultados.</td></tr>
+          <tr><td class="t"><b>Bootstrap</b></td><td class="t">Sorteio com reposição de meses reais do passado.</td></tr>
+          <tr><td class="t"><b>t-Student</b></td><td class="t">Distribuição parecida com a normal, mas com mais eventos extremos (caudas gordas).</td></tr>
+          <tr><td class="t"><b>Fronteira eficiente</b></td><td class="t">As combinações de ativos com o maior retorno possível para cada nível de risco.</td></tr>
+          <tr><td class="t"><b>Paridade de risco</b></td><td class="t">Pesos escolhidos para que cada ativo contribua igualmente para a oscilação total.</td></tr>
+          <tr><td class="t"><b>James-Stein / Ledoit-Wolf</b></td><td class="t">Técnicas que "encolhem" médias e correlações estimadas para reduzir o erro de estimação com pouco histórico.</td></tr>
+          <tr><td class="t"><b>Reamostragem (Michaud)</b></td><td class="t">Repetir a otimização em muitas versões sorteadas do histórico e tirar a média dos pesos.</td></tr>
+          <tr><td class="t"><b>Fora da amostra (walk-forward)</b></td><td class="t">Testar a carteira num período que não foi usado para escolhê-la.</td></tr>
+        </tbody></table></div>
+      </section>
       <section class="panel">
         <div class="ph"><h2>Metodologia</h2></div>
         <div class="pb method">

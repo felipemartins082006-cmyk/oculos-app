@@ -24,7 +24,7 @@ try:
 except ImportError:
     sys.exit("Instale: pip install websocket-client")
 
-INICIO = "2000-01"
+INICIO = "1995-01"
 UA = {"User-Agent": "Mozilla/5.0", "Content-Type": "application/json"}
 LIQ_MIN_BR = 100_000      # R$ negociados por dia (média de 30 dias)
 N_ACOES_US = 600          # maiores empresas americanas por valor de mercado
@@ -111,6 +111,8 @@ def scan(mercado, filtro, ordem, quantos, colunas):
 def tipo_b3(x):
     desc = (x["description"] or "")
     spec = x["typespecs"] or []
+    if x["name"].endswith("11") and re.search(r"agro", desc, re.I) and x["type"] == "fund":
+        return "fiagro"
     if x["name"].endswith("11") and re.search(r"imobili|receb[ií]veis|valora re", desc, re.I):
         return "fii"
     if re.search(r"\bunits?\b|dep[oó]sito de a[cç][oõ]es", desc, re.I):

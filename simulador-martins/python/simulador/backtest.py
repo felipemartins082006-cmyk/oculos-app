@@ -21,17 +21,17 @@ def metricas(r: pd.Series, cdi: pd.Series, bench: pd.Series | None = None) -> di
     down = np.sqrt(np.mean(np.minimum(r - cdi, 0) ** 2)) * np.sqrt(12)
     var95 = np.quantile(r, 0.05)
     out = {
-        "retorno a.a.": cagr, "volatilidade a.a.": vol, "sharpe": (cagr - cdi_a) / vol if vol else np.nan,
-        "sortino": (cagr - cdi_a) / down if down else np.nan, "queda máxima": dd.min(),
+        "retorno ao ano": cagr, "volatilidade ao ano": vol, "sharpe (retorno por risco)": (cagr - cdi_a) / vol if vol else np.nan,
+        "sortino (só quedas)": (cagr - cdi_a) / down if down else np.nan, "queda máxima": dd.min(),
         "maior tempo abaixo do topo (meses)": maior, "pior mês": r.min(), "melhor mês": r.max(),
-        "VaR 95% mensal": var95, "CVaR 95% mensal": r[r <= var95].mean(), "meses positivos": (r > 0).mean(),
+        "VaR 95% mensal (perda superada em 5% dos meses)": var95, "CVaR 95% mensal (perda média nos piores 5%)": r[r <= var95].mean(), "meses positivos": (r > 0).mean(),
         "meses": n,
     }
     if bench is not None:
         b = bench.reindex(r.index)
         if b.notna().all():
             c = np.cov(r, b)
-            out["beta vs Ibovespa"] = c[0, 1] / c[1, 1]
+            out["beta vs Ibovespa (sensibilidade à bolsa)"] = c[0, 1] / c[1, 1]
             out["correlação c/ Ibovespa"] = np.corrcoef(r, b)[0, 1]
     return out
 
