@@ -6,6 +6,24 @@ Funciona sem internet depois da primeira abertura e sem login. A carteira e o pl
 Endereço (depois de publicado no GitHub Pages):
 https://felipemartins082006-cmyk.github.io/oculos-app/simulador-martins/
 
+## Instalar no Android (APK)
+
+O arquivo **`SimuladorMartins.apk`** desta pasta é o app pronto. Passe para o celular, abra e toque em
+Instalar (o Android pede para permitir "instalar apps desconhecidos" na primeira vez).
+
+- Não usa internet: o app não tem nenhuma permissão. O histórico de preços vai dentro do APK.
+- Segue o tema claro/escuro do celular.
+- Versões novas instalam por cima da anterior sem perder a carteira salva (a chave de assinatura é fixa).
+
+Para gerar o APK de novo (por exemplo, depois de atualizar os dados), com o Android SDK instalado:
+
+```
+cd android && ./gradlew assembleRelease
+cp app/build/outputs/apk/release/app-release.apk ../SimuladorMartins.apk
+```
+
+Antes, aumente `versionCode` e `versionName` em `android/app/build.gradle.kts`.
+
 ## O que faz
 
 1. Você monta a carteira (81 ativos: 43 ações, 33 FIIs, 4 ETFs e o Ibovespa) e os pesos de cada um.

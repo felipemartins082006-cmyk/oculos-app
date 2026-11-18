@@ -1,0 +1,13 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+  <!-- leque de cenários: faixa clara e linha da mediana -->
+  <path android:pathData="M32,72 C46,70 58,62 76,40 L76,56 C62,66 48,71 32,72Z"
+      android:fillColor="#8DB4E8" android:fillAlpha="0.35" />
+  <path android:pathData="M32,72 C46,71 58,65 76,48"
+      android:strokeColor="#FFFFFF" android:strokeWidth="5"
+      android:strokeLineCap="round" android:fillColor="#00000000" />
+  <path android:pathData="M32,78 L76,78"
+      android:strokeColor="#8DB4E8" android:strokeWidth="2" android:strokeAlpha="0.7"
+      android:fillColor="#00000000" />
+</vector>
