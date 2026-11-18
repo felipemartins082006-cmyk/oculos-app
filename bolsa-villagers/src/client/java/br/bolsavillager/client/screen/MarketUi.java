@@ -21,6 +21,7 @@ public final class MarketUi {
 	public static final int DOWN = 0xFFFF5C5C;
 	public static final int FLAT = 0xFFB0B8C0;
 	public static final int ACCENT = 0xFF4BE08A;
+	public static final int GOLD = 0xFFFFD166;
 	public static final String EMERALD = "◆";
 
 	private MarketUi() {

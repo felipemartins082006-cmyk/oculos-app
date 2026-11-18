@@ -7,6 +7,7 @@ import br.bolsavillager.net.MarketSyncPayload;
 import br.bolsavillager.net.TradeSharesPayload;
 import br.bolsavillager.net.WithdrawPayload;
 import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.creativetab.v1.CreativeModeTabEvents;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
@@ -52,6 +53,8 @@ public class BolsaMod implements ModInitializer {
 
 	@Override
 	public void onInitialize() {
+		BolsaConfig.load();
+		CommandRegistrationCallback.EVENT.register((dispatcher, context, selection) -> BolsaCommand.register(dispatcher));
 		CreativeModeTabEvents.modifyOutputEvent(CreativeModeTabs.FUNCTIONAL_BLOCKS)
 				.register(output -> output.insertAfter(Items.LECTERN, TERMINAL_ITEM));
 

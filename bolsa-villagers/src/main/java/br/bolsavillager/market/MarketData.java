@@ -59,6 +59,10 @@ public final class MarketData extends SavedData {
 		return this.accounts.computeIfAbsent(player, uuid -> new Account());
 	}
 
+	public Map<UUID, Account> accounts() {
+		return this.accounts;
+	}
+
 	public Map<UUID, String> census() {
 		return this.census;
 	}

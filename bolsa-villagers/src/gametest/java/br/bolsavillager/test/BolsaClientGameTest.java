@@ -5,12 +5,15 @@ import br.bolsavillager.client.ClientMarket;
 import br.bolsavillager.client.screen.TerminalScreen;
 import br.bolsavillager.market.MarketData;
 import br.bolsavillager.market.MarketEngine;
+import br.bolsavillager.market.MarketRules;
+import br.bolsavillager.BolsaConfig;
+import net.minecraft.client.gui.screens.ChatScreen;
+import java.nio.file.Files;
 import br.bolsavillager.market.StockDef;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
 import net.fabricmc.fabric.api.client.gametest.v1.world.TestWorldSave;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.gui.screens.inventory.MerchantScreen;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -41,8 +44,9 @@ public class BolsaClientGameTest implements FabricClientGameTest {
 	@Override
 	public void runTest(ClientGameTestContext ctx) {
 		// Comprar 64 e vender 64 logo em seguida não pode dar lucro (antes da corretagem, empata).
-		double buy = MarketEngine.orderValue(10.0, 64);
-		double sell = MarketEngine.orderValue(10.0 * Math.exp(MarketEngine.IMPACT_PER_SHARE * 64), -64);
+		MarketRules rules = MarketRules.DEFAULT;
+		double buy = rules.orderValue(10.0, 64);
+		double sell = rules.orderValue(10.0 * Math.exp(rules.impactPerShare() * 64), -64);
 		check(Math.abs(buy - sell) < 1e-6, "ida e volta deveria empatar antes da corretagem: " + buy + " vs " + sell);
 
 		UUID[] playerId = new UUID[1];
@@ -156,8 +160,71 @@ public class BolsaClientGameTest implements FabricClientGameTest {
 			});
 			ctx.waitTicks(5);
 
-			// Sacar: o saldo vira esmeraldas.
-			ctx.runOnClient(mc -> ClientPlayNetworking.send(br.bolsavillager.net.WithdrawPayload.INSTANCE));
+			// ---- Comando /bolsa ----
+			check(Files.exists(BolsaConfig.path()), "config/bolsavillager.json deveria ter sido criado");
+			clearChat(ctx);
+			playerCommand(sp, "bolsa");
+			ctx.waitTicks(5);
+			ctx.setScreen(() -> new ChatScreen("", false));
+			ctx.waitTicks(5);
+			ctx.takeScreenshot("bolsa_chat_visao_geral");
+			ctx.setScreen(() -> null);
+
+			clearChat(ctx);
+			playerCommand(sp, "bolsa fazd3");
+			ctx.waitTicks(5);
+			ctx.setScreen(() -> new ChatScreen("", false));
+			ctx.waitTicks(5);
+			ctx.takeScreenshot("bolsa_chat_detalhes");
+			ctx.setScreen(() -> null);
+
+			// Negociar pelo chat (o jogador está a 3 blocos do terminal).
+			playerCommand(sp, "bolsa comprar FAZD3 2");
+			ctx.waitTicks(3);
+			check(shares(sp, playerId[0]) == 12, "deveria ter 12 ações após /bolsa comprar FAZD3 2");
+			playerCommand(sp, "bolsa vender fazd3 2");
+			ctx.waitTicks(3);
+			check(shares(sp, playerId[0]) == 10, "deveria voltar a 10 ações após /bolsa vender fazd3 2");
+
+			// ---- Dividendos ----
+			double before = sp.getServer().computeOnServer(s -> MarketEngine.data(s).account(playerId[0]).balance);
+			double expected = sp.getServer().computeOnServer(s -> {
+				var st = MarketEngine.data(s).stock(StockDef.FARMER);
+				return 10 * MarketRules.current().dividendPerShare(StockDef.FARMER, st.price, st.population, st.tradesDay);
+			});
+			check(expected > 0, "fazendeiros com villagers e trocas deveriam pagar dividendo");
+			clearChat(ctx);
+			sp.getServer().runOnServer(s -> s.getCommands().performPrefixedCommand(s.createCommandSourceStack(), "bolsa admin dividendos"));
+			ctx.waitTicks(5);
+			double after = sp.getServer().computeOnServer(s -> MarketEngine.data(s).account(playerId[0]).balance);
+			check(Math.abs(after - before - expected) < 1e-6, "dividendo pago errado: " + (after - before) + " vs " + expected);
+			BolsaMod.LOGGER.info("[teste] Dividendo pago: {}", after - before);
+
+			clearChat(ctx);
+			playerCommand(sp, "bolsa carteira");
+			ctx.waitTicks(5);
+			ctx.setScreen(() -> new ChatScreen("", false));
+			ctx.waitTicks(5);
+			ctx.takeScreenshot("bolsa_chat_carteira");
+			ctx.setScreen(() -> null);
+
+			// Recarregar config pelo comando.
+			sp.getServer().runOnServer(s -> s.getCommands().performPrefixedCommand(s.createCommandSourceStack(), "bolsa admin recarregar"));
+
+			// Terminal com o layout novo (dividendos).
+			sp.getServer().runOnServer(server -> {
+				ServerPlayer player = player(server);
+				MarketEngine.onTerminalUsed(player, player.blockPosition().relative(player.getDirection(), 3));
+			});
+			ctx.waitForScreen(TerminalScreen.class);
+			clearToasts(ctx);
+			ctx.waitTicks(5);
+			ctx.takeScreenshot("bolsa_terminal_dividendos");
+			ctx.setScreen(() -> null);
+			ctx.waitTicks(3);
+
+			// Sacar pelo comando: o saldo vira esmeraldas.
+			playerCommand(sp, "bolsa sacar");
 			ctx.waitTicks(5);
 			double balance = sp.getServer().computeOnServer(s -> MarketEngine.data(s).account(playerId[0]).balance);
 			check(balance < 1.0, "saldo deveria ter sido sacado, sobrou " + balance);
@@ -192,6 +259,17 @@ public class BolsaClientGameTest implements FabricClientGameTest {
 	private static void closeMerchant(ClientGameTestContext ctx) {
 		ctx.runOnClient(mc -> mc.player.closeContainer());
 		ctx.waitTicks(5);
+	}
+
+	private static void playerCommand(TestSingleplayerContext sp, String command) {
+		sp.getServer().runOnServer(server -> {
+			ServerPlayer player = player(server);
+			server.getCommands().performPrefixedCommand(player.createCommandSourceStack(), command);
+		});
+	}
+
+	private static void clearChat(ClientGameTestContext ctx) {
+		ctx.runOnClient(mc -> mc.gui.hud.getChat().clearMessages(false));
 	}
 
 	private static void clearToasts(ClientGameTestContext ctx) {

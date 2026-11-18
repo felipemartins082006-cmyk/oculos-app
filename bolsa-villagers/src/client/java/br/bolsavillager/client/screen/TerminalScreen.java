@@ -1,7 +1,7 @@
 package br.bolsavillager.client.screen;
 
 import br.bolsavillager.client.ClientMarket;
-import br.bolsavillager.market.MarketEngine;
+import br.bolsavillager.market.MarketRules;
 import br.bolsavillager.market.StockDef;
 import br.bolsavillager.net.MarketSyncPayload;
 import br.bolsavillager.net.TradeSharesPayload;
@@ -53,7 +53,7 @@ public class TerminalScreen extends Screen {
 				.bounds(rx + (bw + 2) * 3, by, bw, 18).build());
 		this.withdraw = this.addRenderableWidget(Button.builder(Component.translatable("bolsavillager.button.withdraw"),
 						b -> ClientPlayNetworking.send(WithdrawPayload.INSTANCE))
-				.bounds(this.x0 + W - 6 - 70, this.y0 + 178, 70, 18)
+				.bounds(this.x0 + W - 6 - 70, this.y0 + 170, 70, 18)
 				.tooltip(Tooltip.create(Component.translatable("bolsavillager.button.withdraw.tooltip")))
 				.build());
 		this.updateButtons();
@@ -75,8 +75,8 @@ public class TerminalScreen extends Screen {
 		MarketSyncPayload.StockView view = ClientMarket.get(selected);
 		int owned = ClientMarket.account().shares().getOrDefault(selected.id, 0);
 		double funds = ClientMarket.account().balance() + ClientMarket.emeraldsInInventory();
-		double cost1 = view == null ? Double.MAX_VALUE : MarketEngine.orderValue(view.price(), 1) * (1 + MarketEngine.FEE);
-		double cost10 = view == null ? Double.MAX_VALUE : MarketEngine.orderValue(view.price(), 10) * (1 + MarketEngine.FEE);
+		double cost1 = view == null ? Double.MAX_VALUE : ClientMarket.rules().buyCost(view.price(), 1);
+		double cost10 = view == null ? Double.MAX_VALUE : ClientMarket.rules().buyCost(view.price(), 10);
 		this.buy1.active = funds >= cost1;
 		this.buy10.active = funds >= cost10;
 		this.sell1.active = owned >= 1;
@@ -180,13 +180,21 @@ public class TerminalScreen extends Screen {
 				Component.translatable("bolsavillager.terminal.today").getString(), x + w, y + 3, MarketUi.changeColor(change));
 
 		y += 18;
-		MarketUi.chart(g, view.history(), x, y, w, 64, true);
+		MarketUi.chart(g, view.history(), x, y, w, 54, true);
 		g.text(this.font, Component.translatable("bolsavillager.terminal.last_hour"), x + 2, y + 2, MarketUi.TEXT_DIM, false);
 
-		y += 68;
+		y += 58;
 		g.text(this.font, Component.translatable(selected == StockDef.WANDERING_TRADER
 						? "bolsavillager.terminal.stats_wandering" : "bolsavillager.terminal.stats",
 				view.population(), view.volumeDay(), view.tradesDay()), x, y, MarketUi.TEXT_DIM, false);
+
+		y += 11;
+		MarketRules rules = ClientMarket.rules();
+		if (rules.dividendsEnabled()) {
+			double dps = rules.dividendPerShare(selected, view.price(), view.population(), view.tradesDay());
+			g.text(this.font, Component.translatable("bolsavillager.terminal.dividend_forecast", MarketUi.money(dps)),
+					x, y, MarketUi.GOLD, false);
+		}
 
 		y += 11;
 		int owned = ClientMarket.account().shares().getOrDefault(selected.id, 0);
@@ -212,8 +220,13 @@ public class TerminalScreen extends Screen {
 				x, y, MarketUi.TEXT, false);
 		g.text(this.font, Component.translatable("bolsavillager.terminal.wallet",
 				MarketUi.money(ClientMarket.portfolioValue())), x, y + 11, MarketUi.TEXT_DIM, false);
-		g.text(this.font, Component.translatable("bolsavillager.terminal.inventory",
-				ClientMarket.emeraldsInInventory()), x, y + 22, MarketUi.TEXT_DIM, false);
+		if (ClientMarket.rules().dividendsEnabled()) {
+			g.text(this.font, Component.translatable("bolsavillager.terminal.last_dividend",
+					MarketUi.money(acc.lastDividend())), x, y + 22, MarketUi.GOLD, false);
+		}
+		// Embaixo do botão Sacar
+		MarketUi.textRight(g, this.font, Component.translatable("bolsavillager.terminal.inventory",
+				ClientMarket.emeraldsInInventory()).getString(), this.x0 + W - 6, y + 25, MarketUi.TEXT_DIM);
 	}
 
 	@Override

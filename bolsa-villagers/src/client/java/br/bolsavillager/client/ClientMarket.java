@@ -1,5 +1,6 @@
 package br.bolsavillager.client;
 
+import br.bolsavillager.market.MarketRules;
 import br.bolsavillager.market.StockDef;
 import br.bolsavillager.net.MarketSyncPayload;
 import net.minecraft.client.Minecraft;
@@ -15,6 +16,8 @@ import java.util.Map;
 public final class ClientMarket {
 	private static final Map<StockDef, MarketSyncPayload.StockView> stocks = new EnumMap<>(StockDef.class);
 	private static MarketSyncPayload.AccountView account = MarketSyncPayload.AccountView.EMPTY;
+	/** Regras do servidor (corretagem, impacto, efeito nas trocas, dividendos). */
+	private static MarketRules rules = MarketRules.DEFAULT;
 	/** Ação do último villager/mercador com quem o jogador interagiu (para o painel na tela de trocas). */
 	private static @Nullable StockDef lastMerchantStock;
 
@@ -29,11 +32,17 @@ public final class ClientMarket {
 			}
 		}
 		account = payload.account();
+		rules = payload.rules();
+	}
+
+	public static MarketRules rules() {
+		return rules;
 	}
 
 	public static void clear() {
 		stocks.clear();
 		account = MarketSyncPayload.AccountView.EMPTY;
+		rules = MarketRules.DEFAULT;
 		lastMerchantStock = null;
 	}
 

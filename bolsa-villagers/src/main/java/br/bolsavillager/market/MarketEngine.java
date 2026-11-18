@@ -1,5 +1,6 @@
 package br.bolsavillager.market;
 
+import br.bolsavillager.BolsaConfig;
 import br.bolsavillager.BolsaMod;
 import br.bolsavillager.net.MarketSyncPayload;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -7,6 +8,8 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.HoverEvent;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -36,26 +39,21 @@ import java.util.UUID;
 
 /**
  * O "pregão": junta tudo o que os villagers fazem (trocas, reposições, mortes, censo) e
- * transforma em variação de preço a cada {@link #TICK_INTERVAL} ticks.
+ * transforma em variação de preço a cada pregão ({@link BolsaConfig#sessionIntervalTicks}).
  *
  * <p>Modelo de preço (por ação, em log-retorno a cada pregão):
  * <pre>
- *   r = pressão_dos_eventos + 0,08 * ln(valor_justo / preço) + ruído(σ = 0,6%)
+ *   r = força_dos_eventos * pressão + reversão * ln(valor_justo / preço) + ruído(σ = volatilidade)
  *   preço = preço * e^r
  * </pre>
  * O valor justo cresce com a população da profissão. A pressão vem das trocas
  * (mais esmeraldas movimentadas = alta), reposições, estoque esgotado, mortes e compras/vendas de jogadores.
+ * Na virada de cada dia do Minecraft, as empresas pagam dividendos aos acionistas.
  */
 public final class MarketEngine {
-	/** Um pregão a cada 30 segundos. */
-	public static final int TICK_INTERVAL = 600;
 	public static final long DAY_LENGTH = 24000L;
-	/** Taxa de corretagem cobrada em cada compra/venda de ações. */
-	public static final double FEE = 0.01;
 	public static final double MIN_PRICE = 0.25;
 	public static final int MAX_ORDER = 64;
-	/** Distância máxima (em blocos) do terminal para operar. */
-	private static final double TERMINAL_RANGE = 8.0;
 
 	private static final Map<StockDef, Double> pressure = new EnumMap<>(StockDef.class);
 	/** Último terminal usado por cada jogador (para validar ordens vindas da tela do terminal). */
@@ -109,10 +107,11 @@ public final class MarketEngine {
 		}
 		addPressure(def, Math.min(impulse, 0.05));
 
-		StockState state = data(level.getServer()).stock(def);
+		MarketData data = data(level.getServer());
+		StockState state = data.stock(def);
 		state.volumeDay += value;
 		state.tradesDay++;
-		data(level.getServer()).setDirty();
+		data.setDirty();
 	}
 
 	/** Chamado (via mixin) quando um villager repõe o estoque no posto de trabalho. */
@@ -171,19 +170,20 @@ public final class MarketEngine {
 	}
 
 	// ---------------------------------------------------------------------------------------------
-	// Pregão
+	// Pregão e dividendos
 	// ---------------------------------------------------------------------------------------------
 
 	public static void onServerTick(MinecraftServer server) {
-		if (++tickCounter < TICK_INTERVAL) {
+		if (++tickCounter < BolsaConfig.get().sessionIntervalTicks) {
 			return;
 		}
 		tickCounter = 0;
 		runSession(server);
 	}
 
-	/** Roda um pregão imediatamente (normalmente acontece sozinho a cada {@link #TICK_INTERVAL} ticks). */
+	/** Roda um pregão imediatamente (normalmente acontece sozinho a cada {@link BolsaConfig#sessionIntervalTicks}). */
 	public static void runSession(MinecraftServer server) {
+		BolsaConfig config = BolsaConfig.get();
 		MarketData data = data(server);
 		long day = server.overworld().getGameTime() / DAY_LENGTH;
 		boolean newDay = day != data.day;
@@ -207,6 +207,11 @@ public final class MarketEngine {
 			}
 		}
 
+		// O dia que acabou paga dividendos com base no movimento dele (antes de zerar as estatísticas).
+		if (newDay && data.day >= 0) {
+			payDividends(server, data, data.day);
+		}
+
 		for (StockDef def : StockDef.values()) {
 			StockState state = data.stock(def);
 			int pop = population.getOrDefault(def, 0);
@@ -219,11 +224,11 @@ public final class MarketEngine {
 				state.population = pop;
 			}
 
-			double fair = fairValue(def, state.population);
-			double r = pressure.getOrDefault(def, 0.0)
-					+ 0.08 * Math.log(fair / state.price)
-					+ random.nextGaussian() * 0.006;
-			r = Mth.clamp(r, -0.15, 0.15);
+			double fair = MarketRules.fairValue(def, state.population);
+			double r = config.eventStrength * pressure.getOrDefault(def, 0.0)
+					+ config.meanReversion * Math.log(fair / state.price)
+					+ random.nextGaussian() * config.volatility;
+			r = Mth.clamp(r, -config.maxMovePerSession, config.maxMovePerSession);
 			state.price = Math.max(MIN_PRICE, state.price * Math.exp(r));
 			state.pushHistory(state.price);
 
@@ -234,7 +239,7 @@ public final class MarketEngine {
 			}
 
 			// Os villagers "sentem" o mercado: comemoram altas e reclamam de quedas.
-			if (Math.abs(r) >= 0.03) {
+			if (config.villagerParticles && Math.abs(r) >= 0.03) {
 				for (Villager villager : loaded.getOrDefault(def, List.of())) {
 					((ServerLevel) villager.level()).sendParticles(
 							r > 0 ? ParticleTypes.HAPPY_VILLAGER : ParticleTypes.ANGRY_VILLAGER,
@@ -246,25 +251,58 @@ public final class MarketEngine {
 		pressure.clear();
 		data.day = day;
 		data.setDirty();
-
-		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-			sync(player, false);
-		}
-	}
-
-	/** Valor "justo" da ação: cresce com a raiz da população da profissão. */
-	public static double fairValue(StockDef def, int population) {
-		return def.basePrice * (0.5 + 0.5 * Math.sqrt(1 + population));
+		syncEveryone(server);
 	}
 
 	/**
-	 * Multiplicador de preço das trocas de um villager conforme a cotação da guilda dele:
-	 * ação valorizada = produtos mais caros; ação em baixa = promoção. Limitado a ±30%.
+	 * Paga os dividendos do dia {@code day} a todos os acionistas (online ou não) e avisa quem está online.
+	 * Retorna o total distribuído.
 	 */
-	public static double tradePriceFactor(MinecraftServer server, StockDef def) {
-		StockState state = data(server).stock(def);
-		double ratio = state.price / fairValue(def, state.population);
-		return Mth.clamp((ratio - 1.0) * 0.3, -0.3, 0.3);
+	public static double payDividends(MinecraftServer server, MarketData data, long day) {
+		MarketRules rules = MarketRules.current();
+		if (!rules.dividendsEnabled()) {
+			return 0;
+		}
+		Map<StockDef, Double> perShare = new EnumMap<>(StockDef.class);
+		for (StockDef def : StockDef.values()) {
+			StockState s = data.stock(def);
+			perShare.put(def, rules.dividendPerShare(def, s.price, s.population, s.tradesDay));
+		}
+
+		double distributed = 0;
+		for (Map.Entry<UUID, Account> entry : data.accounts().entrySet()) {
+			Account account = entry.getValue();
+			double total = 0;
+			MutableComponent breakdown = Component.empty();
+			for (StockDef def : StockDef.values()) {
+				int shares = account.sharesOf(def);
+				double amount = shares * perShare.get(def);
+				if (amount > 0) {
+					total += amount;
+					if (!breakdown.getSiblings().isEmpty()) {
+						breakdown.append("\n");
+					}
+					breakdown.append(Component.translatable("bolsavillager.msg.dividend_line",
+							def.ticker, shares, fmt(perShare.get(def)), fmt(amount)));
+				}
+			}
+			if (total <= 0) {
+				continue;
+			}
+			account.balance += total;
+			account.lastDividend = total;
+			account.lastDividendDay = day;
+			account.totalDividends += total;
+			distributed += total;
+
+			ServerPlayer player = server.getPlayerList().getPlayer(entry.getKey());
+			if (player != null) {
+				player.sendSystemMessage(Component.translatable("bolsavillager.msg.dividends", fmt(total))
+						.withStyle(style -> style.withColor(ChatFormatting.GOLD).withHoverEvent(new HoverEvent.ShowText(breakdown))));
+			}
+		}
+		data.setDirty();
+		return distributed;
 	}
 
 	// ---------------------------------------------------------------------------------------------
@@ -274,7 +312,14 @@ public final class MarketEngine {
 	public static void sync(ServerPlayer player, boolean openTerminal) {
 		if (ServerPlayNetworking.canSend(player, MarketSyncPayload.TYPE)) {
 			MarketData data = data(player.level().getServer());
-			ServerPlayNetworking.send(player, MarketSyncPayload.of(data, data.account(player.getUUID()), openTerminal));
+			ServerPlayNetworking.send(player, MarketSyncPayload.of(data, data.account(player.getUUID()),
+					MarketRules.current(), openTerminal));
+		}
+	}
+
+	public static void syncEveryone(MinecraftServer server) {
+		for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+			sync(p, false);
 		}
 	}
 
@@ -297,49 +342,58 @@ public final class MarketEngine {
 		merchantStock.remove(player.getUUID());
 	}
 
-	private static boolean canOperate(ServerPlayer player, StockDef def) {
+	/** Ordens vindas das telas: precisa estar na tela de trocas da guilda certa ou perto do terminal aberto. */
+	private static boolean canOperateFromScreen(ServerPlayer player, StockDef def) {
 		if (player.containerMenu instanceof MerchantMenu) {
 			return merchantStock.get(player.getUUID()) == def;
 		}
 		BlockPos pos = lastTerminal.get(player.getUUID());
 		return pos != null
 				&& player.level().getBlockState(pos).is(BolsaMod.TERMINAL)
-				&& player.position().closerThan(Vec3.atCenterOf(pos), TERMINAL_RANGE);
+				&& player.position().closerThan(Vec3.atCenterOf(pos), BolsaConfig.get().terminalRange);
 	}
 
-	/** Quanto cada ação negociada move o preço (em log): 64 ações = ~29%. */
-	public static final double IMPACT_PER_SHARE = 0.004;
+	/** Ordens vindas do chat: perto de qualquer Terminal da Bolsa (ou em qualquer lugar, se a config deixar). */
+	public static boolean canTradeFromChat(ServerPlayer player) {
+		BolsaConfig config = BolsaConfig.get();
+		if (config.chatTradingAnywhere) {
+			return true;
+		}
+		int radius = Math.min(config.terminalRange, 10);
+		return BlockPos.findClosestMatch(player.blockPosition(), radius, radius,
+				pos -> player.level().getBlockState(pos).is(BolsaMod.TERMINAL)).isPresent();
+	}
+
+	/** Ordem vinda de uma tela (terminal ou painel do villager). */
+	public static void trade(ServerPlayer player, StockDef def, int quantity) {
+		if (canOperateFromScreen(player, def)) {
+			executeTrade(player, def, quantity, true);
+		}
+	}
 
 	/**
-	 * Valor total de uma ordem (sem corretagem), pagando o preço médio ao longo do impacto que a própria
-	 * ordem causa. Assim comprar e vender em seguida nunca dá lucro: a ida e a volta se anulam e a
-	 * corretagem vira prejuízo. quantity > 0 compra, quantity < 0 vende.
+	 * Executa uma ordem: quantity > 0 compra, quantity < 0 vende. A confirmação vai para a barra de ação
+	 * (telas) ou para o chat (comando). Retorna se a ordem foi executada.
 	 */
-	public static double orderValue(double price, int quantity) {
-		double x = IMPACT_PER_SHARE * Math.abs(quantity);
-		double average = quantity > 0 ? price * Math.expm1(x) / x : price * -Math.expm1(-x) / x;
-		return average * Math.abs(quantity);
-	}
-
-	/** Executa uma ordem: quantity > 0 compra, quantity < 0 vende. */
-	public static void trade(ServerPlayer player, StockDef def, int quantity) {
-		if (quantity == 0 || Math.abs(quantity) > MAX_ORDER || !canOperate(player, def)) {
-			return;
+	public static boolean executeTrade(ServerPlayer player, StockDef def, int quantity, boolean actionBar) {
+		if (quantity == 0 || Math.abs(quantity) > MAX_ORDER) {
+			return false;
 		}
 		MinecraftServer server = player.level().getServer();
+		MarketRules rules = MarketRules.current();
 		MarketData data = data(server);
 		StockState state = data.stock(def);
 		Account account = data.account(player.getUUID());
 		int qty = Math.abs(quantity);
 
 		if (quantity > 0) {
-			double cost = orderValue(state.price, qty) * (1 + FEE);
+			double cost = rules.buyCost(state.price, qty);
 			if (account.balance < cost) {
 				int needed = (int) Math.ceil(cost - account.balance - 1e-9);
 				if (countEmeralds(player) < needed) {
 					player.sendSystemMessage(Component.translatable("bolsavillager.msg.no_funds",
-							fmt(cost), def.ticker).withStyle(ChatFormatting.RED), true);
-					return;
+							fmt(cost), def.ticker).withStyle(ChatFormatting.RED), actionBar);
+					return false;
 				}
 				removeEmeralds(player, needed);
 				account.balance += needed;
@@ -348,17 +402,17 @@ public final class MarketEngine {
 			account.shares.merge(def.id, qty, Integer::sum);
 			account.costBasis.merge(def.id, cost, Double::sum);
 			// Impacto de mercado da ordem.
-			state.price *= Math.exp(IMPACT_PER_SHARE * qty);
+			state.price *= Math.exp(rules.impactPerShare() * qty);
 			player.sendSystemMessage(Component.translatable("bolsavillager.msg.bought",
-					qty, def.ticker, fmt(cost)).withStyle(ChatFormatting.GREEN), true);
+					qty, def.ticker, fmt(cost)).withStyle(ChatFormatting.GREEN), actionBar);
 		} else {
 			int owned = account.sharesOf(def);
 			if (owned < qty) {
 				player.sendSystemMessage(Component.translatable("bolsavillager.msg.no_shares", def.ticker)
-						.withStyle(ChatFormatting.RED), true);
-				return;
+						.withStyle(ChatFormatting.RED), actionBar);
+				return false;
 			}
-			double proceeds = orderValue(state.price, -qty) * (1 - FEE);
+			double proceeds = rules.sellProceeds(state.price, qty);
 			double basis = account.costBasis.getOrDefault(def.id, 0.0);
 			double basisSold = basis * qty / owned;
 			account.balance += proceeds;
@@ -369,42 +423,39 @@ public final class MarketEngine {
 				account.shares.put(def.id, owned - qty);
 				account.costBasis.put(def.id, basis - basisSold);
 			}
-			state.price = Math.max(MIN_PRICE, state.price * Math.exp(-IMPACT_PER_SHARE * qty));
+			state.price = Math.max(MIN_PRICE, state.price * Math.exp(-rules.impactPerShare() * qty));
 			double profit = proceeds - basisSold;
 			player.sendSystemMessage(Component.translatable("bolsavillager.msg.sold",
 					qty, def.ticker, fmt(proceeds), (profit >= 0 ? "+" : "") + fmt(profit))
-					.withStyle(profit >= 0 ? ChatFormatting.GREEN : ChatFormatting.GOLD), true);
+					.withStyle(profit >= 0 ? ChatFormatting.GREEN : ChatFormatting.GOLD), actionBar);
 		}
 		data.setDirty();
 		syncEveryone(server);
+		return true;
 	}
 
-	/** Saca o saldo inteiro da corretora como esmeraldas. */
-	public static void withdraw(ServerPlayer player) {
+	/** Saca o saldo inteiro da corretora como esmeraldas. Retorna quantas esmeraldas saíram. */
+	public static int withdraw(ServerPlayer player) {
 		MarketData data = data(player.level().getServer());
 		Account account = data.account(player.getUUID());
 		int amount = (int) Math.floor(account.balance + 1e-9);
 		if (amount <= 0) {
-			return;
+			return 0;
 		}
 		account.balance -= amount;
 		data.setDirty();
-		while (amount > 0) {
-			int n = Math.min(amount, Items.EMERALD.getDefaultMaxStackSize());
+		int left = amount;
+		while (left > 0) {
+			int n = Math.min(left, Items.EMERALD.getDefaultMaxStackSize());
 			ItemStack stack = new ItemStack(Items.EMERALD, n);
 			if (!player.getInventory().add(stack)) {
 				player.drop(stack, false);
 			}
-			amount -= n;
+			left -= n;
 		}
 		player.containerMenu.broadcastChanges();
 		sync(player, false);
-	}
-
-	private static void syncEveryone(MinecraftServer server) {
-		for (ServerPlayer p : server.getPlayerList().getPlayers()) {
-			sync(p, false);
-		}
+		return amount;
 	}
 
 	// ---------------------------------------------------------------------------------------------

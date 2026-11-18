@@ -1,6 +1,8 @@
 package br.bolsavillager.mixin;
 
 import br.bolsavillager.market.MarketEngine;
+import br.bolsavillager.market.MarketRules;
+import br.bolsavillager.market.StockState;
 import br.bolsavillager.market.StockDef;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.npc.villager.Villager;
@@ -35,7 +37,11 @@ public abstract class VillagerMixin {
 		if (def == null) {
 			return;
 		}
-		double factor = MarketEngine.tradePriceFactor(level.getServer(), def);
+		StockState state = MarketEngine.data(level.getServer()).stock(def);
+		double factor = MarketRules.current().tradePriceFactor(def, state.price, state.population);
+		if (factor == 0) {
+			return;
+		}
 		for (MerchantOffer offer : self.getOffers()) {
 			int base = offer.getBaseCostA().getCount();
 			// Quando o villager COMPRA do jogador (paga em esmeraldas), guilda rica pede menos itens.

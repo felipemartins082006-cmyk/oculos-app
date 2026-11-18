@@ -1,7 +1,6 @@
 package br.bolsavillager.client.screen;
 
 import br.bolsavillager.client.ClientMarket;
-import br.bolsavillager.market.MarketEngine;
 import br.bolsavillager.market.StockDef;
 import br.bolsavillager.net.MarketSyncPayload;
 import br.bolsavillager.net.TradeSharesPayload;
@@ -15,7 +14,6 @@ import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.MerchantScreen;
 import net.minecraft.network.chat.Component;
-import net.minecraft.util.Mth;
 
 /**
  * Painel da bolsa que aparece grudado na tela de trocas do villager:
@@ -101,7 +99,7 @@ public final class VillagerPanel {
 		MarketSyncPayload.StockView view = ClientMarket.get(def);
 		int owned = ClientMarket.account().shares().getOrDefault(def.id, 0);
 		double funds = ClientMarket.account().balance() + ClientMarket.emeraldsInInventory();
-		double cost = view == null ? Double.MAX_VALUE : MarketEngine.orderValue(view.price(), 1) * (1 + MarketEngine.FEE);
+		double cost = view == null ? Double.MAX_VALUE : ClientMarket.rules().buyCost(view.price(), 1);
 		buy.active = funds >= cost;
 		sell.active = owned > 0;
 		if (view != null) {
@@ -112,10 +110,9 @@ public final class VillagerPanel {
 		}
 	}
 
-	/** Mesmo cálculo do servidor ({@link MarketEngine#tradePriceFactor}), para mostrar ao jogador. */
+	/** Mesmo cálculo que o servidor usa nas trocas, com as regras recebidas dele. */
 	private static double priceEffectPercent(StockDef def, MarketSyncPayload.StockView view) {
-		double ratio = view.price() / MarketEngine.fairValue(def, view.population());
-		return Mth.clamp((ratio - 1.0) * 0.3, -0.3, 0.3) * 100.0;
+		return ClientMarket.rules().tradePriceFactor(def, view.price(), view.population()) * 100.0;
 	}
 
 	private static void extractSide(GuiGraphicsExtractor g, Font font, StockDef def, int x, int y, int w, int h) {

@@ -3,6 +3,7 @@ package br.bolsavillager.net;
 import br.bolsavillager.BolsaMod;
 import br.bolsavillager.market.Account;
 import br.bolsavillager.market.MarketData;
+import br.bolsavillager.market.MarketRules;
 import br.bolsavillager.market.StockDef;
 import br.bolsavillager.market.StockState;
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -15,7 +16,8 @@ import java.util.List;
 import java.util.Map;
 
 /** Servidor -> cliente: cotações de todas as ações + a conta do jogador. Pode pedir para abrir o terminal. */
-public record MarketSyncPayload(boolean openTerminal, List<StockView> stocks, AccountView account) implements CustomPacketPayload {
+public record MarketSyncPayload(boolean openTerminal, List<StockView> stocks, AccountView account, MarketRules rules)
+		implements CustomPacketPayload {
 	public static final Type<MarketSyncPayload> TYPE = new Type<>(BolsaMod.id("market_sync"));
 	public static final StreamCodec<RegistryFriendlyByteBuf, MarketSyncPayload> CODEC =
 			CustomPacketPayload.codec(MarketSyncPayload::write, MarketSyncPayload::read);
@@ -25,11 +27,12 @@ public record MarketSyncPayload(boolean openTerminal, List<StockView> stocks, Ac
 	}
 
 	/** Retrato da conta do jogador. */
-	public record AccountView(double balance, Map<String, Integer> shares, Map<String, Double> costBasis) {
-		public static final AccountView EMPTY = new AccountView(0, Map.of(), Map.of());
+	public record AccountView(double balance, Map<String, Integer> shares, Map<String, Double> costBasis,
+			double lastDividend, double totalDividends) {
+		public static final AccountView EMPTY = new AccountView(0, Map.of(), Map.of(), 0, 0);
 	}
 
-	public static MarketSyncPayload of(MarketData data, Account account, boolean openTerminal) {
+	public static MarketSyncPayload of(MarketData data, Account account, MarketRules rules, boolean openTerminal) {
 		List<StockView> stocks = new ArrayList<>();
 		for (StockDef def : StockDef.values()) {
 			StockState s = data.stock(def);
@@ -39,8 +42,8 @@ public record MarketSyncPayload(boolean openTerminal, List<StockView> stocks, Ac
 			}
 			stocks.add(new StockView(def.id, s.price, s.dayOpen, history, s.population, s.volumeDay, s.tradesDay));
 		}
-		return new MarketSyncPayload(openTerminal, stocks,
-				new AccountView(account.balance, Map.copyOf(account.shares), Map.copyOf(account.costBasis)));
+		return new MarketSyncPayload(openTerminal, stocks, new AccountView(account.balance, Map.copyOf(account.shares),
+				Map.copyOf(account.costBasis), account.lastDividend, account.totalDividends), rules);
 	}
 
 	private void write(RegistryFriendlyByteBuf buf) {
@@ -65,6 +68,9 @@ public record MarketSyncPayload(boolean openTerminal, List<StockView> stocks, Ac
 			buf.writeVarInt(qty);
 			buf.writeDouble(this.account.costBasis().getOrDefault(id, 0.0));
 		});
+		buf.writeDouble(this.account.lastDividend());
+		buf.writeDouble(this.account.totalDividends());
+		this.rules.write(buf);
 	}
 
 	private static MarketSyncPayload read(RegistryFriendlyByteBuf buf) {
@@ -90,7 +96,10 @@ public record MarketSyncPayload(boolean openTerminal, List<StockView> stocks, Ac
 			shares.put(id, buf.readVarInt());
 			cost.put(id, buf.readDouble());
 		}
-		return new MarketSyncPayload(open, stocks, new AccountView(balance, shares, cost));
+		double lastDividend = buf.readDouble();
+		double totalDividends = buf.readDouble();
+		MarketRules rules = MarketRules.read(buf);
+		return new MarketSyncPayload(open, stocks, new AccountView(balance, shares, cost, lastDividend, totalDividends), rules);
 	}
 
 	@Override
