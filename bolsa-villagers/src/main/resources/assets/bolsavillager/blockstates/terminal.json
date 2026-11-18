@@ -1,0 +1,8 @@
+{
+	"variants": {
+		"facing=north": { "model": "bolsavillager:block/terminal" },
+		"facing=east": { "model": "bolsavillager:block/terminal", "y": 90 },
+		"facing=south": { "model": "bolsavillager:block/terminal", "y": 180 },
+		"facing=west": { "model": "bolsavillager:block/terminal", "y": 270 }
+	}
+}

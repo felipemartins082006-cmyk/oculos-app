@@ -1,0 +1,20 @@
+{
+	"type": "minecraft:crafting_shaped",
+	"category": "misc",
+	"pattern": [
+		"GGG",
+		"ERE",
+		"PLP"
+	],
+	"key": {
+		"G": "minecraft:glass_pane",
+		"E": "minecraft:emerald",
+		"R": "minecraft:redstone",
+		"P": "#minecraft:planks",
+		"L": "minecraft:lectern"
+	},
+	"result": {
+		"id": "bolsavillager:terminal",
+		"count": 1
+	}
+}

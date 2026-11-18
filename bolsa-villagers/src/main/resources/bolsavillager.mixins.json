@@ -1,0 +1,15 @@
+{
+	"required": true,
+	"package": "br.bolsavillager.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"mixins": [
+		"AbstractVillagerMixin",
+		"VillagerMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	},
+	"overwrites": {
+		"requireAnnotations": true
+	}
+}

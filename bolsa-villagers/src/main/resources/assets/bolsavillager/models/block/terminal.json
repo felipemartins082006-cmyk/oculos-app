@@ -1,0 +1,8 @@
+{
+	"parent": "minecraft:block/orientable",
+	"textures": {
+		"top": "bolsavillager:block/terminal_top",
+		"front": "bolsavillager:block/terminal_front",
+		"side": "bolsavillager:block/terminal_side"
+	}
+}

@@ -1,0 +1,33 @@
+{
+	"schemaVersion": 1,
+	"id": "bolsavillager",
+	"version": "${version}",
+	"name": "Bolsa dos Villagers",
+	"description": "Uma bolsa de valores movida pela economia dos villagers: trocas, reposições, nascimentos e mortes mexem nas cotações de cada guilda. Invista suas esmeraldas no Terminal da Bolsa ou direto na tela de trocas.",
+	"authors": [
+		"felipemartins082006-cmyk"
+	],
+	"contact": {
+		"sources": "https://github.com/felipemartins082006-cmyk/oculos-app"
+	},
+	"license": "CC0-1.0",
+	"icon": "assets/bolsavillager/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"br.bolsavillager.BolsaMod"
+		],
+		"client": [
+			"br.bolsavillager.client.BolsaClient"
+		]
+	},
+	"mixins": [
+		"bolsavillager.mixins.json"
+	],
+	"depends": {
+		"fabricloader": ">=0.20.1",
+		"minecraft": "~26.2",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}
