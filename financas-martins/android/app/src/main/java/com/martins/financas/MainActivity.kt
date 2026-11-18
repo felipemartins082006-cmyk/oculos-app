@@ -114,6 +114,10 @@ class MainActivity : ComponentActivity() {
       WindowInsetsCompat.CONSUMED
     }
 
+    // o toque longo fica com o app (selecionar vários no extrato), não com a seleção de texto do sistema
+    web.setOnLongClickListener { true }
+    web.isLongClickable = false
+    web.isHapticFeedbackEnabled = false
     web.settings.apply {
       javaScriptEnabled = true
       domStorageEnabled = true // localStorage: onde ficam os lançamentos

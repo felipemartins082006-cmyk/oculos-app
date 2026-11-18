@@ -867,19 +867,30 @@
     root.dataset.sel = selectable ? '1' : '';
     if (root.dataset.bound) return;
     root.dataset.bound = '1';
-    let timer = null, x0 = 0, y0 = 0, longFired = false, holdEl = null;
+    let timer = null, x0 = 0, y0 = 0, t0 = 0, longFired = false, holdEl = null, moved = false;
     const cancel = () => { clearTimeout(timer); timer = null; };
     const rowOf = e => e.target.closest('.tx');
     const canSelect = el => root.dataset.sel && !el.dataset.id.startsWith('inc:');
-    // pressionar e segurar: entra no modo de seleção
+    // pressionar e segurar: entra no modo de seleção (marca o item; os próximos toques marcam/desmarcam outros)
+    const fireLong = el => {
+      if (longFired || !el || !canSelect(el)) return;
+      cancel(); longFired = true;
+      if (navigator.vibrate) navigator.vibrate(25);
+      if (sel.on) { if (!sel.ids.has(el.dataset.id)) toggleSel(el.dataset.id); } else startSelect(el.dataset.id);
+    };
     root.addEventListener('pointerdown', e => {
       const el = rowOf(e); if (!el || !canSelect(el)) return;
-      longFired = false; x0 = e.clientX; y0 = e.clientY; holdEl = el;
-      timer = setTimeout(() => { longFired = true; if (navigator.vibrate) navigator.vibrate(25); startSelect(holdEl.dataset.id); }, 450);
+      longFired = false; moved = false; x0 = e.clientX; y0 = e.clientY; t0 = Date.now(); holdEl = el;
+      cancel();
+      timer = setTimeout(() => fireLong(holdEl), 380);
     });
-    root.addEventListener('pointermove', e => { if (timer && Math.hypot(e.clientX - x0, e.clientY - y0) > 10) cancel(); }, { passive: true });
-    ['pointerup', 'pointercancel', 'pointerleave'].forEach(t => root.addEventListener(t, cancel));
-    root.addEventListener('contextmenu', e => { if (rowOf(e)) e.preventDefault(); });
+    root.addEventListener('pointermove', e => { if (timer && Math.hypot(e.clientX - x0, e.clientY - y0) > 12) { moved = true; cancel(); } }, { passive: true });
+    root.addEventListener('pointerup', cancel);
+    root.addEventListener('pointerleave', cancel);
+    // no Android o próprio sistema "pega" o toque longo e cancela o toque: se o dedo ficou parado segurando, vale como toque longo
+    root.addEventListener('pointercancel', () => { if (timer && !moved && Date.now() - t0 > 250) fireLong(holdEl); else cancel(); });
+    // o sinal de "toque longo" do celular também entra na seleção (e não abre menu nem seleção de texto)
+    root.addEventListener('contextmenu', e => { const el = rowOf(e); if (!el) return; e.preventDefault(); if (!moved) fireLong(el); });
     root.addEventListener('click', e => {
       const el = rowOf(e); if (!el) return;
       if (longFired) { longFired = false; return; }

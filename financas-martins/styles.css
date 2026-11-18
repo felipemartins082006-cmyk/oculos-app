@@ -866,3 +866,9 @@ details.more .when { justify-content: flex-start; }
 .inv-row { display: grid; margin-bottom: 8px; }
 .inv-row .inc-item { margin-bottom: 0; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 .quick-prov { border: 1px solid var(--line); border-top: 0; background: rgba(var(--accent-rgb), .07); color: var(--lime); font-weight: 700; font-size: 13px; padding: 10px; border-radius: 0 0 18px 18px; }
+
+/* ---------- seleção no extrato ---------- */
+.tx { touch-action: pan-y; }
+.sel-btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid rgba(var(--accent-rgb), .35); background: rgba(var(--accent-rgb), .08); color: var(--lime); border-radius: 999px; padding: 7px 12px 7px 9px; font-weight: 700; font-size: 13px; }
+.sel-btn svg { width: 17px; height: 17px; }
+.list-tools-row { margin: 8px 0 2px; }
