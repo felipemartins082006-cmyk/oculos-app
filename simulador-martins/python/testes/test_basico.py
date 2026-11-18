@@ -63,6 +63,14 @@ def test_ativo_muito_novo_nao_recusa():
     assert np.isfinite(r.resumo().loc["So novo", "P50"])
 
 
+def test_ativo_encerrado_nao_corta_janela():
+    from simulador.monte_carlo import preparar
+    J = preparar(BASE, {"X": {"SEED11": 50, "KNCR11": 50}}, 1995, modo="redistribuir")
+    assert J.meses[-1] == BASE.retornos["CDI"].last_valid_index() and J.encerrados and J.encerrados[0][0] == "SEED11"
+    r = simular(BASE, {"X": {"SEED11": 100}}, Plano(anos=10), Config(cenarios=2000, janela_anos=5), progresso=False)
+    assert np.isfinite(r.resumo().loc["X", "P50"])
+
+
 def test_aposentadoria():
     r = simular(BASE, CART, Plano(inicial=100000, aporte=0, anos=30, saque_ano=0, saque=5000), Config(cenarios=2000), progresso=False)
     assert "prob. dinheiro acabar" in r.resumo().columns

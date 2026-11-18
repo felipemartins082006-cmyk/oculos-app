@@ -173,6 +173,7 @@ class Janela:
     Rp: np.ndarray | None = None  # índice de referência da classe de cada ativo (meses × ativos)
     proxies: list = field(default_factory=list)  # (carteira, de, até, meses) cobertos por índice de classe
     trocou_modo: str | None = None
+    encerrados: list = field(default_factory=list)  # (ativo, último mês com dados): sai da carteira depois disso
 
     @property
     def P(self) -> np.ndarray:    # retornos mensais das carteiras (rebalanceamento mensal, pesos redistribuídos)
@@ -243,6 +244,7 @@ def preparar(base, carteiras: dict[str, dict[str, float]], desde: int = 1995, ca
         ultimo = R.index[-1] if len(R.index) else pedido
         # nunca menos de 3 anos: meses sem nenhum ativo da carteira usam o índice da classe
         ini = max(pedido, ini_macro, min(ini_cart[lim_cart], ultimo - 35))
+        ini = max(min(ini, ultimo - 35), ini_macro)                 # janela de no mínimo 3 anos
         cods_lim = [c for c, p in carteiras[lim_cart].items() if p > 0 and not c.startswith("RF:")]
         lim = min(cods_lim, key=lambda c: inicio[c]) if cods_lim else None
         R = R.loc[ini:, codigos + list(macro.columns)].dropna(subset=list(macro.columns))
@@ -253,8 +255,8 @@ def preparar(base, carteiras: dict[str, dict[str, float]], desde: int = 1995, ca
             J = preparar(base, carteiras, desde, cambio, False, semente, "redistribuir")
             J.trocou_modo = modo
             return J
-    if len(R) < 24:
-        raise ValueError(f"Não há dados de CDI/IPCA na janela ({len(R)} meses).")
+    if len(R) < 2:
+        raise ValueError("A base de dados não tem meses suficientes. Atualize os dados.")
     W = np.zeros((len(nomes), len(codigos)))
     for i, n in enumerate(nomes):
         tot = sum(p for p in carteiras[n].values() if p > 0)
@@ -262,6 +264,8 @@ def preparar(base, carteiras: dict[str, dict[str, float]], desde: int = 1995, ca
             if p > 0:
                 W[i, codigos.index(c)] += p / tot
     jovens = [(c, inicio[c]) for c in codigos if not c.startswith("RF:") and inicio[c] > R.index[0]] if modo == "redistribuir" else []
+    fim_ativo = {c: R[c].last_valid_index() for c in codigos if not c.startswith("RF:")}
+    encerrados = [(c, f) for c, f in fim_ativo.items() if f is not None and f < R.index[-1]] if modo == "redistribuir" else []
     Rp, proxies = None, []
     if modo == "redistribuir":
         Rp = indice_classe(base, codigos, cambio).reindex(R.index).to_numpy()
@@ -273,7 +277,7 @@ def preparar(base, carteiras: dict[str, dict[str, float]], desde: int = 1995, ca
     jovens.sort(key=lambda x: x[1], reverse=True)
     lim = lim if R.index[0] > pedido else None
     return Janela(codigos, R[codigos], W, nomes, R["CDI_m"].to_numpy(), R["IPCA_m"].to_numpy(), R.index, lim,
-                  estimados, jovens, modo, pedido, Rp, proxies)
+                  estimados, jovens, modo, pedido, Rp, proxies, None, encerrados)
 
 
 # ---------------------------------------------------------------- resultado

@@ -308,7 +308,8 @@ function preparar(carts, desde, cambio = 1, modo = 'cortar') {
   const sc = serie('CDI'), si = serie('IPCA'), sf = serie('USDBRL');
   const desdeI = idx(`${desde}-01`);
   let ini = Math.max(desdeI, sc.i0, si.i0, sf.i0), fim = Math.min(sc.i1, si.i1, sf.i1), limitante = null, novo = -Infinity;
-  for (const t of reais) fim = Math.min(fim, sr(t).i1);
+  // o fim da janela é sempre o último mês da base: um ativo que parou de ter dados sai da carteira
+  // naquele mês e o peso dele vai para os demais (igual a quando um ativo ainda não existia)
   if (redis) {
     // cada carteira precisa ter pelo menos um ativo existindo: começa no ativo mais antigo dela
     for (const c of cs) {
@@ -320,6 +321,7 @@ function preparar(carts, desde, cambio = 1, modo = 'cortar') {
     // em que nenhum ativo da carteira existia usam o índice de referência da classe (ver indiceClasse)
     if (novo > fim - 35) { novo = fim - 35; limitante = null; }
     ini = Math.max(ini, novo);
+    ini = Math.max(Math.min(ini, fim - 35), sc.i0, si.i0, sf.i0); // janela de no mínimo 3 anos
   } else {
     for (const t of reais) { const s = sr(t); if (s.i0 > novo) { novo = s.i0; limitante = t; } ini = Math.max(ini, s.i0); }
   }
@@ -331,11 +333,11 @@ function preparar(carts, desde, cambio = 1, modo = 'cortar') {
     meses.push(mi);
   }
   const L = meses.length;
-  if (L < 24) {
+  if (L < 24 && !redis) {
     // pouco histórico em comum para cortar a janela: os ativos entram quando começam (sem recusar a carteira)
-    if (!redis) { const H2 = preparar(carts, desde, cambio, 'redistribuir'); if (!H2.erro) H2.trocouModo = modo; return H2; }
-    return { erro: `Não há dados de CDI/IPCA na janela escolhida (${L} meses).`, meses };
+    const H2 = preparar(carts, desde, cambio, 'redistribuir'); if (!H2.erro) H2.trocouModo = modo; return H2;
   }
+  if (L < 2) return { erro: 'A base de dados não tem meses suficientes. Atualize os dados.', meses };
   const cdi = new Float64Array(L), ipca = new Float64Array(L), fx = new Float64Array(L);
   meses.forEach((mi, j) => { cdi[j] = val(sc, mi); ipca[j] = val(si, mi); fx[j] = val(sf, mi); });
   const R = uni.map((t) => {
@@ -376,11 +378,13 @@ function preparar(carts, desde, cambio = 1, modo = 'cortar') {
   const jovens = [];
   if (redis) for (const t of reais) { const s0 = sr(t).i0; if (s0 > meses[0]) { let falta = 0; for (const mi of meses) if (mi < s0) falta++; jovens.push({ t, desde: s0, falta }); } }
   jovens.sort((a, b) => b.desde - a.desde);
+  const encerrados = [];
+  if (redis) for (const t of reais) { const s1 = sr(t).i1; if (s1 < meses[L - 1]) encerrados.push({ t, ate: s1 }); }
   const estimados = {};
   if (estender) for (const t of reais) { const e = sr(t); if (e.estimados) { let n = 0; for (const mi of meses) if (mi < serie(t).i0) n++; if (n) estimados[t] = n; } }
   return {
     cs, uni, R, Rc, risco, W, P, meses, cdi, ipca, fx, L, ini: meses[0], fim: meses[L - 1], modo,
-    limitante: meses[0] > desdeI ? limitante : null, estimados, jovens,
+    limitante: meses[0] > desdeI ? limitante : null, estimados, jovens, encerrados,
     proxies: proxies.map((pr, c) => ({ nome: cs[c].nome, n: pr.n, de: pr.de, ate: pr.ate, indices: [...pr.indices] })).filter((x) => x.n),
   };
 }
@@ -401,8 +405,9 @@ function indiceClasse(t, mi, cdi, fx, cambio) {
 // avisos sobre trechos cobertos por índice de classe e troca automática de modo
 function avisoProxies(H) {
   const a = [];
+  if (H.encerrados && H.encerrados.length) a.push(`Ativos sem dados depois de certa data (fundo encerrado, ticker trocado ou sem negociação); saem da carteira nesse mês e o peso vai para os demais: ${H.encerrados.map((e) => `${esc(rotuloAtivo(e.t))} até ${rotulo(e.ate)}`).join(', ')}.`);
   if (H.trocouModo) a.push(`Os ativos tinham pouco histórico em comum para ${H.trocouModo === 'estimar' ? 'estimar por fatores' : 'cortar a janela'}; por isso cada ativo entra quando começa.`);
-  for (const x of H.proxies || []) a.push(`${esc(x.nome)}: de ${rotulo(x.de)} a ${rotulo(x.ate)} nenhum ativo da carteira existia; esses ${x.n} meses usam o índice de referência da classe (${x.indices.join(', ')}).`);
+  for (const x of H.proxies || []) a.push(`${esc(x.nome)}: em ${x.n} ${x.n === 1 ? 'mês' : 'meses'} entre ${rotulo(x.de)} e ${rotulo(x.ate)} nenhum ativo da carteira tinha dados; esses meses usam o índice de referência da classe (${x.indices.join(', ')}).`);
   return a.join(' ');
 }
 // como cada carteira começa a janela: que parte dos pesos-alvo já existia (o resto foi redistribuído)

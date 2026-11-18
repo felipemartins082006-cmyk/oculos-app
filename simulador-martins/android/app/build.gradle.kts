@@ -23,8 +23,8 @@ android {
     applicationId = "com.martins.simulador"
     minSdk = 26
     targetSdk = 36
-    versionCode = 7
-    versionName = "4.3"
+    versionCode = 8
+    versionName = "4.4"
   }
 
   sourceSets { getByName("main") { assets.srcDir(webAssets) } }
