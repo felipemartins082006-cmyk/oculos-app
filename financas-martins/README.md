@@ -90,6 +90,9 @@ Diferenças em relação ao Android:
   IPCA+ ou prefixado, com o rendimento calculado sozinho pela taxa) e de **renda variável** (lance os
   proventos de cada mês; o app mostra a média e a evolução em gráfico). As taxas (CDI, Selic, IPCA) ficam
   editáveis na própria tela; valores brutos, antes do IR. Opção de somar os investimentos ao patrimônio.
+- **Média automática da renda variável**: lance quanto rendeu em cada mês (na aplicação ou pelo botão rápido
+  "+ Lançar <mês>" na lista) e o app calcula sozinho a média de todos os meses lançados (out e nov → média dos dois;
+  dezembro, janeiro… entram conforme você lança). A média manual só é pedida enquanto não há nenhum mês lançado.
 - **Consolidação "Quanto você recebe por mês"**: salário, outras rendas, renda fixa e proventos, cada um
   separado, com o total. Uma chave liga ou desliga "Contar os rendimentos no dia a dia" e uma barrinha
   escolhe quanto contar (0–100%); o que for contado vira um saldo do dia separado ("Rendimentos").

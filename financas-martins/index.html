@@ -415,30 +415,41 @@
     <button type="button" class="icon-x" id="tx-cancel" aria-label="Fechar"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
   </div>
   <div class="amount" id="amount-display"><small>R$</small><span id="amount-text">0</span></div>
-  <label class="name-field"><span>Nome (o que foi)</span>
-    <input id="tx-desc" placeholder="ex.: almoço, Uber, mercado do mês" aria-label="Nome do lançamento" maxlength="140"></label>
-  <div class="items-box" id="items-box">
-    <div class="items-list" id="items-list"></div>
-    <div class="items-total hidden" id="items-total"></div>
-    <button type="button" class="items-add" id="items-add">+ Detalhar itens (nome e valor de cada um)</button>
+  <div class="fs">
+    <div class="name-line">
+      <input id="tx-desc" placeholder="Nome: almoço, Uber, mercado…" aria-label="Nome do lançamento" maxlength="140">
+      <button type="button" class="items-add" id="items-add">+ Itens</button>
+    </div>
+    <div class="items-box" id="items-box">
+      <div class="items-list" id="items-list"></div>
+      <div class="items-total hidden" id="items-total"></div>
+    </div>
   </div>
-  <div class="pick-row" id="cat-picker" role="radiogroup" aria-label="Categoria"></div>
-  <div class="pay-block">
-    <span class="pay-lbl" id="method-lbl">Como você pagou?</span>
-    <div class="pick-row" id="method-picker" role="radiogroup" aria-label="Forma de pagamento"></div>
-    <span class="pay-lbl" id="bank-lbl">De qual banco?</span>
-    <div class="pick-row accts" id="acct-picker" role="radiogroup" aria-label="Banco ou cartão"></div>
+  <div class="fs">
+    <span class="fs-lbl">Categoria</span>
+    <div class="pick-row one" id="cat-picker" role="radiogroup" aria-label="Categoria"></div>
   </div>
-  <div class="pocket-pick hidden" id="pocket-pick"><span id="pocket-pick-lbl">Sai do saldo</span><div class="pick-row" id="pocket-picker"></div></div>
-  <div class="when">
-    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-    <span id="when-text"></span>
-    <button type="button" class="link" id="when-edit">alterar</button>
+  <div class="fs pay-block">
+    <span class="fs-lbl" id="method-lbl">Como você pagou?</span>
+    <div class="pick-row one" id="method-picker" role="radiogroup" aria-label="Forma de pagamento"></div>
+    <span class="fs-lbl sub" id="bank-lbl">De qual banco?</span>
+    <div class="pick-row one accts" id="acct-picker" role="radiogroup" aria-label="Banco ou cartão"></div>
   </div>
-  <div class="when-inputs hidden" id="when-inputs">
-    <input type="date" id="tx-date" aria-label="Data">
-    <input type="time" id="tx-time" aria-label="Hora">
-  </div>
+  <details class="more" id="tx-more">
+    <summary><span>Mais opções</span><small id="tx-more-sum"></small></summary>
+    <div class="more-body">
+      <div class="when">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        <span id="when-text"></span>
+        <button type="button" class="link" id="when-edit">alterar</button>
+      </div>
+      <div class="when-inputs hidden" id="when-inputs">
+        <input type="date" id="tx-date" aria-label="Data">
+        <input type="time" id="tx-time" aria-label="Hora">
+      </div>
+      <div class="pocket-pick hidden" id="pocket-pick"><span class="fs-lbl" id="pocket-pick-lbl">Sai do saldo</span><div class="pick-row one" id="pocket-picker"></div></div>
+    </div>
+  </details>
   <div class="keypad" id="keypad">
     <button type="button">1</button><button type="button">2</button><button type="button">3</button>
     <button type="button">4</button><button type="button">5</button><button type="button">6</button>
@@ -472,20 +483,23 @@
   <div class="grip"></div>
   <div class="sheet-top"><h3 class="sheet-title grow" id="inc-title">Nova fonte de renda</h3>
     <button type="button" class="icon-x" id="inc-close" aria-label="Fechar"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
-  <div class="inc-types" id="inc-types"></div>
+  <div class="pick-row one" id="inc-types"></div>
   <label class="flbl">Nome<input id="inc-name" maxlength="40"></label>
   <div class="inc-invest hidden" id="inc-invest">
     <label class="flbl">Valor investido<input id="inc-principal" inputmode="decimal" placeholder="30.000,00"></label>
     <label class="flbl">Rende por mês (%)<input id="inc-rate" inputmode="decimal" placeholder="1,0"></label>
   </div>
   <label class="flbl"><span id="inc-amount-lbl">Quanto você recebe por mês</span><input id="inc-amount" inputmode="decimal" placeholder="2.200,00"></label>
-  <span class="flbl-t">Como contar como entrada</span>
-  <div class="modes" id="inc-modes">
-    <button type="button" data-mode="daily"><b>Todo dia</b><small>Valor do mês ÷ dias do mês (30 ou 31)</small></button>
-    <button type="button" data-mode="payday"><b>No dia do pagamento</b><small>Entra inteiro no dia <input id="inc-payday" inputmode="numeric" maxlength="2" value="5"> de cada mês</small></button>
-    <button type="button" data-mode="off"><b>Não contar</b><small>Só fica registrado (ex.: rendimento que continua investido)</small></button>
+  <div class="fs">
+    <span class="fs-lbl">Como contar</span>
+    <div class="seg three" id="inc-modes" role="radiogroup" aria-label="Como contar">
+      <button type="button" data-mode="daily">Todo dia</button>
+      <button type="button" data-mode="payday">No pagamento</button>
+      <button type="button" data-mode="off">Não contar</button>
+    </div>
+    <div class="payday-row hidden" id="payday-row">Entra inteiro no dia <input id="inc-payday" inputmode="numeric" maxlength="2" value="5" aria-label="Dia do pagamento"> de cada mês</div>
+    <p class="inc-preview" id="inc-preview"></p>
   </div>
-  <p class="inc-preview" id="inc-preview"></p>
   <div class="split-box" id="inc-split">
     <div class="toggle-row" style="margin-top:0">
       <div class="grow"><b>Separar uma parte para investir</b><small>A parte investida sai do saldo do dia a dia</small></div>
@@ -497,11 +511,16 @@
       <p class="inc-preview" id="split-preview"></p>
     </div>
   </div>
-  <label class="flbl">Cai em qual conta<select id="inc-bank"></select></label>
-  <div class="inc-dates">
-    <label class="flbl">Começa em<input type="date" id="inc-start"></label>
-    <label class="flbl">Termina em (opcional)<input type="date" id="inc-end"></label>
-  </div>
+  <details class="more" id="inc-more">
+    <summary><span>Mais opções</span><small id="inc-more-sum"></small></summary>
+    <div class="more-body">
+      <label class="flbl">Cai em qual conta<select id="inc-bank"></select></label>
+      <div class="inc-dates">
+        <label class="flbl">Começa em<input type="date" id="inc-start"></label>
+        <label class="flbl">Termina em (opcional)<input type="date" id="inc-end"></label>
+      </div>
+    </div>
+  </details>
   <div class="sheet-actions">
     <button type="button" class="ghost danger hidden" id="inc-delete">Excluir</button>
     <button type="submit" class="cta">Salvar</button>
@@ -533,10 +552,13 @@
     <label class="flbl" style="margin-top:10px"><span id="inv-rate-lbl">% do CDI</span><input id="inv-rate" inputmode="decimal"></label>
   </div>
   <div id="inv-var-box" class="hidden">
-    <span class="flbl-t">Proventos recebidos (dividendos, rendimentos, JCP)</span>
-    <div class="prov-add"><input type="month" id="prov-month" aria-label="Mês"><input id="prov-value" inputmode="decimal" placeholder="R$" aria-label="Valor"><button type="button" class="ghost" id="prov-add">Lançar</button></div>
-    <div class="prov-list" id="prov-list"></div>
-    <label class="flbl">Ou informe a média por mês (se não lançar mês a mês)<input id="inv-avg" inputmode="decimal" placeholder="ex.: 250,00"></label>
+    <div class="fs">
+      <span class="fs-lbl">Quanto rendeu em cada mês</span>
+      <div class="prov-add"><input type="month" id="prov-month" aria-label="Mês"><input id="prov-value" inputmode="decimal" placeholder="R$ do mês" aria-label="Valor"><button type="button" class="ghost" id="prov-add">Lançar</button></div>
+      <div class="avg-box hidden" id="avg-box"></div>
+      <div class="prov-list" id="prov-list"></div>
+    </div>
+    <label class="flbl" id="inv-avg-lbl">Ainda sem meses lançados? Informe a média por mês<input id="inv-avg" inputmode="decimal" placeholder="ex.: 250,00"></label>
   </div>
   <p class="inc-preview" id="inv-preview"></p>
   <div class="sheet-actions">

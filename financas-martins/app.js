@@ -1017,7 +1017,8 @@
         <input class="it-val" inputmode="decimal" placeholder="0,00" value="${esc(it.v)}" aria-label="Valor do item ${i + 1}">
         <button type="button" class="it-rm" aria-label="Remover item ${i + 1}">×</button>
       </div>`).join('');
-    $('#items-add').textContent = has ? '+ Adicionar item' : '+ Detalhar itens (nome e valor de cada um)';
+    $('#items-add').textContent = has ? '+ Item' : '+ Itens';
+    $('#items-box').classList.toggle('hidden', !has);
     $('#keypad').classList.toggle('hidden', has);
     syncItemsTotal();
     if (focusLast) setTimeout(() => $('#items-list .item-row:last-child .it-name')?.focus(), 30);
@@ -1136,6 +1137,8 @@
   }
   function updateWhen() {
     const d = $('#tx-date').value, t = $('#tx-time').value;
+    const pk = sheet.pocket ? incomeSources().find(x => x.id === sheet.pocket)?.name : '';
+    $('#tx-more-sum').textContent = (sheet.autoWhen ? `hoje, ${nowTime()}` : `${d ? shortDate(d) : ''}${t ? ' ' + t : ''}`) + (pk ? ` · saldo ${pk}` : '');
     $('#when-text').textContent = sheet.autoWhen ? `Hoje, ${nowTime()} · anotado automaticamente` : `${d ? dayLabel(d) : ''}${t ? ', ' + t : ''}`;
   }
   $('#keypad').addEventListener('click', e => {
@@ -1807,7 +1810,10 @@
     $('#inc-types').innerHTML = Object.entries(INC_TYPES).map(([k, t]) => `<button type="button" class="pick ${inc.type === k ? 'on' : ''}" data-t="${k}">${incTile(k)}${t.name.replace(' / alimentação', '/VA')}</button>`).join('');
     $('#inc-invest').classList.toggle('hidden', inc.type !== 'invest');
     $('#inc-amount-lbl').textContent = inc.type === 'invest' ? 'Renda por mês (calculada ou digite)' : 'Quanto você recebe por mês';
-    $$('#inc-modes button').forEach(b => b.classList.toggle('on', b.dataset.mode === inc.mode));
+    $$('#inc-modes button').forEach(b => b.classList.toggle('active', b.dataset.mode === inc.mode));
+    $('#payday-row').classList.toggle('hidden', inc.mode !== 'payday');
+    const bk = bankById($('#inc-bank').value);
+    $('#inc-more-sum').textContent = `${bk ? acctLabel(bk) : 'sem conta'} · desde ${$('#inc-start').value ? shortDate($('#inc-start').value) : 'hoje'}${$('#inc-end').value ? ' até ' + shortDate($('#inc-end').value) : ''}`;
     // parte para investir (salário e outras fontes)
     const canSplit = inc.type === 'salario' || inc.type === 'extra';
     $('#inc-split').classList.toggle('hidden', !canSplit);
@@ -1835,6 +1841,7 @@
   $('#inc-modes').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; inc.mode = b.dataset.mode; syncInc(); });
   $('#inc-payday').addEventListener('click', e => { e.stopPropagation(); inc.mode = 'payday'; syncInc(); });
   ['#inc-amount', '#inc-principal', '#inc-rate', '#inc-payday', '#split-value'].forEach(k => $(k).addEventListener('input', syncInc));
+  ['#inc-bank', '#inc-start', '#inc-end'].forEach(k => $(k).addEventListener('change', syncInc));
   $('#split-toggle').addEventListener('click', () => { inc.split.on = !inc.split.on; syncInc(); if (inc.split.on) setTimeout(() => $('#split-value').focus(), 50); });
   $('#split-mode').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b || b.dataset.m === inc.split.mode) return;
@@ -1889,18 +1896,14 @@
     return x;
   }
   // renda variável: média dos proventos lançados nos últimos 12 meses (do 1º mês lançado até agora)
+  // renda variável: média automática de todos os meses lançados (outubro e novembro → média dos dois;
+  // dezembro, janeiro… entram na conta conforme você lança). Sem nenhum mês lançado, usa a média informada.
   function provAvg(h) {
     const hist = (h.history || []).filter(x => x.v > 0);
     if (!hist.length) return +h.avg || 0;
-    const now = todayStr().slice(0, 7);
-    const y = +now.slice(0, 4), m = +now.slice(5, 7);
-    const from = `${m === 12 ? y : y - 1}-${pad(m === 12 ? 1 : m + 1)}`;
-    const recent = hist.filter(x => x.m >= from && x.m <= now);
-    if (!recent.length) return +h.avg || 0;
-    const first = recent.map(x => x.m).sort()[0];
-    const span = (y * 12 + m) - (+first.slice(0, 4) * 12 + +first.slice(5, 7)) + 1;
-    return recent.reduce((a, x) => a + x.v, 0) / Math.max(1, span);
+    return hist.reduce((a, x) => a + x.v, 0) / hist.length;
   }
+  const monthShort = m => `${MES[+m.slice(5, 7) - 1]}/${m.slice(2, 4)}`;
   const pct1 = v => (v * 100).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
   const holdingMonthly = h => h.kind === 'fixa' ? (+h.amount || 0) * (Math.pow(1 + holdingAnnual(h), 1 / 12) - 1) : provAvg(h);
   function invTotals() {
@@ -2005,15 +2008,33 @@
     renderAporte(proj, tt);
     const item = h => {
       const m = holdingMonthly(h);
-      const sub = h.kind === 'fixa' ? `${String(h.rate ?? '').replace('.', ',')}${INDEXES[h.index]?.unit || ''} · ${pct1(holdingAnnual(h))} ao ano` : `${(h.history || []).length ? `média de ${(h.history || []).length} lançamento(s)` : 'média informada'}`;
-      return `<button class="inc-item" data-inv="${h.id}"><span class="tile" style="background:${alpha(h.kind === 'fixa' ? '#38d9a9' : '#d4fc79', .14)};color:${h.kind === 'fixa' ? '#38d9a9' : '#d4fc79'}">${svg(h.kind === 'fixa' ? 'trend' : 'wallet')}</span>
+      const nh = (h.history || []).filter(x => x.v > 0).length;
+      const sub = h.kind === 'fixa' ? `${String(h.rate ?? '').replace('.', ',')}${INDEXES[h.index]?.unit || ''} · ${pct1(holdingAnnual(h))} ao ano` : (nh ? `média automática de ${nh} ${nh === 1 ? 'mês' : 'meses'}` : 'média informada por você');
+      const btn = `<button class="inc-item" data-inv="${h.id}"><span class="tile" style="background:${alpha(h.kind === 'fixa' ? '#38d9a9' : '#d4fc79', .14)};color:${h.kind === 'fixa' ? '#38d9a9' : '#d4fc79'}">${svg(h.kind === 'fixa' ? 'trend' : 'wallet')}</span>
         <span class="grow"><b>${esc(h.name)}</b><small>${fmt(+h.amount || 0)} · ${sub}</small></span><span class="inv-m"><b>${fmt(m)}</b><small>por mês</small></span></button>`;
+      if (h.kind !== 'variavel') return btn;
+      const cur = (h.history || []).find(x => x.m === todayStr().slice(0, 7));
+      return `<div class="inv-row">${btn}<button class="quick-prov" data-qprov="${h.id}">${cur ? `${MES_LONGO[new Date().getMonth()].replace(/^./, c => c.toUpperCase())}: ${fmt(cur.v)} · somar mais` : `+ Lançar ${MES_LONGO[new Date().getMonth()]}`}</button></div>`;
     };
     const hs = iv.holdings;
     $('#inv-fixa').innerHTML = hs.filter(h => h.kind === 'fixa').map(item).join('') || `<button class="inc-empty" data-addinv="fixa">CDB, Tesouro, LCI/LCA, poupança… O rendimento é calculado pela taxa (CDI, Selic, IPCA+ ou prefixado).</button>`;
     $('#inv-variavel').innerHTML = hs.filter(h => h.kind === 'variavel').map(item).join('') || `<button class="inc-empty" data-addinv="variavel">Ações, FIIs, ETFs… Lance os proventos de cada mês e o app mostra a média e a evolução.</button>`;
     $$('#view-invest [data-addinv]').forEach(b => { b.onclick = () => openInv(null, b.dataset.addinv); });
     $$('#view-invest [data-inv]').forEach(b => b.addEventListener('click', () => openInv(hs.find(h => h.id === b.dataset.inv))));
+    $$('#view-invest [data-qprov]').forEach(b => b.addEventListener('click', async () => {
+      const h = hs.find(x => x.id === b.dataset.qprov); if (!h) return;
+      const m = todayStr().slice(0, 7), mesNome = MES_LONGO[+m.slice(5) - 1];
+      const val = await askText({ title: `Quanto ${h.name} rendeu em ${mesNome}?`, text: 'Dividendos, rendimentos e JCP do mês. Se já lançou algo neste mês, o valor é somado.', icon: 'wallet', ok: 'Lançar', input: { placeholder: 'R$ 0,00' } });
+      if (!val) return;
+      const v = Parsers.parseAmount(val);
+      if (!isFinite(v) || v <= 0) { toast('Valor inválido'); return; }
+      h.history ||= [];
+      const ex = h.history.find(x => x.m === m);
+      if (ex) ex.v = r2(ex.v + v); else h.history.push({ m, v: r2(v) });
+      save(); render();
+      const n = h.history.filter(x => x.v > 0).length;
+      toast(`${fmt(v)} lançado · média agora ${fmt(provAvg(h))} (${n} ${n === 1 ? 'mês' : 'meses'})`);
+    }));
     $('#rate-cdi').value = String(iv.rates.cdi).replace('.', ',');
     $('#rate-selic').value = String(iv.rates.selic).replace('.', ',');
     $('#rate-ipca').value = String(iv.rates.ipca).replace('.', ',');
@@ -2168,12 +2189,20 @@
     $('#inv-index').innerHTML = Object.entries(INDEXES).map(([k, x]) => `<button type="button" class="pick ${invEd.index === k ? 'on' : ''}" data-ix="${k}">${x.name}</button>`).join('');
     $('#inv-rate-lbl').textContent = INDEXES[invEd.index].lbl;
     const hist = [...invEd.history].sort((a, b) => b.m.localeCompare(a.m));
+    const filled = hist.filter(x => x.v > 0);
+    $('#inv-avg-lbl').classList.toggle('hidden', filled.length > 0);
+    $('#avg-box').classList.toggle('hidden', !filled.length);
+    if (filled.length) {
+      const avg = filled.reduce((a, x) => a + x.v, 0) / filled.length;
+      const months = [...filled].reverse().map(x => monthShort(x.m));
+      $('#avg-box').innerHTML = `<small>Média automática</small><b>${fmt(avg)} <span>por mês</span></b><span class="avg-from">${filled.length === 1 ? `só ${months[0]} por enquanto; a média se ajusta conforme você lança os próximos meses` : `média de ${filled.length} meses: ${months.length > 6 ? months.slice(0, 2).join(', ') + ' … ' + months.slice(-2).join(', ') : months.join(', ')}`}</span>`;
+    }
     $('#prov-list').innerHTML = hist.map(x => `<div class="prov-row"><span>${MES_LONGO[+x.m.slice(5) - 1].replace(/^./, c => c.toUpperCase())} de ${x.m.slice(0, 4)}</span><b>${fmt(x.v)}</b><button type="button" data-rmprov="${x.m}" aria-label="Remover">×</button></div>`).join('') || `<p class="empty-note" style="padding:4px 2px">Nenhum provento lançado ainda.</p>`;
     $$('#prov-list [data-rmprov]').forEach(b => b.addEventListener('click', () => { invEd.history = invEd.history.filter(x => x.m !== b.dataset.rmprov); syncInv(); }));
     const h = draftHolding(), m = holdingMonthly(h);
     $('#inv-preview').textContent = invEd.kind === 'fixa'
       ? (h.amount ? `Rende cerca de ${fmt(m)} por mês (${pct1(holdingAnnual(h))} ao ano, bruto, antes do IR).` : '')
-      : (m ? `Média de ${fmt(m)} por mês${invEd.history.length ? ` (${invEd.history.length} mês(es) lançado(s))` : ' (informada)'}${h.amount ? ` · ${pct1(m * 12 / h.amount)} ao ano sobre o valor investido` : ''}.` : 'Lance os proventos de cada mês ou informe a média.');
+      : (m ? `${h.amount ? `Rende ${pct1(m * 12 / h.amount)} ao ano sobre o valor investido.` : ''}` : 'Lance quanto rendeu em cada mês (ou informe uma média).');
   }
   $('#inv-kind').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; invEd.kind = b.dataset.k; syncInv(); });
   $('#inv-index').addEventListener('click', e => {
