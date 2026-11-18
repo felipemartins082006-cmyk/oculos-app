@@ -9,8 +9,18 @@ const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'o
 const idx = (s) => { const [y, m] = s.split('-').map(Number); return y * 12 + m - 1; };
 const rotulo = (i) => `${MESES[i % 12]}/${Math.floor(i / 12)}`;
 const BASE = idx(D.base);
-const CORES_CART = ['var(--pA)', 'var(--pB)', 'var(--pC)'];
-const LETRAS = ['A', 'B', 'C'];
+// número ilimitado de carteiras: as 3 primeiras usam as cores do tema; as seguintes, outras cores
+// da paleta e depois tons gerados pelo ângulo áureo (bem distintos entre si). Letras: A–Z, AA, AB…
+const PALETA_EXTRA = ['var(--bm4)', 'var(--c-fundo)', 'var(--c-etf)', 'var(--c-fii)', 'var(--c-cripto)', 'var(--bm1)', 'var(--c-us)'];
+function corCart(i) {
+  if (i < 3) return ['var(--pA)', 'var(--pB)', 'var(--pC)'][i];
+  if (i < 3 + PALETA_EXTRA.length) return PALETA_EXTRA[i - 3];
+  return `hsl(${Math.round((i * 137.508) % 360)} 55% 50%)`;
+}
+function letra(i) { let s = ''; i += 1; while (i > 0) { const r = (i - 1) % 26; s = String.fromCharCode(65 + r) + s; i = Math.floor((i - 1) / 26); } return s; }
+const indice = (f) => new Proxy([], { get: (t, k) => (typeof k === 'string' && /^\d+$/.test(k) ? f(+k) : t[k]) });
+const CORES_CART = indice(corCart);
+const LETRAS = indice(letra);
 
 // ---------------------------------------------------------------- formatação
 const fmtBRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
@@ -620,10 +630,10 @@ window.addEventListener('hashchange', () => irPara(location.hash.slice(1), false
 function desenharAbasCarteiras() {
   $('cart-tabs').innerHTML = S.carteiras.map((c, i) =>
     `<button type="button" class="cart-tab${i === S.ativa ? ' on' : ''}" data-i="${i}" aria-pressed="${i === S.ativa}"><span class="dot" style="background:${CORES_CART[i]}"></span><b>${LETRAS[i]}</b><span class="nm2">${esc(c.nome)}</span></button>`).join('') +
-    (S.carteiras.length < 3 ? '<button type="button" class="cart-tab add" data-novo="1">+ Nova carteira</button>' : '');
+    '<button type="button" class="cart-tab add" data-novo="1">+ Nova carteira</button>';
   if (document.activeElement !== $('cart-nome')) $('cart-nome').value = cartAtiva().nome;
   $('btn-del').disabled = S.carteiras.length < 2;
-  $('btn-dup').disabled = S.carteiras.length >= 3;
+  $('btn-dup').disabled = false;
 }
 function desenharCarteira() {
   const c = cartAtiva();
@@ -708,7 +718,6 @@ $('btn-equal').addEventListener('click', () => {
   it.forEach((i) => { i.p = Math.floor(1000 / it.length) / 10; }); fecha100(it); mudouCarteiras(); desenharCarteira();
 });
 $('btn-dup').addEventListener('click', () => {
-  if (S.carteiras.length >= 3) return;
   const c = JSON.parse(JSON.stringify(cartAtiva())); c.nome = `${c.nome} (cópia)`.slice(0, 28);
   S.carteiras.push(c); S.ativa = S.carteiras.length - 1; mudouCarteiras(); desenharCarteira();
 });
@@ -1539,7 +1548,7 @@ function desenharOtimizacao() {
     ord.map((k) => { const a = info(o.uni[k]), is = o.isolados[k]; return `<tr><td class="t"><span class="tk">${esc(rotuloAtivo(o.uni[k]))}</span><span class="nm">${esc(a.tipo.startsWith('fundo') ? a.gestor : a.n)}</span></td><td class="hide-s"><span class="cls"><i class="sw" style="background:${corClasse[TIPOS[a.tipo][1]]}"></i>${TIPOS[a.tipo][0]}</span></td><td><b>${pct(o.w[k], 1)}</b></td><td>${pct(is.ret)}</td><td>${pct(is.vol, 0)}</td></tr>`; }).join('') + '</tbody>';
   $('ot-pesos-meta').textContent = `${n} ativos`;
   $('ot-salvar').innerHTML = S.carteiras.map((c, i) => `<button class="btn" type="button" data-slot="${i}">Substituir ${LETRAS[i]} (${esc(c.nome.slice(0, 12))})</button>`).join('') +
-    (S.carteiras.length < 3 ? `<button class="btn primary" type="button" data-slot="novo">Salvar como nova carteira</button>` : '');
+    `<button class="btn primary" type="button" data-slot="novo">Salvar como nova carteira</button>`;
   // gráfico
   const box = $('ot-chart'), W = largura(box), Hh = 280, ml = 50, mr = 14, mt = 12, mb = 30, iw = W - ml - mr, ih = Hh - mt - mb;
   // escala: fronteira, carteiras e a maior parte dos ativos (outliers extremos ficam fora e são contados)

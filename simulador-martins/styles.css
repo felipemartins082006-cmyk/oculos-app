@@ -324,3 +324,5 @@ td.best { font-weight: 600; }
 .glos td { white-space: normal; vertical-align: top; }
 .glos td:first-child { width: 30%; min-width: 110px; }
 #tbl-cmp td:first-child { white-space: normal; min-width: 150px; }
+#seg-ver, #seg-an, #seg-ot-cart { flex-wrap: wrap; }
+#seg-ver button, #seg-an button, #seg-ot-cart button { border-top: 1px solid var(--rule-2); margin-top: -1px; }

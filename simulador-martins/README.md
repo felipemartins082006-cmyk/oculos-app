@@ -27,7 +27,7 @@ Antes, aumente `versionCode` e `versionName` em `android/app/build.gradle.kts`.
 
 ## O que faz
 
-**Carteiras** — até 3 carteiras comparadas lado a lado, montadas a partir de 1.942 ativos:
+**Carteiras** — quantas carteiras quiser, comparadas lado a lado, montadas a partir de 1.942 ativos:
 
 | Classe | Ativos |
 |---|---|
