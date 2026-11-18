@@ -1,248 +1,264 @@
 #!/usr/bin/env python3
-"""Baixa o histórico mensal dos ativos e gera ../data.js para o Simulador Martins.
+"""Baixa o histórico mensal de todo o universo de ativos e gera ../data.js.
 
-Uso (no computador, com internet):  python3 tools/baixar_dados.py
+Uso (com internet):  python3 tools/baixar_dados.py [PASTA_CACHE]
+  (antes, rode tools/fundos_cvm.py PASTA_CACHE para incluir os fundos de investimento)
 
-- Preço: Yahoo Finance (fechamento mensal, já ajustado por desdobramentos e bonificações).
-- Proventos de ações e FIIs: Fundamentus. O Yahoo perde muitos proventos (FIIs antes de 2022,
-  Itaú sem nada em 2024-25 etc.), então o retorno total é montado aqui:
-      retorno(m) = preço(m)/preço(m-1) × (1 + proventos com data-ex no mês / preço do mês anterior) - 1
-  JCP entra líquido de 15% de IR. ETFs (BOVA11, IVVB11...) reinvestem sozinhos: só o preço.
-- CDI e IPCA: Banco Central (SGS, séries 4391 e 433), em % ao mês.
+Fontes
+- Lista de ativos: scanner do TradingView (B3 inteira com liquidez mínima, maiores ações e ETFs dos EUA).
+- Histórico: TradingView, barras mensais com ajuste de dividendos (retorno total: proventos
+  reinvestidos e desdobramentos ajustados). Mesmo protocolo de websocket usado pelos projetos
+  open source tvdatafeed (Python) e TradingView-API (JavaScript).
+- CDI e IPCA: Banco Central (SGS 4391 e 433).
+- Fundos de investimento: dados abertos da CVM (ver tools/fundos_cvm.py).
 
-Para incluir um ativo novo, basta acrescentar na lista ATIVOS e rodar de novo.
-O campo "mercado" já prepara a abertura para os EUA (mercado "US", moeda USD).
+Formato de saída (compacto): para cada série, o mês inicial e os retornos mensais como inteiros
+(retorno × escala), separados por vírgula; vazio = mês sem dado.
 """
-import json, math, re, sys, time, urllib.request, datetime as dt
+import json, math, random, re, string, sys, threading, time, urllib.request, datetime as dt
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-INICIO = 2010  # primeiro ano usado (antes disso o Yahoo tem muitos dados quebrados)
+try:
+    from websocket import create_connection  # pip install websocket-client
+except ImportError:
+    sys.exit("Instale: pip install websocket-client")
 
-# (ticker, nome curto, tipo, setor)
-ATIVOS = [
-    # ---- Ações
-    ("PETR4", "Petrobras PN", "acao", "Petróleo"),
-    ("PETR3", "Petrobras ON", "acao", "Petróleo"),
-    ("PRIO3", "PetroRio", "acao", "Petróleo"),
-    ("VBBR3", "Vibra Energia", "acao", "Petróleo"),
-    ("UGPA3", "Ultrapar", "acao", "Petróleo"),
-    ("CSAN3", "Cosan", "acao", "Petróleo"),
-    ("VALE3", "Vale", "acao", "Mineração"),
-    ("GGBR4", "Gerdau", "acao", "Siderurgia"),
-    ("CSNA3", "CSN", "acao", "Siderurgia"),
-    ("SUZB3", "Suzano", "acao", "Papel e celulose"),
-    ("KLBN11", "Klabin", "acao", "Papel e celulose"),
-    ("ITUB4", "Itaú Unibanco", "acao", "Bancos"),
-    ("BBDC4", "Bradesco", "acao", "Bancos"),
-    ("BBAS3", "Banco do Brasil", "acao", "Bancos"),
-    ("SANB11", "Santander", "acao", "Bancos"),
-    ("BPAC11", "BTG Pactual", "acao", "Bancos"),
-    ("ITSA4", "Itaúsa", "acao", "Bancos"),
-    ("B3SA3", "B3", "acao", "Financeiro"),
-    ("BBSE3", "BB Seguridade", "acao", "Seguros"),
-    ("CXSE3", "Caixa Seguridade", "acao", "Seguros"),
-    ("AXIA3", "Axia Energia (ex-Eletrobras)", "acao", "Energia"),
-    ("EGIE3", "Engie Brasil", "acao", "Energia"),
-    ("TAEE11", "Taesa", "acao", "Energia"),
-    ("CMIG4", "Cemig", "acao", "Energia"),
-    ("EQTL3", "Equatorial", "acao", "Energia"),
-    ("CPLE3", "Copel", "acao", "Energia"),
-    ("ISAE4", "ISA Energia (Transmissão Paulista)", "acao", "Energia"),
-    ("SBSP3", "Sabesp", "acao", "Saneamento"),
-    ("SAPR11", "Sanepar", "acao", "Saneamento"),
-    ("VIVT3", "Vivo (Telefônica)", "acao", "Telecom"),
-    ("TIMS3", "TIM", "acao", "Telecom"),
-    ("WEGE3", "WEG", "acao", "Indústria"),
-    ("EMBJ3", "Embraer", "acao", "Indústria"),
-    ("RAIL3", "Rumo", "acao", "Logística"),
-    ("RENT3", "Localiza", "acao", "Aluguel de carros"),
-    ("ABEV3", "Ambev", "acao", "Bebidas"),
-    ("RADL3", "Raia Drogasil", "acao", "Saúde"),
-    ("HYPE3", "Hypera", "acao", "Saúde"),
-    ("LREN3", "Lojas Renner", "acao", "Varejo"),
-    ("MGLU3", "Magazine Luiza", "acao", "Varejo"),
-    ("TOTS3", "Totvs", "acao", "Tecnologia"),
-    ("CYRE3", "Cyrela", "acao", "Construção"),
-    ("MULT3", "Multiplan", "acao", "Shoppings"),
-    ("ALOS3", "Allos", "acao", "Shoppings"),
-    # ---- Fundos imobiliários
-    ("MXRF11", "Maxi Renda", "fii", "Papel (recebíveis)"),
-    ("KNCR11", "Kinea Rendimentos", "fii", "Papel (recebíveis)"),
-    ("KNIP11", "Kinea Índices de Preços", "fii", "Papel (recebíveis)"),
-    ("CPTS11", "Capitânia Securities", "fii", "Papel (recebíveis)"),
-    ("RECR11", "REC Recebíveis", "fii", "Papel (recebíveis)"),
-    ("HCTR11", "Hectare", "fii", "Papel (recebíveis)"),
-    ("VGIP11", "Valora IP", "fii", "Papel (recebíveis)"),
-    ("MCCI11", "Mauá Capital", "fii", "Papel (recebíveis)"),
-    ("RBRR11", "RBR Rendimento High Grade", "fii", "Papel (recebíveis)"),
-    ("KNSC11", "Kinea Securities", "fii", "Papel (recebíveis)"),
-    ("HGLG11", "CSHG Logística", "fii", "Logística"),
-    ("BTLG11", "BTG Logística", "fii", "Logística"),
-    ("XPLG11", "XP Log", "fii", "Logística"),
-    ("VILG11", "Vinci Logística", "fii", "Logística"),
-    ("LVBI11", "VBI Logístico", "fii", "Logística"),
-    ("XPML11", "XP Malls", "fii", "Shoppings"),
-    ("VISC11", "Vinci Shopping Centers", "fii", "Shoppings"),
-    ("HGBS11", "Hedge Brasil Shopping", "fii", "Shoppings"),
-    ("HSML11", "HSI Malls", "fii", "Shoppings"),
-    ("KNRI11", "Kinea Renda Imobiliária", "fii", "Híbrido"),
-    ("ALZR11", "Alianza Trust", "fii", "Híbrido"),
-    ("TRXF11", "TRX Real Estate", "fii", "Varejo / renda urbana"),
-    ("HGRU11", "CSHG Renda Urbana", "fii", "Varejo / renda urbana"),
-    ("HGRE11", "CSHG Real Estate", "fii", "Lajes corporativas"),
-    ("PVBI11", "VBI Prime Properties", "fii", "Lajes corporativas"),
-    ("JSRE11", "JS Real Estate", "fii", "Lajes corporativas"),
-    ("BRCR11", "BTG Corporate Office", "fii", "Lajes corporativas"),
-    ("RBRF11", "RBR Alpha (fundo de fundos)", "fii", "Fundo de fundos"),
-    ("GGRC11", "GGR Covepi", "fii", "Logística"),
-    ("TGAR11", "TG Ativo Real", "fii", "Desenvolvimento"),
-    ("VGHF11", "Valora Hedge Fund", "fii", "Papel (recebíveis)"),
-    ("BTCI11", "BTG Crédito Imobiliário", "fii", "Papel (recebíveis)"),
-    # ---- ETFs e índices
-    ("BOVA11", "ETF Ibovespa", "etf", "Índice amplo"),
-    ("SMAL11", "ETF Small Caps", "etf", "Índice amplo"),
-    ("DIVO11", "ETF Dividendos", "etf", "Índice amplo"),
-    ("IVVB11", "ETF S&P 500 (em reais)", "etf", "Exterior"),
-    ("^BVSP", "Ibovespa (índice, sem dividendos)", "indice", "Índice amplo"),
+INICIO = "2000-01"
+UA = {"User-Agent": "Mozilla/5.0", "Content-Type": "application/json"}
+LIQ_MIN_BR = 100_000      # R$ negociados por dia (média de 30 dias)
+N_ACOES_US = 600          # maiores empresas americanas por valor de mercado
+N_ETFS_US = 220
+
+SETOR = {
+    "Finance": "Financeiro", "Utilities": "Utilidade pública", "Energy Minerals": "Petróleo e gás",
+    "Non-Energy Minerals": "Mineração e siderurgia", "Process Industries": "Indústria de base",
+    "Producer Manufacturing": "Bens industriais", "Retail Trade": "Varejo", "Consumer Non-Durables": "Consumo básico",
+    "Consumer Durables": "Bens duráveis", "Consumer Services": "Serviços ao consumidor", "Health Services": "Saúde",
+    "Health Technology": "Saúde (farma e equip.)", "Technology Services": "Tecnologia (software)",
+    "Electronic Technology": "Tecnologia (hardware)", "Communications": "Telecom", "Transportation": "Transporte",
+    "Industrial Services": "Serviços industriais", "Commercial Services": "Serviços comerciais",
+    "Distribution Services": "Distribuição", "Miscellaneous": "Diversos", "Government": "Governo",
+}
+
+# Ativos que entram sempre (alguns ETFs/índices de referência)
+ETFS_US_FIXOS = ["SPY", "VOO", "IVV", "VTI", "QQQ", "DIA", "IWM", "VT", "VXUS", "VEA", "VWO", "EFA", "EEM", "ACWI",
+                 "BND", "AGG", "TLT", "IEF", "SHY", "TIP", "LQD", "HYG", "EMB", "BNDX", "GLD", "IAU", "SLV", "DBC",
+                 "VNQ", "SCHD", "VIG", "VYM", "DGRO", "NOBL", "XLK", "XLF", "XLE", "XLV", "XLY", "XLP", "XLI", "XLU",
+                 "XLB", "XLRE", "XLC", "SMH", "SOXX", "ARKK", "MTUM", "QUAL", "USMV", "VUG", "VTV", "IJH", "IJR",
+                 "EWZ", "EWJ", "FXI", "INDA", "IBIT", "VGT", "SCHG", "JEPI", "JEPQ", "SGOV", "BIL"]
+EXTRAS = [  # (símbolo TradingView, código, nome, tipo, setor, mercado, moeda)
+    ("BMFBOVESPA:IBOV", "IBOV", "Ibovespa", "indice", "Índice B3", "BR", "BRL"),
+    ("BMFBOVESPA:IFIX", "IFIX", "IFIX (fundos imobiliários)", "indice", "Índice B3", "BR", "BRL"),
+    ("BMFBOVESPA:SMLL", "SMLL", "Small Caps (SMLL)", "indice", "Índice B3", "BR", "BRL"),
+    ("BMFBOVESPA:IDIV", "IDIV", "Índice Dividendos (IDIV)", "indice", "Índice B3", "BR", "BRL"),
+    ("SP:SPX", "SPX", "S&P 500 (índice, sem dividendos)", "indice", "Índice EUA", "US", "USD"),
+    ("NASDAQ:NDX", "NDX", "Nasdaq-100 (índice, sem dividendos)", "indice", "Índice EUA", "US", "USD"),
+    ("DJ:DJI", "DJI", "Dow Jones (índice, sem dividendos)", "indice", "Índice EUA", "US", "USD"),
+    ("TVC:GOLD", "OURO", "Ouro (onça, em dólar)", "commodity", "Metais", "Global", "USD"),
+    ("TVC:SILVER", "PRATA", "Prata (onça, em dólar)", "commodity", "Metais", "Global", "USD"),
+    ("TVC:USOIL", "PETROLEO", "Petróleo WTI (em dólar)", "commodity", "Energia", "Global", "USD"),
+    ("FX_IDC:USDBRL", "USDBRL", "Dólar (USD/BRL)", "moeda", "Câmbio", "Global", "BRL"),
+    ("FX_IDC:EURBRL", "EURBRL", "Euro (EUR/BRL)", "moeda", "Câmbio", "Global", "BRL"),
+    ("BITSTAMP:BTCUSD", "BTC", "Bitcoin", "cripto", "Criptoativo", "Global", "USD"),
+    ("BITSTAMP:ETHUSD", "ETH", "Ethereum", "cripto", "Criptoativo", "Global", "USD"),
+    ("BITSTAMP:XRPUSD", "XRP", "XRP", "cripto", "Criptoativo", "Global", "USD"),
+    ("BITSTAMP:LTCUSD", "LTC", "Litecoin", "cripto", "Criptoativo", "Global", "USD"),
+    ("COINBASE:SOLUSD", "SOL", "Solana", "cripto", "Criptoativo", "Global", "USD"),
+    ("BINANCE:BNBUSDT", "BNB", "BNB", "cripto", "Criptoativo", "Global", "USD"),
+    ("COINBASE:ADAUSD", "ADA", "Cardano", "cripto", "Criptoativo", "Global", "USD"),
+    ("COINBASE:DOGEUSD", "DOGE", "Dogecoin", "cripto", "Criptoativo", "Global", "USD"),
 ]
 
-UA = {"User-Agent": "Mozilla/5.0"}
 
-# Ações que de fato não pagavam proventos antes do 1º registro (não cortar o histórico delas).
-# As outras com histórico curto no Fundamentus mudaram de ticker (TIMP3->TIMS3, RUMO3->RAIL3...).
-SEM_CORTE = {"PRIO3"}
-
-
-def get_json(url, tentativas=4):
+# ------------------------------------------------------------------ utilidades
+def http_json(url, corpo=None, tentativas=4):
     for i in range(tentativas):
         try:
-            req = urllib.request.Request(url, headers=UA)
-            with urllib.request.urlopen(req, timeout=30) as r:
+            dados = json.dumps(corpo).encode() if corpo is not None else None
+            req = urllib.request.Request(url, data=dados, headers=UA)
+            with urllib.request.urlopen(req, timeout=60) as r:
                 return json.load(r)
-        except Exception as e:  # rede instável: tenta de novo
+        except Exception:
             if i == tentativas - 1:
                 raise
-            time.sleep(2 * (i + 1))
+            time.sleep(3 * (i + 1))
 
 
 def mes_atual():
-    hoje = dt.date.today()
-    return f"{hoje.year:04d}-{hoje.month:02d}"
+    h = dt.date.today()
+    return f"{h.year:04d}-{h.month:02d}"
 
 
-def yahoo_mensal(ticker):
-    """Preço mensal (ajustado só por desdobramentos), preço ajustado por tudo e desdobramentos."""
-    sym = ticker if ticker.startswith("^") else ticker + ".SA"
-    p1 = int(dt.datetime(INICIO - 1, 12, 1).timestamp())
-    p2 = int(time.time())
-    url = (f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.request.quote(sym)}"
-           f"?period1={p1}&period2={p2}&interval=1mo&events=div,split")
-    res = get_json(url)["chart"]["result"][0]
-    ts = res.get("timestamp") or []
-    ind = res["indicators"]
-    close = ind["quote"][0]["close"]
-    adj = (ind.get("adjclose") or [{}])[0].get("adjclose") or close
-    gmt = res["meta"].get("gmtoffset", -10800)
-    preco, ajustado = {}, {}
-    for t, c, a in zip(ts, close, adj):
-        if c is None or c <= 0:
+def idx(m):
+    y, mm = map(int, m.split("-"))
+    return y * 12 + mm - 1
+
+
+def nome_mes(i):
+    return f"{i // 12:04d}-{i % 12 + 1:02d}"
+
+
+# ------------------------------------------------------------------ universo (scanner do TradingView)
+def scan(mercado, filtro, ordem, quantos, colunas):
+    corpo = {"columns": colunas, "filter": filtro, "range": [0, quantos]}
+    if ordem:
+        corpo["sort"] = {"sortBy": ordem, "sortOrder": "desc"}
+    r = http_json(f"https://scanner.tradingview.com/{mercado}/scan", corpo)
+    return [dict(zip(colunas, x["d"]), s=x["s"]) for x in r["data"]]
+
+
+def tipo_b3(x):
+    desc = (x["description"] or "")
+    spec = x["typespecs"] or []
+    if x["name"].endswith("11") and re.search(r"imobili|receb[ií]veis|valora re", desc, re.I):
+        return "fii"
+    if re.search(r"\bunits?\b|dep[oó]sito de a[cç][oõ]es", desc, re.I):
+        return "acao"
+    if x["type"] == "stock":
+        return "acao"
+    if "etf" in spec:
+        return "etf"
+    d = desc.lower()
+    if "agro" in d:
+        return "fiagro"
+    if "infra" in d:
+        return "fiinfra"
+    return "fii"
+
+
+def limpa_nome(s):
+    s = re.sub(r"\s+", " ", s or "").strip()
+    s = re.sub(r"Fundo de Investimento nas Cadeias Produtivas Agroindustriais|Fundo de Investimento nas Cadeias Produtivas do Agronegocio", "Fiagro", s, flags=re.I)
+    s = re.sub(r"Fundo de Investimento em Cotas de Fundos Incentivados de Investimento em Infraestrutura", "FIC Infra", s, flags=re.I)
+    for a in [" Fundo de Investimento Imobiliario", " Fundo De Investimento Imobiliario", " Fundo de Investimento",
+              " Fundo De Investimento", " Responsabilidade Limitada", " Resp Lim", " - Fii", " FII"]:
+        s = s.replace(a, "")
+    return s[:70]
+
+
+def universo():
+    cols = ["name", "description", "type", "typespecs", "sector", "close", "average_volume_30d_calc", "market_cap_basic", "currency"]
+    ativos = []
+    # B3
+    br = scan("brazil", [{"left": "type", "operation": "in_range", "right": ["stock", "fund"]}], None, 4000, cols)
+    for x in br:
+        spec = x["typespecs"] or []
+        if "odd" in spec or "otc" in spec or x["name"].endswith("F"):
             continue
-        # As barras mensais começam no dia 1º, mas com o antigo horário de verão algumas caem
-        # às 23h do último dia do mês anterior. Somar 2 dias põe cada barra no mês certo.
-        d = dt.datetime.fromtimestamp(t + gmt + 2 * 86400, dt.timezone.utc)
-        k = f"{d.year:04d}-{d.month:02d}"
-        preco[k] = c
-        ajustado[k] = a if a else c
-    splits = [(dt.date.fromtimestamp(v["date"]), v["numerator"] / v["denominator"])
-              for v in (res.get("events", {}).get("splits") or {}).values()]
-    return preco, ajustado, splits, res["meta"].get("regularMarketPrice")
-
-
-def fundamentus_proventos(ticker, fii):
-    """Lista de (data-com, valor por cota/ação como foi pago). JCP já líquido de 15% de IR."""
-    url = f"https://www.fundamentus.com.br/{'fii_' if fii else ''}proventos.php?papel={ticker}&tipo=2"
-    req = urllib.request.Request(url, headers=UA)
-    with urllib.request.urlopen(req, timeout=30) as r:
-        html = r.read().decode("latin1")
-    out = []
-    for linha in re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.S):
-        c = [re.sub(r"<[^>]+>", "", x).strip() for x in re.findall(r"<td[^>]*>(.*?)</td>", linha, re.S)]
-        if fii and len(c) == 4:
-            data, tipo, valor, por = c[0], c[1], c[3], "1"
-        elif not fii and len(c) == 5:
-            data, valor, tipo, _, por = c
-        else:
+        liq = (x["close"] or 0) * (x["average_volume_30d_calc"] or 0)
+        if liq < LIQ_MIN_BR:
             continue
+        t = tipo_b3(x)
+        setor = SETOR.get(x["sector"] or "", x["sector"] or "")
+        if t in ("fii", "fiagro", "fiinfra"):
+            setor = {"fii": "Fundo imobiliário", "fiagro": "Fiagro", "fiinfra": "Infraestrutura"}[t]
+        elif t == "etf":
+            setor = "ETF na B3"
+        ativos.append({"sym": x["s"], "t": x["name"], "n": limpa_nome(x["description"]), "tipo": t, "setor": setor,
+                       "mercado": "BR", "moeda": "BRL", "liq": round(liq)})
+    # EUA: ações
+    us = scan("america", [{"left": "type", "operation": "equal", "right": "stock"},
+                          {"left": "exchange", "operation": "in_range", "right": ["NYSE", "NASDAQ", "AMEX"]},
+                          {"left": "typespecs", "operation": "has_none_of", "right": ["preferred"]}],
+              "market_cap_basic", N_ACOES_US, cols)
+    for x in us:
+        ativos.append({"sym": x["s"], "t": x["name"].replace(".", "-"), "n": limpa_nome(x["description"]), "tipo": "acao_us",
+                       "setor": SETOR.get(x["sector"] or "", x["sector"] or ""), "mercado": "US", "moeda": "USD",
+                       "liq": round(x["market_cap_basic"] or 0)})
+    # EUA: ETFs (sem alavancados/inversos)
+    etf = scan("america", [{"left": "type", "operation": "equal", "right": "fund"},
+                           {"left": "typespecs", "operation": "has", "right": ["etf"]}],
+               "average_volume_30d_calc", 1500, cols)
+    ruim = re.compile(r"\b(2x|3x|-1x|-2x|-3x|ultra|ultrapro|short|inverse|bear|bull|leveraged|daily|yieldmax|volatility|vix)\b", re.I)
+    etf = [x for x in etf if not ruim.search(x["description"] or "")]
+    etf.sort(key=lambda x: -(x["close"] or 0) * (x["average_volume_30d_calc"] or 0))
+    escolhidos = {x["name"] for x in etf[:N_ETFS_US]} | set(ETFS_US_FIXOS)
+    vistos = set()
+    for x in etf:
+        if x["name"] in escolhidos and x["name"] not in vistos:
+            vistos.add(x["name"])
+            ativos.append({"sym": x["s"], "t": x["name"], "n": limpa_nome(x["description"]), "tipo": "etf_us",
+                           "setor": "ETF nos EUA", "mercado": "US", "moeda": "USD",
+                           "liq": round((x["close"] or 0) * (x["average_volume_30d_calc"] or 0))})
+    for sym, t, n, tipo, setor, mercado, moeda in EXTRAS:
+        ativos.append({"sym": sym, "t": t, "n": n, "tipo": tipo, "setor": setor, "mercado": mercado, "moeda": moeda, "liq": 0})
+    unicos, seen = [], set()
+    for a in ativos:
+        if a["t"] in seen:
+            continue
+        seen.add(a["t"]); unicos.append(a)
+    return unicos
+
+
+# ------------------------------------------------------------------ histórico (websocket do TradingView)
+def _frame(func, params):
+    m = json.dumps({"m": func, "p": params}, separators=(",", ":"))
+    return f"~m~{len(m)}~m~{m}"
+
+
+def tv_mensal(symbol, tentativas=3):
+    """{'AAAA-MM': fechamento ajustado por dividendos} só com meses completos."""
+    for i in range(tentativas):
         try:
-            d = dt.datetime.strptime(data, "%d/%m/%Y").date()
-            v = float(valor.replace(".", "").replace(",", ".")) / float(por.replace(".", "") or 1)
-        except ValueError:
-            continue
-        if "JRS" in tipo.upper() or "JUROS" in tipo.upper():
-            v *= 0.85
-        out.append((d, v))
-    return out
+            ws = create_connection("wss://data.tradingview.com/socket.io/websocket",
+                                   header=["Origin: https://data.tradingview.com"], timeout=25)
+            cs = "cs_" + "".join(random.choices(string.ascii_lowercase, k=12))
+            ws.send(_frame("set_auth_token", ["unauthorized_user_token"]))
+            ws.send(_frame("chart_create_session", [cs, ""]))
+            ws.send(_frame("resolve_symbol", [cs, "sym", "=" + json.dumps({"symbol": symbol, "adjustment": "dividends", "session": "regular"})]))
+            ws.send(_frame("create_series", [cs, "s1", "s1", "sym", "1M", 400]))
+            barras, t0, erro, fim = [], time.time(), None, False
+            while not fim and time.time() - t0 < 40:
+                msg = ws.recv()
+                for hb in re.findall(r"~m~\d+~m~(~h~\d+)", msg):
+                    ws.send(f"~m~{len(hb)}~m~{hb}")
+                for parte in re.split(r"~m~\d+~m~", msg):
+                    if not parte.startswith("{"):
+                        continue
+                    d = json.loads(parte)
+                    m = d.get("m")
+                    if m in ("timescale_update", "du"):
+                        barras += [b["v"] for b in d["p"][1].get("s1", {}).get("s", [])]
+                    elif m in ("symbol_error", "series_error", "critical_error", "protocol_error"):
+                        erro = m; fim = True
+                    elif m == "series_completed":
+                        fim = True
+            ws.close()
+            if erro:
+                return None
+            out = {}
+            for b in barras:
+                d = dt.datetime.fromtimestamp(b[0] + 12 * 3600, dt.timezone.utc)
+                if b[4] and b[4] > 0:
+                    out[f"{d.year:04d}-{d.month:02d}"] = b[4]
+            agora = mes_atual()
+            return {k: v for k, v in out.items() if k < agora}
+        except Exception:
+            time.sleep(2 * (i + 1))
+    return None
 
 
-def com_proventos(preco, splits, proventos):
-    """Preço mensal -> índice de retorno total (proventos reinvestidos no mês da data-ex)."""
-    meses = sorted(preco)
-    idx = {m: i for i, m in enumerate(meses)}
-    rendimento = {}
-    for d, v in proventos:
-        ex = d + dt.timedelta(days=1)
-        k = f"{ex.year:04d}-{ex.month:02d}"
-        i = idx.get(k)
-        if not i:
-            continue
-        # o Yahoo dá o preço já dividido pelos desdobramentos futuros; o provento está como foi pago
-        fator = 1.0
-        for ds, razao in splits:
-            if ds > d:
-                fator *= razao
-        rendimento[k] = rendimento.get(k, 0) + v / (preco[meses[i - 1]] * fator)
-    total, nivel = {}, 1.0
-    for i, m in enumerate(meses):
-        if i:
-            nivel *= preco[m] / preco[meses[i - 1]] * (1 + rendimento.get(m, 0))
-        total[m] = nivel
-    return total
-
-
-def retornos(por_mes):
-    """Retornos mensais por mês ("AAAA-MM" -> retorno). Meses com dado quebrado ficam de fora.
-
-    O mês corrente (incompleto) não entra. Como a simulação sorteia meses avulsos do histórico,
-    descartar um mês ruim não estraga o resto da série.
-    """
-    meses = sorted(m for m in por_mes if m < mes_atual())
+def retornos(precos, tipo):
+    """Retornos mensais com filtro de dado quebrado (desdobramento sem ajuste, pico isolado)."""
+    meses = sorted(precos)
     out = {}
-    def consecutivos(a, b):
-        ya, ma = map(int, a.split("-")); yb, mb = map(int, b.split("-"))
-        return (yb * 12 + mb) - (ya * 12 + ma) == 1
+    lim_alto, lim_baixo = (20.0, -0.95) if tipo == "cripto" else (2.5, -0.85)
+    pula = None
     for i in range(1, len(meses)):
         a, b = meses[i - 1], meses[i]
-        if not consecutivos(a, b):
+        if idx(b) - idx(a) != 1 or b < INICIO or b == pula:
             continue
-        r = por_mes[b] / por_mes[a] - 1
-        if r > 0.9 or r < -0.75:  # desdobramento/grupamento não ajustado
-            print(f"    descarta {b}: {r:+.0%}", file=sys.stderr)
+        r = precos[b] / precos[a] - 1
+        if r > lim_alto or r < lim_baixo:
             continue
-        # pico isolado: sobe muito e volta no mês seguinte (ou o contrário) = preço errado num mês
-        if i + 1 < len(meses) and consecutivos(b, meses[i + 1]):
-            l1 = math.log(por_mes[b] / por_mes[a]); l2 = math.log(por_mes[meses[i + 1]] / por_mes[b])
-            if abs(l1) > 0.5 and abs(l2) > 0.5 and l1 * l2 < 0 and abs(l1 + l2) < 0.3:
-                print(f"    descarta pico em {b}: {r:+.0%} e volta", file=sys.stderr)
-                out["_pula"] = meses[i + 1]
+        if tipo != "cripto" and i + 1 < len(meses) and idx(meses[i + 1]) - idx(b) == 1:
+            l1 = math.log(precos[b] / precos[a]); l2 = math.log(precos[meses[i + 1]] / precos[b])
+            if abs(l1) > 0.5 and abs(l2) > 0.5 and l1 * l2 < 0 and abs(l1 + l2) < 0.25:
+                pula = meses[i + 1]
                 continue
-        if out.get("_pula") == b:
-            del out["_pula"]
-            continue
         out[b] = r
-    out.pop("_pula", None)
-    # sequências de 3+ meses com retorno exatamente zero = ativo sem negociação no Yahoo
-    ks = sorted(out)
-    i = 0
+    ks = sorted(out); i = 0  # 3+ meses seguidos com retorno exatamente zero = sem negociação
     while i < len(ks):
         j = i
         while j < len(ks) and out[ks[j]] == 0:
@@ -254,82 +270,117 @@ def retornos(por_mes):
     return out
 
 
-def mes_seguinte(m):
-    y, mm = map(int, m.split("-"))
-    y, mm = (y + 1, 1) if mm == 12 else (y, mm + 1)
-    return f"{y:04d}-{mm:02d}"
-
-
-def serie_alinhada(d, casas):
-    """{'inicio': primeiro mês, 'r': [retorno ou null, mês a mês]}"""
-    meses = sorted(d)
-    lista, m = [], meses[0]
-    while m <= meses[-1]:
-        lista.append(round(d[m], casas) if m in d else None)
-        m = mes_seguinte(m)
-    return {"inicio": meses[0], "r": lista}
-
-
 def bcb_mensal(serie):
-    url = f"https://api.bcb.gov.br/dados/serie/bcdata.sgs.{serie}/dados?formato=json&dataInicial=01/01/{INICIO}"
+    url = f"https://api.bcb.gov.br/dados/serie/bcdata.sgs.{serie}/dados?formato=json&dataInicial=01/01/{INICIO[:4]}"
     out = {}
-    for row in get_json(url):
+    for row in http_json(url):
         d, m, y = row["data"].split("/")
         k = f"{y}-{m}"
-        if k < mes_atual():
+        if INICIO <= k < mes_atual():
             out[k] = float(row["valor"]) / 100
     return out
 
 
+SIGLAS = {"Bb": "BB", "Di": "DI", "Cic": "CIC", "Fic": "FIC", "Fif": "FIF", "Fi": "FI", "Cp": "CP", "Xp": "XP", "Btg": "BTG",
+          "Ie": "IE", "Rf": "RF", "Ii": "II", "Iii": "III", "Iv": "IV", "Lp": "LP", "Ipca": "IPCA", "Ima": "IMA", "Imab": "IMA-B",
+          "Bnp": "BNP", "Sp": "SP", "Esg": "ESG", "Usd": "USD", "Ltda": "", "Jgp": "JGP", "Spx": "SPX", "Arx": "ARX", "Fia": "FIA",
+          "Cdi": "CDI", "Bdr": "BDR", "Etf": "ETF", "Hb": "HB", "Kp": "KP", "Az": "AZ", "Vc": "VC"}
+
+
+def limpa_gestor(g):
+    g = re.sub(r"\s+(Gestão|Gestao)?\s*(E|De|Do|Da|E Consultoria|E Consultoria De|Gestão De|S/A)$", "", g).strip()
+    g = re.sub(r"\s+(De|E|Do|Da)$", "", g).strip()
+    return g.replace(" De ", " de ").replace(" Do ", " do ").replace(" Da ", " da ").replace(" E ", " e ")
+
+
+def nome_fundo(n):
+    return re.sub(r"\b([A-Za-zÀ-ú]+)\b", lambda m: SIGLAS.get(m.group(1), m.group(1)), n).replace("  ", " ").strip()
+
+
+def compacta(rets, escala):
+    meses = sorted(rets)
+    i0, i1 = idx(meses[0]), idx(meses[-1])
+    vals = []
+    for i in range(i0, i1 + 1):
+        v = rets.get(nome_mes(i))
+        vals.append("" if v is None else str(int(round(v * escala))))
+    out = [i0 - idx(INICIO), ",".join(vals)]
+    if escala != 10000:
+        out.append(escala)
+    return out
+
+
+# ------------------------------------------------------------------ principal
 def main():
     base = Path(__file__).resolve().parent.parent
-    series = {}
-    ativos = []
-    for tk, nome, tipo, setor in ATIVOS:
-        try:
-            preco, ajustado, splits, ultimo = yahoo_mensal(tk)
-            if tipo in ("acao", "fii"):
-                prov = fundamentus_proventos(tk, tipo == "fii")
-                if not prov:
-                    raise ValueError("sem proventos no Fundamentus")
-                serie = com_proventos(preco, splits, prov)
-                # Sem histórico de proventos antes da 1ª data, o retorno sairia baixo demais.
-                # FII paga todo mês: começa no 1º provento. Ação: até 12 meses antes dele.
-                primeiro = min(d for d, _ in prov)
-                y, m = primeiro.year, primeiro.month
-                if tipo == "acao":
-                    y -= 1
-                corte = f"{y:04d}-{m:02d}"
-                if tk not in SEM_CORTE:
-                    serie = {k: v for k, v in serie.items() if k >= corte}
-            else:
-                serie = ajustado
-            rets = retornos(serie)
-        except Exception as e:
-            print(f"  ! {tk}: {e}", file=sys.stderr)
-            continue
-        if len(rets) < 24:
-            print(f"  ! {tk}: só {len(rets)} meses, ignorado", file=sys.stderr)
-            continue
-        meses = sorted(rets)
-        cod = tk.replace("^BVSP", "IBOV")
-        series[cod] = serie_alinhada(rets, 5)
-        ativos.append({"t": cod, "n": nome, "tipo": tipo, "setor": setor, "mercado": "BR",
-                       "moeda": "BRL", "preco": round(ultimo, 2) if ultimo else None})
-        print(f"  {cod:7s} {len(meses):3d} meses desde {meses[0]}")
-        time.sleep(0.3)
+    cache = Path(sys.argv[1]) if len(sys.argv) > 1 else base / "tools" / "cache"
+    print("Montando o universo de ativos pelo scanner do TradingView...", flush=True)
+    ativos = universo()
+    print(f"  {len(ativos)} ativos candidatos", flush=True)
+
+    series, meta, falhas = {}, [], []
+    lock = threading.Lock()
+
+    def um(a):
+        p = tv_mensal(a["sym"])
+        return a, (retornos(p, a["tipo"]) if p else None)
+
+    feitos = 0
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        for f in as_completed([ex.submit(um, a) for a in ativos]):
+            a, rets = f.result()
+            feitos += 1
+            if feitos % 100 == 0:
+                print(f"  {feitos}/{len(ativos)}", flush=True)
+            if not rets or len(rets) < 12:
+                falhas.append(a["t"]); continue
+            with lock:
+                series[a["t"]] = compacta(rets, 10000)
+                meta.append(a)
 
     for cod, serie in (("CDI", 4391), ("IPCA", 433)):
-        d = bcb_mensal(serie)
-        meses = sorted(d)
-        series[cod] = serie_alinhada(d, 6)
-        print(f"  {cod:7s} {len(meses):3d} meses desde {meses[0]}")
+        series[cod] = compacta(bcb_mensal(serie), 1000000)
 
-    data = {"atualizado": dt.date.today().isoformat(), "ativos": ativos, "series": series}
+    # fundos de investimento (CVM)
+    fj = cache / "fundos.json"
+    nf = 0
+    if fj.exists():
+        classe_tipo = {"Renda Fixa": "fundo_rf", "Multimercado": "fundo_mm", "Ações": "fundo_acoes", "Cambial": "fundo_cambial"}
+        for f in json.loads(fj.read_text(encoding="utf-8")):
+            rets = retornos(f["cotas"], "fundo")
+            if len(rets) < 24:
+                continue
+            cod = "FI" + f["cnpj"][:8]
+            if cod in series:
+                cod = "FI" + f["cnpj"]
+            series[cod] = compacta(rets, 100000 if f["classe"] == "Renda Fixa" else 10000)
+            gestor = re.sub(r"\b(LTDA|S\.?A|GESTÃO DE RECURSOS|GESTAO DE RECURSOS|GESTÃO DE INVESTIMENTOS|ASSET MANAGEMENT|INVESTIMENTOS|GESTORA DE RECURSOS|GESTORA)\b\.?", "", (f["gestor"] or "").upper())
+            gestor = re.sub(r"\s+", " ", gestor).strip(" .-")
+            meta.append({"t": cod, "n": nome_fundo(f["nome"]), "tipo": classe_tipo[f["classe"]], "setor": f["anbima"],
+                         "mercado": "BR", "moeda": "BRL", "liq": f["pl"], "gestor": limpa_gestor(nome_fundo(gestor.title()).replace("Dtvm", "DTVM"))[:40],
+                         "cnpj": f["cnpj"], "cot": f["cotistas"]})
+            nf += 1
+
+    ordem_tipo = ["acao", "fii", "fiagro", "fiinfra", "etf", "fundo_rf", "fundo_mm", "fundo_acoes", "fundo_cambial",
+                  "acao_us", "etf_us", "cripto", "indice", "commodity", "moeda"]
+    meta.sort(key=lambda a: (ordem_tipo.index(a["tipo"]), -(a.get("liq") or 0)))
+    lista = []
+    for a in meta:
+        item = [a["t"], a["n"], a["tipo"], a["setor"], a["mercado"], a["moeda"], a.get("liq") or 0]
+        if a.get("cnpj"):
+            item += [a.get("gestor", ""), a.get("cnpj", ""), a.get("cot", 0)]
+        lista.append(item)
+
+    data = {"atualizado": dt.date.today().isoformat(), "base": INICIO,
+            "campos": ["codigo", "nome", "tipo", "setor", "mercado", "moeda", "tamanho", "gestor", "cnpj", "cotistas"],
+            "ativos": lista, "series": series}
     js = ("// Gerado por tools/baixar_dados.py — não edite à mão.\n"
           "window.DADOS = " + json.dumps(data, ensure_ascii=False, separators=(",", ":")) + ";\n")
     (base / "data.js").write_text(js, encoding="utf-8")
-    print(f"OK: {len(ativos)} ativos, {len(js)//1024} KB em data.js")
+    from collections import Counter
+    print("Por tipo:", dict(Counter(a["tipo"] for a in meta)), flush=True)
+    print(f"Falharam ({len(falhas)}): {' '.join(sorted(falhas)[:80])}", flush=True)
+    print(f"OK: {len(meta)} ativos ({nf} fundos CVM), {len(js) // 1024} KB em data.js", flush=True)
 
 
 if __name__ == "__main__":
