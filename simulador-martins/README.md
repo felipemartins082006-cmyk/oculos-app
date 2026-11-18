@@ -60,6 +60,20 @@ reais; drawdown; retorno, volatilidade, Sharpe, Sortino, VaR/CVaR, beta, correla
 **Análise** — contribuição de cada ativo para o risco, matriz de correlação e fronteira eficiente
 (máximo Sharpe, mínimo risco e "mesmo risco, mais retorno"), com botão para aplicar os pesos.
 
+**Otimizar** — escolhe a melhor carteira num universo filtrado (ex.: todos os FIIs de papel com 5+
+anos) ou nos ativos de uma carteira: máximo Sharpe, mínimo risco, paridade de risco ou risco-alvo;
+médias James-Stein, covariância Ledoit-Wolf, reamostragem 50×, limite de peso e de nº de ativos;
+teste fora da amostra; salva o resultado como carteira.
+
+**FIIs** — mandato (papel, tijolo, híbrido), segmento, P/VP e cotistas pelo informe mensal da CVM;
+filtros "FIIs de papel/tijolo/híbridos" no seletor e no otimizador.
+
+**Monte Carlo** — até 100 mil cenários no celular (em segundo plano, com progresso) e opção de
+estender históricos curtos por modelo de fatores (validado fora da amostra).
+
+**Versão Python** (`python/`) — milhões de cenários, 7 modelos (inclui GARCH e mudança de regime),
+otimização por meta com restrição de queda, mínimo CVaR, relatório HTML. Veja `python/README.md`.
+
 ## Dados
 
 - **TradingView**: lista de ativos pelo scanner e histórico mensal com ajuste de dividendos
@@ -71,8 +85,10 @@ Para atualizar (no computador, com internet; leva uns 10 minutos):
 
 ```
 pip install websocket-client
-python3 tools/fundos_cvm.py tools/cache      # fundos (baixa ~1,3 GB da CVM)
-python3 tools/baixar_dados.py tools/cache    # resto do universo e monta data.js
+python3 tools/fundos_cvm.py tools/cache              # fundos (baixa ~1,3 GB da CVM)
+python3 tools/fiis_cvm.py tools/cache                # mandato, segmento e P/VP dos FIIs
+python3 tools/baixar_dados.py tools/cache            # resto do universo e monta data.js
+python3 tools/complementar_historico.py tools/cache  # começo do histórico pelo Yahoo + Fundamentus
 ```
 
 Depois troque a versão do cache em `sw.js` e gere o APK de novo.

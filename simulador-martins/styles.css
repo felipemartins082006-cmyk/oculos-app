@@ -312,3 +312,9 @@ td.best { font-weight: 600; }
   #tbl-cmp td:first-child { white-space: normal; min-width: 96px; }
   .mlist .tk { font-size: 12px; }
 }
+.chips.wrap { flex-wrap: wrap; overflow: visible; margin: 0; padding: 0; }
+.sel { width: 100%; border: 1px solid var(--rule-2); border-radius: var(--r); background: var(--panel); padding: 8px; font-size: 13.5px; min-height: 38px; }
+.progresso { height: 3px; background: var(--rule); border-radius: 2px; overflow: hidden; }
+.progresso i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .2s; }
+.ph { flex-wrap: wrap; }
+#ot-wf-meta, #win-meta, #bt-meta { white-space: normal; }

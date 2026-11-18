@@ -36,7 +36,8 @@ const TIPOS = {
   commodity: ['Commodity', 'indice'], moeda: ['Moeda', 'indice'], rf: ['Renda fixa', 'rf'],
 };
 const GRUPOS = [ // chips do seletor
-  ['', 'Todos'], ['acao', 'Ações BR'], ['fii', 'FIIs'], ['fiagro|fiinfra', 'Fiagro e Infra'], ['etf', 'ETFs B3'],
+  ['', 'Todos'], ['acao', 'Ações BR'], ['fii', 'FIIs'], ['fii:papel', 'FIIs de papel'], ['fii:tijolo', 'FIIs de tijolo'], ['fii:hibrido', 'FIIs híbridos'],
+  ['fiagro|fiinfra', 'Fiagro e Infra'], ['etf', 'ETFs B3'],
   ['fundo_rf', 'Fundos RF'], ['fundo_mm', 'Multimercados'], ['fundo_acoes|fundo_cambial', 'Fundos de ações e cambiais'],
   ['acao_us', 'Ações EUA'], ['etf_us', 'ETFs EUA'], ['cripto', 'Cripto'], ['indice|commodity|moeda', 'Índices, ouro e moedas'], ['rf', 'Renda fixa (modelo)'],
 ];
@@ -46,6 +47,12 @@ const CLASSES = [ // barra de alocação
   ['rf', 'Renda fixa', 'var(--c-rf)'], ['indice', 'Índices e outros', 'var(--c-indice)'],
 ];
 const corClasse = Object.fromEntries(CLASSES.map(([k, , c]) => [k, c]));
+const FII = D.fii || {};
+// filtro de grupo: "acao|etf" (tipos) ou "fii:papel" (FII por mandato, dado da CVM)
+function noGrupo(a, k) {
+  if (!k) return true;
+  return k.split('|').some((g) => { const [tp, mand] = g.split(':'); return a.tipo === tp && (!mand || (FII[a.t] && FII[a.t][0] === mand)); });
+}
 
 const ATIVOS = new Map();
 for (const a of D.ativos) {
@@ -76,6 +83,69 @@ function serie(t) {
 }
 const val = (s, mi) => (mi < s.i0 || mi > s.i1 ? NaN : s.v[mi - s.i0]);
 const FIM_DADOS = Math.max(...['CDI', 'IPCA', 'IBOV'].map((t) => serie(t).i1));
+
+// ---------------------------------------------------------------- extensão de histórico por fatores
+// r − base = α + Σβ(fator − base) + ε ; base = CDI (0 em dólar). Meses antes do início = base + α·n/(n+120) + Σβf + ε sorteado.
+const FATORES = {
+  fii: ['IFIX', 'IPCA'], fiagro: ['IFIX', 'IPCA'], fiinfra: ['IFIX', 'IPCA'], acao: ['IBOV', 'SMLL'], fundo_acoes: ['IBOV', 'SMLL'],
+  etf: ['IBOV', 'USDBRL'], fundo_rf: ['IPCA'], fundo_mm: ['IBOV', 'USDBRL', 'IPCA'], fundo_cambial: ['USDBRL'], acao_us: ['SPY', 'QQQ'], etf_us: ['SPY', 'TLT'],
+};
+const FAT_NIVEL = new Set(['IPCA', 'USDBRL']);
+const ESTENDIDAS = new Map();
+function aleatorio(semente) { let a = semente >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+function resolverSistema(A, b) { // eliminação de Gauss (sistemas pequenos)
+  const n = b.length, M = A.map((r, i) => [...r, b[i]]);
+  for (let c = 0; c < n; c++) {
+    let p = c; for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+    [M[c], M[p]] = [M[p], M[c]];
+    if (Math.abs(M[c][c]) < 1e-14) return null;
+    for (let r = c + 1; r < n; r++) { const f = M[r][c] / M[c][c]; for (let k = c; k <= n; k++) M[r][k] -= f * M[c][k]; }
+  }
+  const x = new Array(n).fill(0);
+  for (let r = n - 1; r >= 0; r--) { let t = M[r][n]; for (let k = r + 1; k < n; k++) t -= M[r][k] * x[k]; x[r] = t / M[r][r]; }
+  return x;
+}
+function serieEstendida(t) {
+  if (ESTENDIDAS.has(t)) return ESTENDIDAS.get(t);
+  const a = info(t), s = serie(t), fs = FATORES[a.tipo];
+  let out = s;
+  if (fs) {
+    const usd = a.moeda === 'USD', cdi = serie('CDI'), F = fs.map(serie);
+    const ref = (mi) => (usd ? 0 : val(cdi, mi));
+    const fv = (k, mi) => (FAT_NIVEL.has(fs[k]) ? val(F[k], mi) : val(F[k], mi) - ref(mi));
+    const Xs = [], Ys = [];
+    for (let mi = s.i0; mi <= s.i1; mi++) {
+      const y = val(s, mi); if (isNaN(y) || isNaN(ref(mi))) continue;
+      const linha = [1]; let ok = true;
+      for (let k = 0; k < fs.length; k++) { const v = fv(k, mi); if (isNaN(v)) { ok = false; break; } linha.push(v); }
+      if (ok) { Xs.push(linha); Ys.push(y - ref(mi)); }
+    }
+    const n = Ys.length, d = fs.length + 1;
+    if (n >= 24) {
+      const XtX = Array.from({ length: d }, (_, i) => Array.from({ length: d }, (_, j) => Xs.reduce((acc, r) => acc + r[i] * r[j], 0)));
+      const XtY = Array.from({ length: d }, (_, i) => Xs.reduce((acc, r, k) => acc + r[i] * Ys[k], 0));
+      const b = resolverSistema(XtX, XtY);
+      if (b) {
+        const res = Ys.map((y, k) => y - Xs[k].reduce((acc, x, i) => acc + x * b[i], 0));
+        const ini = Math.max(...F.map((f) => f.i0), usd ? 0 : cdi.i0);
+        if (ini < s.i0) {
+          let h = 0; for (const ch of t) h = (h * 31 + ch.charCodeAt(0)) | 0;
+          const rnd = aleatorio(h), alfa = b[0] * n / (n + 120);
+          const v = new Float64Array(s.i1 - ini + 1); let est = 0;
+          for (let mi = ini; mi <= s.i1; mi++) {
+            if (mi >= s.i0) { v[mi - ini] = val(s, mi); continue; }
+            let x = ref(mi) + alfa, ok = !isNaN(x);
+            for (let k = 0; k < fs.length && ok; k++) { const f = fv(k, mi); if (isNaN(f)) ok = false; else x += b[k + 1] * f; }
+            v[mi - ini] = ok ? Math.max(-0.9, x + res[(rnd() * n) | 0]) : NaN; if (ok) est++;
+          }
+          out = { i0: ini, i1: s.i1, v, estimados: est };
+        }
+      }
+    }
+  }
+  ESTENDIDAS.set(t, out);
+  return out;
+}
 
 // estatística de cada ativo (em reais) para o seletor
 const ESTAT = new Map();
@@ -181,7 +251,8 @@ const PADRAO = {
   inicial: 10000, aporte: 1000, anos: 20, meta: 1000000, reaj: 0, corrige: true,
   saqueOn: false, saqueAno: 25, saque: 5000, saqueCorrige: true,
   metodo: 'boot', bloco: 12, desde: 2010, rebal: 1, cambio: 1, ajuste: 0, taxa: 0, ir: 0, n: 5000, real: true,
-  btModo: 'unit', btEscala: 'log', btDesde: 2010, btBench: ['CDI', 'IPCA', 'IBOV', 'SPY'],
+  btModo: 'unit', btEscala: 'log', btDesde: 2010, btBench: ['CDI', 'IPCA', 'IBOV', 'SPY'], estender: false,
+  ot: { fonte: 'filtro', classes: ['fii:papel'], minAnos: 5, maxUniv: 60, janela: 6, cart: 0, obj: 'sharpe', volAlvo: 8, pesoMax: 20, maxAtivos: 8, reamostra: true, estender: false },
 };
 let S = carregar();
 function carregar() {
@@ -189,7 +260,8 @@ function carregar() {
     const x = JSON.parse(localStorage.getItem(CHAVE));
     if (x && Array.isArray(x.carteiras) && x.carteiras.length) {
       x.carteiras.forEach((c) => { c.itens = (c.itens || []).filter((i) => info(i.t)); });
-      return { ...JSON.parse(JSON.stringify(PADRAO)), ...x };
+      const p = JSON.parse(JSON.stringify(PADRAO));
+      return { ...p, ...x, ot: { ...p.ot, ...(x.ot || {}) } };
     }
   } catch (e) { /* sem armazenamento */ }
   return JSON.parse(JSON.stringify(PADRAO));
@@ -203,18 +275,19 @@ const cartAtiva = () => S.carteiras[S.ativa];
 
 // ---------------------------------------------------------------- preparação dos dados
 // Junta os ativos de várias carteiras numa janela em comum e devolve retornos mensais em reais.
-function preparar(carts, desde, cambio = 1) {
+function preparar(carts, desde, cambio = 1, estender = false) {
+  const sr = (t) => (estender && !['CDI', 'IPCA', 'USDBRL'].includes(t) ? serieEstendida(t) : serie(t));
   const cs = carts.map((c) => ({ ...c, itens: c.itens.filter((i) => i.p > 0 && info(i.t)) })).filter((c) => c.itens.length);
   if (!cs.length) return { erro: 'Adicione ativos com peso maior que zero.' };
   const uni = [...new Set(cs.flatMap((c) => c.itens.map((i) => i.t)))];
   const reais = uni.filter((t) => !t.startsWith('RF:'));
   let ini = idx(`${desde}-01`), fim = Infinity, limitante = null, novo = -Infinity;
   for (const t of [...reais, 'CDI', 'IPCA', 'USDBRL']) {
-    const s = serie(t);
+    const s = sr(t);
     if (s.i0 > novo) { novo = s.i0; limitante = t; }
     ini = Math.max(ini, s.i0); fim = Math.min(fim, s.i1);
   }
-  const ss = reais.map(serie), sc = serie('CDI'), si = serie('IPCA'), sf = serie('USDBRL');
+  const ss = reais.map(sr), sc = serie('CDI'), si = serie('IPCA'), sf = serie('USDBRL');
   const meses = [];
   for (let mi = ini; mi <= fim; mi++) {
     if (isNaN(val(sc, mi)) || isNaN(val(si, mi)) || isNaN(val(sf, mi))) continue;
@@ -232,7 +305,7 @@ function preparar(carts, desde, cambio = 1) {
         r[j] = a.rf === 'CDI' ? cdi[j] * a.taxa / 100 : a.rf === 'IPCA' ? (1 + ipca[j]) * Math.pow(1 + a.taxa / 100, 1 / 12) - 1 : Math.pow(1 + a.taxa / 100, 1 / 12) - 1;
       }
     } else {
-      const s = serie(t);
+      const s = sr(t);
       for (let j = 0; j < L; j++) {
         const x = val(s, meses[j]);
         r[j] = a.moeda === 'USD' && cambio ? (1 + x) * (1 + fx[j]) - 1 : x;
@@ -251,15 +324,18 @@ function preparar(carts, desde, cambio = 1) {
     for (let k = 0; k < uni.length; k++) if (w[k]) for (let j = 0; j < L; j++) p[j] += w[k] * R[k][j];
     return p;
   });
+  const estimados = {};
+  if (estender) for (const t of reais) { const e = sr(t); if (e.estimados) { let n = 0; for (const mi of meses) if (mi < serie(t).i0) n++; if (n) estimados[t] = n; } }
   return {
     cs, uni, R, risco, W, P, meses, cdi, ipca, fx, L, ini: meses[0], fim: meses[L - 1],
-    limitante: novo > idx(`${desde}-01`) ? limitante : null,
+    limitante: novo > idx(`${desde}-01`) ? limitante : null, estimados,
   };
 }
 
 // ---------------------------------------------------------------- Monte Carlo
-function simular(H, o) {
+function simular(H, o, progresso) {
   const nC = H.cs.length, K = H.uni.length, L = H.L, N = o.anos * 12, nS = o.n;
+  const nCam = Math.min(nS, 10000); // caminhos guardados para o gráfico (os percentis finais usam todos)
   const ajM = Math.pow(1 + o.ajuste / 100, 1 / 12);
   const taxaM = Math.pow(1 + o.taxa / 100, -1 / 12);
   const parametrico = o.metodo === 'normal' || o.metodo === 't';
@@ -289,7 +365,7 @@ function simular(H, o) {
   const pontos = []; for (let m = 0; m <= N; m += passo) pontos.push(m);
   if (pontos[pontos.length - 1] !== N) pontos.push(N);
   const Pn = pontos.length;
-  const cam = H.cs.map(() => new Float32Array(nS * Pn));
+  const cam = H.cs.map(() => new Float32Array(nCam * Pn));
   const somaCdi = new Float64Array(Pn), somaInv = new Float64Array(Pn);
   const fin = H.cs.map(() => new Float64Array(nS)), finCdi = new Float64Array(nS), invF = new Float64Array(nS);
   const anu = H.cs.map(() => new Float64Array(nS)), qd = H.cs.map(() => new Float64Array(nS));
@@ -307,8 +383,9 @@ function simular(H, o) {
       V[c] = o.inicial; nivel[c] = 0; topo[c] = 0; queda[c] = 0; cresce[c] = 0; morto[c] = 0;
       if (porAtivo) for (const k of ks[c]) hold[c][k] = o.inicial * H.W[c][k];
     }
-    const base = s * Pn;
-    for (let c = 0; c < nC; c++) cam[c][base] = V[c];
+    const base = s * Pn, guarda = s < nCam;
+    if (progresso && s % 2000 === 0) progresso(s / nS);
+    if (guarda) for (let c = 0; c < nC; c++) cam[c][base] = V[c];
     somaCdi[0] += vc; somaInv[0] += o.inicial;
     for (let m = 1; m <= N; m++) {
       // ----- sorteio do mês (o mesmo para todas as carteiras)
@@ -364,7 +441,7 @@ function simular(H, o) {
       }
       if (m === pontos[kk]) {
         const d = o.real ? inf : 1;
-        for (let c = 0; c < nC; c++) cam[c][base + kk] = V[c] / d;
+        if (guarda) for (let c = 0; c < nC; c++) cam[c][base + kk] = V[c] / d;
         somaCdi[kk] += vc / d; somaInv[kk] += o.real ? invReal : invNom;
         kk++;
       }
@@ -381,11 +458,11 @@ function simular(H, o) {
 
   // ----- resumo por carteira
   const QS = [0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95];
-  const col = new Float32Array(nS);
+  const col = new Float32Array(nCam);
   const res = H.cs.map((cart, c) => {
     const faixas = QS.map(() => new Float64Array(Pn));
     for (let k = 0; k < Pn; k++) {
-      for (let s = 0; s < nS; s++) col[s] = cam[c][s * Pn + k];
+      for (let s = 0; s < nCam; s++) col[s] = cam[c][s * Pn + k];
       col.sort();
       QS.forEach((q, i) => { faixas[i][k] = quantil(col, q); });
     }
@@ -398,21 +475,47 @@ function simular(H, o) {
     }
     const ord = Float64Array.from(fin[c]).sort(), oa = Float64Array.from(anu[c]).sort(), oq = Float64Array.from(qd[c]).sort();
     return {
-      nome: cart.nome, faixas, cam: cam[c], fin: fin[c], ord,
-      q: (p) => quantil(ord, p), qa: (p) => quantil(oa, p), qd: (p) => quantil(oq, p),
+      nome: cart.nome, faixas, cam: cam[c], fin: fin[c], ord, oa, oq,
       pPerde: perde / nS, pCdi: bate / nS, pMeta: o.meta > 0 ? meta / nS : null, pRuina: ruin / nS,
     };
   });
   const ordCdi = Float64Array.from(finCdi).sort();
   let rc = 0; for (let s = 0; s < nS; s++) if (ruinaCdi[s]) rc++;
   return {
-    res, N, Pn, pontos, nS, QS, cdi: Array.from(somaCdi, (v) => v / nS), inv: Array.from(somaInv, (v) => v / nS),
-    cdiQ: (p) => quantil(ordCdi, p), pRuinaCdi: rc / nS, porAtivo, parametrico,
+    res, N, Pn, pontos, nS, nCam, QS, cdi: Array.from(somaCdi, (v) => v / nS), inv: Array.from(somaInv, (v) => v / nS),
+    ordCdi, pRuinaCdi: rc / nS, porAtivo, parametrico,
   };
+}
+// funções de leitura (não viajam do worker): percentis do patrimônio, do retorno anual e da queda
+function hidratar(R) {
+  for (const r of R.res) { r.q = (p) => quantil(r.ord, p); r.qa = (p) => quantil(r.oa, p); r.qd = (p) => quantil(r.oq, p); }
+  R.cdiQ = (p) => quantil(R.ordCdi, p);
+  return R;
+}
+
+// Monte Carlo num Web Worker (a tela continua respondendo); se não houver Worker, roda direto.
+let worker = null;
+function criarWorker() {
+  try {
+    const src = [quantil, media, cholesky, gauss, simular].map((f) => f.toString()).join('\n') +
+      '\nlet gaussExtra = null;\nonmessage = (e) => { const { H, o } = e.data; const R = simular(H, o, (p) => postMessage({ p })); postMessage({ R }); };';
+    const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+    return new Worker(url);
+  } catch (e) { return null; }
+}
+function simularAssincrono(H, o, aoProgresso) {
+  const Hw = { cs: H.cs.map((c) => ({ nome: c.nome })), uni: H.uni, R: H.R, risco: H.risco, W: H.W, cdi: H.cdi, ipca: H.ipca, L: H.L };
+  return new Promise((ok, falha) => {
+    if (worker === null) worker = criarWorker() || false;
+    if (!worker) { setTimeout(() => { try { ok(simular(Hw, o, aoProgresso)); } catch (e) { falha(e); } }, 20); return; }
+    worker.onmessage = (e) => { if (e.data.p !== undefined) aoProgresso(e.data.p); else ok(e.data.R); };
+    worker.onerror = (e) => { worker.terminate(); worker = false; try { ok(simular(Hw, o, aoProgresso)); } catch (x) { falha(x); } e.preventDefault(); };
+    worker.postMessage({ H: Hw, o });
+  });
 }
 
 // ---------------------------------------------------------------- navegação (abas)
-const VIEWS = ['carteiras', 'simulacao', 'historico', 'analise', 'metodo'];
+const VIEWS = ['carteiras', 'simulacao', 'historico', 'analise', 'otimizar', 'metodo'];
 let vista = '';
 function irPara(v, push = true) {
   if (!VIEWS.includes(v)) v = 'carteiras';
@@ -424,6 +527,7 @@ function irPara(v, push = true) {
   if (v === 'historico') desenharHistorico();
   if (v === 'analise') desenharAnalise();
   if (v === 'carteiras') desenharResumo();
+  if (v === 'otimizar') prepararOtimizador();
   window.scrollTo(0, 0);
 }
 document.querySelector('.tabs').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) irPara(b.dataset.v); });
@@ -555,7 +659,7 @@ function desenharBase() {
 // ---------------------------------------------------------------- seletor de ativos
 let filtro = '', limite = 150;
 $('chips-tipo').innerHTML = GRUPOS.map(([k, n], i) => {
-  const qtd = k === 'rf' ? 3 : k === '' ? D.ativos.length : D.ativos.filter((a) => k.split('|').includes(a[2])).length;
+  const qtd = k === 'rf' ? 3 : [...ATIVOS.values()].filter((a) => noGrupo(a, k)).length;
   return `<button type="button" class="chip${i === 0 ? ' on' : ''}" data-k="${k}">${n}<small>${qtd.toLocaleString('pt-BR')}</small></button>`;
 }).join('');
 $('btn-add').addEventListener('click', () => { $('sheet').hidden = false; $('q').value = ''; limite = 150; desenharLista(); document.body.style.overflow = 'hidden'; });
@@ -592,6 +696,11 @@ $('list').addEventListener('click', (e) => {
 });
 $('list').addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.dataset.t) { e.preventDefault(); e.target.click(); } });
 function tamanhoTexto(a) {
+  const f = FII[a.t];
+  if (f) {
+    const m = { papel: 'papel', tijolo: 'tijolo', hibrido: 'híbrido', desenvolvimento: 'desenvolvimento' }[f[0]] || '';
+    return [m && `mandato ${m}`, f[3] ? `P/VP ${num(f[3])}` : '', f[4] ? `${f[4].toLocaleString('pt-BR')} cotistas` : '', a.tam ? `negocia ${curto(a.tam)}/dia` : ''].filter(Boolean).join(' · ');
+  }
   if (!a.tam) return '';
   if (a.tipo.startsWith('fundo')) return `PL ${curto(a.tam)} · ${a.cot.toLocaleString('pt-BR')} cotistas`;
   if (a.tipo === 'acao_us') return `valor de mercado US$ ${(a.tam / 1e9).toLocaleString('pt-BR', { maximumFractionDigits: 0 })} bi`;
@@ -600,11 +709,11 @@ function tamanhoTexto(a) {
 function desenharLista() {
   $('rf-box').hidden = filtro !== 'rf';
   if (filtro === 'rf') { $('list').innerHTML = ''; $('btn-more').hidden = true; $('list-count').textContent = ''; return; }
-  const q = semAcento($('q').value.trim()), tipos = filtro ? filtro.split('|') : null;
+  const q = semAcento($('q').value.trim());
   const sel = new Set(cartAtiva().itens.map((i) => i.t));
   const itens = [];
   for (const a of ATIVOS.values()) {
-    if (tipos && !tipos.includes(a.tipo)) continue;
+    if (filtro && !noGrupo(a, filtro)) continue;
     if (q && !semAcento(`${a.t} ${a.n} ${a.setor} ${a.gestor}`).includes(q)) continue;
     itens.push(a);
   }
@@ -664,7 +773,7 @@ function marcarVelho() { if (ultimo) $('stale').hidden = false; }
 ligarDinheiro('in-inicial', 'inicial'); ligarDinheiro('in-aporte', 'aporte'); ligarDinheiro('in-meta', 'meta'); ligarDinheiro('in-saque', 'saque');
 ligarDecimal('in-reaj', 'reaj', -10, 20); ligarDecimal('in-taxa', 'taxa', 0, 10); ligarDecimal('in-ir', 'ir', 0, 50);
 ligarDecimal('in-saque-ano', 'saqueAno', 0, 50);
-ligarCheck('in-corrige', 'corrige'); ligarCheck('in-real', 'real'); ligarCheck('in-saque-corrige', 'saqueCorrige'); ligarCheck('in-saque-on', 'saqueOn');
+ligarCheck('in-corrige', 'corrige'); ligarCheck('in-estender', 'estender'); ligarCheck('in-real', 'real'); ligarCheck('in-saque-corrige', 'saqueCorrige'); ligarCheck('in-saque-on', 'saqueOn');
 ligarSeg('seg-metodo', 'metodo'); ligarSeg('seg-bloco', 'bloco'); ligarSeg('seg-desde', 'desde'); ligarSeg('seg-rebal', 'rebal');
 ligarSeg('seg-cambio', 'cambio'); ligarSeg('seg-n', 'n');
 $('in-anos').value = S.anos; $('in-ajuste').value = S.ajuste;
@@ -695,20 +804,22 @@ let ultimo = null;
 function rodar(rolar) {
   const erro = (m) => { $('err').textContent = m; $('err').hidden = !m; };
   if (S.inicial <= 0 && S.aporte <= 0) return erro('Coloque um aporte inicial ou mensal.');
-  const H = preparar(S.carteiras, S.desde, S.cambio);
+  const H = preparar(S.carteiras, S.desde, S.cambio, S.estender);
   if (H.erro) return erro(H.erro);
   erro('');
-  $('btn-sim').disabled = true; $('btn-sim-label').textContent = 'Processando…';
-  setTimeout(() => {
-    const t0 = performance.now();
-    const R = simular(H, S);
-    ultimo = { H, R, o: JSON.parse(JSON.stringify(S)), ms: performance.now() - t0 };
-    if (S.ver >= H.cs.length) S.ver = 0;
-    $('stale').hidden = true;
-    $('btn-sim').disabled = false; $('btn-sim-label').textContent = 'Rodar novamente';
-    desenharSimulacao();
-    if (rolar && window.innerWidth < 1000) $('res').scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, 30);
+  const btn = $('btn-sim');
+  btn.disabled = true; $('btn-sim-label').textContent = 'Processando… 0%';
+  const t0 = performance.now(), o = JSON.parse(JSON.stringify(S));
+  simularAssincrono(H, o, (p) => { $('btn-sim-label').textContent = `Processando… ${Math.round(p * 100)}%`; })
+    .then((R) => {
+      ultimo = { H, R: hidratar(R), o, ms: performance.now() - t0 };
+      if (S.ver >= H.cs.length) S.ver = 0;
+      $('stale').hidden = true;
+      desenharSimulacao();
+      if (rolar && window.innerWidth < 1000) $('res').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    })
+    .catch((e) => erro(`Não foi possível simular: ${e.message || e}`))
+    .finally(() => { btn.disabled = false; $('btn-sim-label').textContent = 'Rodar novamente'; });
 }
 
 // ---------------------------------------------------------------- SIMULAÇÃO: resultados
@@ -723,6 +834,7 @@ function desenharSimulacao() {
     ['Rebal.', R.parametrico || o.rebal === 1 ? 'mensal' : o.rebal ? `${o.rebal} m` : 'nunca'],
     ['Base', o.real ? 'real (IPCA)' : 'nominal'], ['Tempo', `${Math.round(ultimo.ms)} ms`],
   ].map(([k, v]) => `<span>${k}: <b>${v}</b></span>`).join('') + (H.limitante ? `<span>Janela limitada por: <b>${esc(rotuloAtivo(H.limitante))}</b></span>` : '');
+  if (Object.keys(H.estimados || {}).length) $('runline').innerHTML += `<span>Meses estimados por fatores: <b>${Object.entries(H.estimados).map(([t, n]) => `${esc(rotuloAtivo(t))} ${n}`).join(', ')}</b></span>`;
   const anosJ = H.L / 12;
   $('aviso').hidden = anosJ >= 18;
   $('aviso').textContent = anosJ >= 18 ? '' : `Atenção: o sorteio usa só ${num(anosJ, 0)} anos de história (${rotulo(H.ini)} a ${rotulo(H.fim)}). O resultado reflete muito o que aconteceu nesse período. Para um cenário mais prudente, use um ajuste negativo no retorno esperado, o modelo t-Student ou ativos com histórico mais longo.`;
@@ -1072,6 +1184,279 @@ $('tbl-ef').addEventListener('click', (e) => {
   mudouCarteiras(); desenharCarteira(); desenharAnalise();
 });
 
+
+// ---------------------------------------------------------------- OTIMIZADOR
+// estimadores robustos
+function estimarRobusto(R) { // R: lista de colunas (Float64Array por ativo)
+  const K = R.length, L = R[0].length;
+  const mu = R.map((r) => media(r));
+  // James-Stein: médias puxadas para a média geral
+  if (K >= 3) {
+    const alvo = media(mu), varMedia = media(R.map((r, k) => { let v = 0; for (const x of r) v += (x - mu[k]) ** 2; return v / (L - 1); })) / L;
+    let dist = 0; for (const m of mu) dist += (m - alvo) ** 2;
+    const f = dist > 0 ? Math.max(0, 1 - (K - 2) * varMedia / dist) : 0;
+    for (let k = 0; k < K; k++) mu[k] = alvo + f * (mu[k] - alvo);
+  }
+  // Ledoit-Wolf (alvo: correlação constante)
+  const X = R.map((r) => { const m = media(r); return Float64Array.from(r, (x) => x - m); });
+  const S = Array.from({ length: K }, () => new Float64Array(K));
+  for (let i = 0; i < K; i++) for (let j = 0; j <= i; j++) { let v = 0; for (let t = 0; t < L; t++) v += X[i][t] * X[j][t]; S[i][j] = S[j][i] = v / L; }
+  const sd = S.map((r, i) => Math.sqrt(Math.max(r[i], 1e-14)));
+  let rbar = 0; for (let i = 0; i < K; i++) for (let j = 0; j < K; j++) if (i !== j) rbar += S[i][j] / (sd[i] * sd[j]);
+  rbar = K > 1 ? rbar / (K * (K - 1)) : 0;
+  let pi = 0, gamma = 0, rhoD = 0, rhoOff = 0;
+  for (let i = 0; i < K; i++) for (let j = 0; j < K; j++) {
+    let p = 0, ti = 0, tj = 0;
+    for (let t = 0; t < L; t++) { const a = X[i][t], b = X[j][t]; p += (a * b - S[i][j]) ** 2; ti += (a * a - S[i][i]) * (a * b - S[i][j]); tj += (b * b - S[j][j]) * (a * b - S[i][j]); }
+    p /= L; pi += p;
+    const F = i === j ? S[i][i] : rbar * sd[i] * sd[j];
+    gamma += (F - S[i][j]) ** 2;
+    if (i === j) rhoD += p; else rhoOff += (rbar / 2) * ((sd[j] / sd[i]) * ti / L + (sd[i] / sd[j]) * tj / L);
+  }
+  const delta = gamma > 0 ? Math.max(0, Math.min(1, (pi - rhoD - rhoOff) / gamma / L)) : 1;
+  const C = S.map((r, i) => Float64Array.from(r, (v, j) => delta * (i === j ? S[i][i] : rbar * sd[i] * sd[j]) + (1 - delta) * v + (i === j ? 1e-12 : 0)));
+  return { mu, C, delta };
+}
+const mulCv = (C, w) => C.map((r) => { let v = 0; for (let j = 0; j < w.length; j++) v += r[j] * w[j]; return v; });
+const dot = (a, b) => { let v = 0; for (let i = 0; i < a.length; i++) v += a[i] * b[i]; return v; };
+function projetar(v, cap) { // projeção no simplex com teto: 0 ≤ w ≤ cap, Σw = 1
+  let lo = Math.min(...v) - 1, hi = Math.max(...v);
+  for (let it = 0; it < 60; it++) { const tau = (lo + hi) / 2; let s = 0; for (const x of v) s += Math.min(cap, Math.max(0, x - tau)); if (s > 1) lo = tau; else hi = tau; }
+  const tau = (lo + hi) / 2; const w = v.map((x) => Math.min(cap, Math.max(0, x - tau))); const s = w.reduce((a, b) => a + b, 0) || 1;
+  return w.map((x) => x / s);
+}
+function anualGeo(m, v) { return Math.pow(1 + m, 12) * Math.exp(-12 * v / (2 * (1 + m) ** 2)) - 1; }
+function estatPesos(w, mu, C, rfm) { const m = dot(w, mu), v = dot(w, mulCv(C, w)); const ret = anualGeo(m, v), vol = Math.sqrt(Math.max(v, 0) * 12); return { ret, vol, sharpe: vol > 0 ? (ret - (Math.pow(1 + rfm, 12) - 1)) / vol : NaN }; }
+function otimizarPesos(mu, C, obj, cap, rfm, volAlvo) {
+  const K = mu.length; cap = Math.max(cap, 1 / K + 1e-9);
+  let lmax = 0; for (let i = 0; i < K; i++) lmax = Math.max(lmax, C[i].reduce((a, b) => a + Math.abs(b), 0));
+  const passo = 1 / (2 * lmax + 1e-12);
+  const minUtil = (lam, w0) => { // máx  w·μ − λ wCw  (gradiente projetado)
+    let w = w0 ? w0.slice() : projetar(new Array(K).fill(1 / K), cap);
+    const eta = 1 / (2 * lam * lmax + 1e-12);
+    for (let it = 0; it < 600; it++) { const g = mulCv(C, w); w = projetar(w.map((x, i) => x + eta * (mu[i] - 2 * lam * g[i])), cap); }
+    return w;
+  };
+  if (obj === 'minvar') { let w = projetar(new Array(K).fill(1 / K), cap); for (let it = 0; it < 1500; it++) { const g = mulCv(C, w); w = projetar(w.map((x, i) => x - passo * g[i]), cap); } return w; }
+  if (obj === 'paridade') {
+    let w = new Array(K).fill(1 / K);
+    for (let it = 0; it < 400; it++) { const g = mulCv(C, w), v = dot(w, g); w = w.map((x, i) => x * Math.sqrt((v / K) / Math.max(x * g[i], 1e-16))); w = projetar(w.map((x) => x / w.reduce((a, b) => a + b, 0)), cap); }
+    return w;
+  }
+  if (obj === 'alvo') { // maior retorno com vol ≤ alvo: busca em λ
+    const alvo = (volAlvo / 100) ** 2 / 12; let lo = 1e-3, hi = 1e5, melhor = null;
+    for (let it = 0; it < 40; it++) { const lam = Math.sqrt(lo * hi), w = minUtil(lam, melhor); if (dot(w, mulCv(C, w)) > alvo) lo = lam; else { hi = lam; melhor = w; } }
+    return melhor || minUtil(hi);
+  }
+  // máximo Sharpe. Se nenhum ativo tem retorno esperado acima do CDI, a carteira tangente não existe
+  // (maximizar um Sharpe negativo levaria ao maior risco): usa mínima variância.
+  if (Math.max(...mu) <= rfm) return otimizarPesos(mu, C, 'minvar', cap, rfm, volAlvo);
+  let melhor = null, mS = -Infinity;
+  for (const lam of [0.5, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512]) { const w = minUtil(lam); const e = estatPesos(w, mu, C, rfm); if (e.sharpe > mS) { mS = e.sharpe; melhor = w; } }
+  let w = melhor;
+  for (let it = 0; it < 800; it++) {
+    const g = mulCv(C, w), m = dot(w, mu) - rfm, v = Math.max(dot(w, g), 1e-14), sd = Math.sqrt(v);
+    const grad = mu.map((x, i) => x / sd - m * g[i] / (sd * v));
+    const cand = projetar(w.map((x, i) => x + passo * sd * 0.5 * grad[i]), cap);
+    if (estatPesos(cand, mu, C, rfm).sharpe >= estatPesos(w, mu, C, rfm).sharpe - 1e-12) w = cand; else break;
+  }
+  return w;
+}
+function otimizarCompleto(R, op, rfm) {
+  const resolve = (cols) => {
+    const sub = cols.map((k) => R[k]); const { mu, C } = estimarRobusto(sub);
+    return otimizarPesos(mu, C, op.obj, op.pesoMax / 100, rfm, op.volAlvo);
+  };
+  const K = R.length; let idxs = [...Array(K).keys()], w = resolve(idxs);
+  if (op.maxAtivos && w.filter((x) => x > 1e-4).length > op.maxAtivos) {
+    idxs = idxs.slice().sort((a, b) => w[b] - w[a]).slice(0, op.maxAtivos);
+    const ws = resolve(idxs); w = new Array(K).fill(0); idxs.forEach((k, i) => { w[k] = ws[i]; });
+  }
+  return w.map((x) => (x < 1e-4 ? 0 : x));
+}
+function reamostrar(R, n, bloco, semente) {
+  const L = R[0].length, rnd = aleatorio(semente), out = [];
+  for (let r = 0; r < n; r++) {
+    const ix = []; while (ix.length < L) { const s0 = (rnd() * L) | 0; for (let b = 0; b < bloco && ix.length < L; b++) ix.push((s0 + b) % L); }
+    out.push(R.map((col) => Float64Array.from(ix, (t) => col[t])));
+  }
+  return out;
+}
+function otimizarRobusto(R, op, rfm, aoProgresso) {
+  if (!op.reamostra) return otimizarCompleto(R, op, rfm);
+  const K = R.length, soma = new Array(K).fill(0), amostras = reamostrar(R, 50, 6, 11);
+  amostras.forEach((Rs, i) => { const w = otimizarCompleto(Rs, op, rfm); for (let k = 0; k < K; k++) soma[k] += w[k] / 50; if (aoProgresso) aoProgresso(i / 50); });
+  let w = soma;
+  if (op.maxAtivos && w.filter((x) => x > 1e-4).length > op.maxAtivos) { const corte = w.slice().sort((a, b) => b - a)[op.maxAtivos - 1]; w = w.map((x) => (x >= corte ? x : 0)); }
+  const s = w.reduce((a, b) => a + b, 0); return w.map((x) => x / s);
+}
+
+// interface
+const OT_CLASSES = [['acao', 'Ações BR'], ['fii', 'Todos os FIIs'], ['fii:papel', 'FIIs de papel'], ['fii:tijolo', 'FIIs de tijolo'], ['fii:hibrido', 'FIIs híbridos'],
+  ['fiagro|fiinfra', 'Fiagro e Infra'], ['etf', 'ETFs B3'], ['fundo_rf', 'Fundos RF'], ['fundo_mm', 'Multimercados'], ['fundo_acoes', 'Fundos de ações'],
+  ['acao_us', 'Ações EUA'], ['etf_us', 'ETFs EUA'], ['cripto', 'Cripto'], ['indice|commodity|moeda', 'Índices, ouro e moedas']];
+let otPronto = false, otUltimo = null;
+function prepararOtimizador() {
+  const O_ = S.ot;
+  if (!otPronto) {
+    otPronto = true;
+    $('ot-classes').innerHTML = OT_CLASSES.map(([k, n]) => `<button type="button" class="chip" data-k="${k}">${n}</button>`).join('');
+    $('ot-classes').addEventListener('click', (e) => {
+      const b = e.target.closest('button'); if (!b) return; const k = b.dataset.k;
+      O_.classes = O_.classes.includes(k) ? O_.classes.filter((x) => x !== k) : [...O_.classes, k];
+      salvar(); prepararOtimizador();
+    });
+    const liga = (id, chave, conv) => { const el = $(id); el.value = String(O_[chave]).replace('.', ','); el.addEventListener('input', () => { O_[chave] = conv(el.value); salvar(); }); };
+    liga('ot-vol', 'volAlvo', (v) => Math.max(1, lerDec(v))); liga('ot-peso', 'pesoMax', (v) => Math.max(1, Math.min(100, lerDec(v))));
+    liga('ot-nmax', 'maxAtivos', (v) => Math.max(0, parseInt(v, 10) || 0));
+    for (const [id, chave] of [['ot-min', 'minAnos'], ['ot-max', 'maxUniv']]) { $(id).value = O_[chave]; $(id).addEventListener('change', () => { O_[chave] = +$(id).value; salvar(); prepararOtimizador(); }); }
+    for (const [id, chave] of [['ot-estender', 'estender'], ['ot-reamostra', 'reamostra']]) { $(id).checked = O_[chave]; $(id).addEventListener('change', () => { O_[chave] = $(id).checked; salvar(); prepararOtimizador(); }); }
+    const seg = (id, chave) => $(id).addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; O_[chave] = isNaN(+b.dataset.v) ? b.dataset.v : +b.dataset.v; salvar(); prepararOtimizador(); });
+    seg('seg-ot-fonte', 'fonte'); seg('seg-ot-janela', 'janela'); seg('seg-ot-obj', 'obj'); seg('seg-ot-cart', 'cart');
+    $('btn-ot').addEventListener('click', rodarOtimizador);
+    $('ot-salvar').addEventListener('click', salvarOtimizada);
+  }
+  if (O_.cart >= S.carteiras.length) O_.cart = 0;
+  $('seg-ot-cart').innerHTML = S.carteiras.map((c, i) => `<button type="button" data-v="${i}">${esc(c.nome.slice(0, 16))}</button>`).join('');
+  const marca = (id, v) => [...$(id).children].forEach((b) => { const on = String(b.dataset.v) === String(v); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+  marca('seg-ot-fonte', O_.fonte); marca('seg-ot-janela', O_.janela); marca('seg-ot-obj', O_.obj); marca('seg-ot-cart', O_.cart);
+  [...$('ot-classes').children].forEach((b) => { const on = O_.classes.includes(b.dataset.k); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+  $('ot-filtro').hidden = O_.fonte !== 'filtro'; $('ot-cart').hidden = O_.fonte !== 'cart';
+  $('f-ot-vol').classList.toggle('dim', O_.obj !== 'alvo');
+  $('ot-obj-help').textContent = {
+    sharpe: 'Maior retorno acima do CDI por unidade de risco.', minvar: 'A combinação que menos oscila.',
+    paridade: 'Cada ativo contribui igualmente para o risco total (não depende das médias, mais estável).', alvo: 'O maior retorno sem passar da volatilidade escolhida.',
+  }[O_.obj];
+  const U = universoOtimizador();
+  $('ot-univ-meta').textContent = U.erro ? '' : `${U.codigos.length} ativos`;
+  if (!otUltimo) $('ot-runline').innerHTML = U.erro ? `<span>${esc(U.erro)}</span>` : `<span>Universo: <b>${U.codigos.length} ativos</b> com dados de ${rotulo(U.ini)} a ${rotulo(FIM_DADOS)}. Toque em Otimizar.</span>`;
+}
+function universoOtimizador() {
+  const O_ = S.ot, ini = O_.janela >= 99 ? BASE : FIM_DADOS - O_.janela * 12 + 1;
+  const sr = (t) => (O_.estender ? serieEstendida(t) : serie(t));
+  let cods;
+  if (O_.fonte === 'cart') cods = S.carteiras[O_.cart].itens.map((i) => i.t);
+  else {
+    if (!O_.classes.length) return { erro: 'Marque pelo menos uma classe.' };
+    cods = [...ATIVOS.values()].filter((a) => O_.classes.some((k) => noGrupo(a, k))).filter((a) => serie(a.t).v.length >= O_.minAnos * 12 || O_.estender)
+      .sort((a, b) => (b.tam || 0) - (a.tam || 0)).map((a) => a.t);
+  }
+  let ini2 = ini;
+  if (O_.janela >= 99) { // janela máxima: começa no ativo mais novo (limitado a 120 ativos)
+    cods = cods.slice(0, O_.fonte === 'cart' ? 999 : O_.maxUniv);
+    ini2 = Math.max(...cods.filter((t) => !t.startsWith('RF:')).map((t) => sr(t).i0), serie('USDBRL').i0);
+  }
+  cods = cods.filter((t) => t.startsWith('RF:') || (sr(t).i0 <= ini2 && sr(t).i1 >= FIM_DADOS - 1)).slice(0, O_.fonte === 'cart' ? 999 : O_.maxUniv);
+  if (cods.length < 2) return { erro: 'Menos de 2 ativos com dados na janela. Aumente a janela, reduza o histórico mínimo ou estenda os históricos.' };
+  return { codigos: cods, ini: ini2 };
+}
+function rodarOtimizador() {
+  const O_ = S.ot, err = (m) => { $('ot-err').textContent = m; $('ot-err').hidden = !m; };
+  const U = universoOtimizador(); if (U.erro) return err(U.erro);
+  const H = preparar([{ nome: 'U', itens: U.codigos.map((t) => ({ t, p: 1 })) }], Math.floor(U.ini / 12), S.cambio, O_.estender);
+  if (H.erro) return err(H.erro);
+  err('');
+  const i0 = H.meses.findIndex((mi) => mi >= U.ini), sel = (arr) => arr.slice(Math.max(0, i0));
+  const R = H.R.map(sel), cdi = sel(H.cdi), meses = sel(H.meses), uni = H.uni;
+  if (R[0].length < 24) return err('Janela com menos de 24 meses.');
+  $('btn-ot').disabled = true; $('btn-ot-label').textContent = 'Otimizando…';
+  setTimeout(() => {
+    try {
+      const t0 = performance.now(), rfm = media(cdi);
+      const w = otimizarRobusto(R, O_, rfm);
+      const { mu, C, delta } = estimarRobusto(R);
+      // fronteira (λ) e ativos isolados
+      const fronteira = [];
+      const K = R.length; let lmax = 0; for (let i = 0; i < K; i++) lmax = Math.max(lmax, C[i].reduce((a, b) => a + Math.abs(b), 0));
+      for (const lam of [0.2, 0.5, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]) {
+        let ww = projetar(new Array(K).fill(1 / K), Math.max(O_.pesoMax / 100, 1 / K + 1e-9)); const eta = 1 / (2 * lam * lmax);
+        for (let it = 0; it < 500; it++) { const g = mulCv(C, ww); ww = projetar(ww.map((x, i) => x + eta * (mu[i] - 2 * lam * g[i])), Math.max(O_.pesoMax / 100, 1 / K + 1e-9)); }
+        fronteira.push(estatPesos(ww, mu, C, rfm));
+      }
+      fronteira.sort((a, b) => a.vol - b.vol);
+      const isolados = R.map((_, k) => { const e = new Array(K).fill(0); e[k] = 1; return { t: uni[k], ...estatPesos(e, mu, C, rfm) }; });
+      const est = estatPesos(w, mu, C, rfm);
+      // histórico real dos pesos na janela
+      const rp = R[0].map((_, t) => R.reduce((acc, col, k) => acc + w[k] * col[t], 0));
+      const mh = metricas(rp, cdi);
+      // carteira de referência (ativa) se couber no universo
+      const ref = S.carteiras[S.ativa];
+      const wRef = ref.itens.length && ref.itens.every((i) => uni.includes(i.t)) ? (() => { const s = ref.itens.reduce((a, i) => a + i.p, 0); return uni.map((t) => (ref.itens.find((i) => i.t === t)?.p || 0) / s); })() : null;
+      // teste fora da amostra
+      const L = R[0].length, T = Math.min(36, Math.floor(L / 3));
+      let wf = null;
+      if (L >= 48) {
+        const treino = R.map((c) => c.slice(0, L - T)), prova = R.map((c) => c.slice(L - T));
+        const wT = otimizarRobusto(treino, { ...O_, reamostra: false }, media(cdi.slice(0, L - T)));
+        const igual = new Array(K).fill(1 / K);
+        const med = (ww, base) => { const r = base[0].map((_, t) => base.reduce((acc, c, k) => acc + ww[k] * c[t], 0)); return metricas(r, cdi.slice(base === treino ? 0 : L - T, base === treino ? L - T : L)); };
+        wf = [['Otimizada no passado', wT], ['Pesos iguais no universo', igual], ...(wRef ? [[`${ref.nome} (atual)`, wRef]] : [])]
+          .map(([n, ww]) => ({ n, treino: med(ww, treino).cagr, depois: med(ww, prova), }));
+        wf.meta = `treino ${rotulo(meses[0])}–${rotulo(meses[L - T - 1])} · teste ${rotulo(meses[L - T])}–${rotulo(meses[L - 1])}`;
+      }
+      const semPremio = O_.obj === 'sharpe' && Math.max(...mu) <= rfm;
+      otUltimo = { semPremio, w, uni, est, mh, fronteira, isolados, wRef: wRef ? estatPesos(wRef, mu, C, rfm) : null, refNome: ref.nome, wf, meses, delta, ms: performance.now() - t0, K, L };
+      desenharOtimizacao();
+    } catch (e) { err(`Não foi possível otimizar: ${e.message}`); }
+    $('btn-ot').disabled = false; $('btn-ot-label').textContent = 'Otimizar de novo';
+  }, 30);
+}
+function desenharOtimizacao() {
+  const o = otUltimo, O_ = S.ot; if (!o) return;
+  const nomeObj = { sharpe: 'máximo Sharpe', minvar: 'mínimo risco', paridade: 'paridade de risco', alvo: `risco-alvo ${num(O_.volAlvo, 0)}%` }[O_.obj];
+  $('ot-runline').innerHTML = [['Objetivo', nomeObj + (O_.reamostra ? ' · reamostrado 50×' : '')], ['Universo', `${o.K} ativos`], ['Janela', `${rotulo(o.meses[0])}–${rotulo(o.meses[o.L - 1])} (${o.L} m)`],
+    ['Limites', `peso ≤ ${num(O_.pesoMax, 0)}%${O_.maxAtivos ? `, até ${O_.maxAtivos} ativos` : ''}`], ['Encolhimento Ledoit-Wolf', pct(o.delta, 0)], ['Tempo', `${Math.round(o.ms)} ms`]]
+    .map(([k, v]) => `<span>${k}: <b>${v}</b></span>`).join('') +
+    (o.semPremio ? '<span class="stale" style="display:block;margin-top:6px">Nenhum ativo do universo tem retorno esperado acima do CDI nesta janela, então não existe carteira de máximo Sharpe: foi usada a de mínimo risco. Considere incluir o CDI ou outras classes no universo.</span>' : '');
+  const n = o.w.filter((x) => x > 0).length;
+  const kpi = (k, v, s_, cls = '') => `<div class="kpi"><span class="k">${k}</span><span class="v ${cls}">${v}</span><span class="s">${s_}</span></div>`;
+  $('ot-kpis').innerHTML = kpi('Retorno a.a. (estimado)', pct(o.est.ret), 'médias encolhidas') + kpi('Volatilidade a.a.', pct(o.est.vol), 'covariância Ledoit-Wolf') +
+    kpi('Sharpe', num(o.est.sharpe), o.wRef ? `${esc(o.refNome)}: ${num(o.wRef.sharpe)}` : 'vs CDI') + kpi('Queda máxima (histórico)', pct(o.mh.maxdd, 0), `${n} ativos`, 'neg');
+  const ord = [...o.w.keys()].filter((k) => o.w[k] > 0).sort((a, b) => o.w[b] - o.w[a]);
+  $('ot-pesos').innerHTML = `<thead><tr><th>Ativo</th><th class="hide-s">Classe</th><th>Peso</th><th>Ret. a.a.</th><th>Vol.</th></tr></thead><tbody>` +
+    ord.map((k) => { const a = info(o.uni[k]), is = o.isolados[k]; return `<tr><td class="t"><span class="tk">${esc(rotuloAtivo(o.uni[k]))}</span><span class="nm">${esc(a.tipo.startsWith('fundo') ? a.gestor : a.n)}</span></td><td class="hide-s"><span class="cls"><i class="sw" style="background:${corClasse[TIPOS[a.tipo][1]]}"></i>${TIPOS[a.tipo][0]}</span></td><td><b>${pct(o.w[k], 1)}</b></td><td>${pct(is.ret)}</td><td>${pct(is.vol, 0)}</td></tr>`; }).join('') + '</tbody>';
+  $('ot-pesos-meta').textContent = `${n} ativos`;
+  $('ot-salvar').innerHTML = S.carteiras.map((c, i) => `<button class="btn" type="button" data-slot="${i}">Substituir ${LETRAS[i]} (${esc(c.nome.slice(0, 12))})</button>`).join('') +
+    (S.carteiras.length < 3 ? `<button class="btn primary" type="button" data-slot="novo">Salvar como nova carteira</button>` : '');
+  // gráfico
+  const box = $('ot-chart'), W = largura(box), Hh = 280, ml = 50, mr = 14, mt = 12, mb = 30, iw = W - ml - mr, ih = Hh - mt - mb;
+  // escala: fronteira, carteiras e a maior parte dos ativos (outliers extremos ficam fora e são contados)
+  const volsIso = o.isolados.map((p) => p.vol).sort((a, b) => a - b);
+  const xlim = Math.max(...o.fronteira.map((p) => p.vol), o.est.vol, o.wRef ? o.wRef.vol : 0, quantil(volsIso, 0.85)) * 1.25;
+  const dentro = o.isolados.filter((p) => p.vol <= xlim), fora = o.isolados.length - dentro.length;
+  const pts = [...dentro, ...o.fronteira, o.est, ...(o.wRef ? [o.wRef] : [])];
+  const xmax = Math.max(...pts.map((p) => p.vol)) * 1.06 || 0.1, ymin = Math.min(0, ...pts.map((p) => p.ret)), ymax = Math.max(...pts.map((p) => p.ret)) * 1.08 || 0.1;
+  const x = (v) => ml + (v / xmax) * iw, y = (v) => mt + ih - ((v - ymin) / (ymax - ymin || 1)) * ih;
+  let svg = `<svg viewBox="0 0 ${W} ${Hh}" role="img" aria-label="Fronteira eficiente do universo">`;
+  const pY = passoBonito(ymax - ymin, 4); for (let v = Math.ceil(ymin / pY) * pY; v <= ymax; v += pY) svg += `<line x1="${ml}" x2="${W - mr}" y1="${y(v)}" y2="${y(v)}" stroke="var(--rule)"/><text x="${ml - 6}" y="${y(v) + 4}" text-anchor="end">${pct(v, 0)}</text>`;
+  const pX = passoBonito(xmax, 5); for (let v = 0; v <= xmax; v += pX) svg += `<text x="${x(v)}" y="${Hh - 14}" text-anchor="middle">${pct(v, 0)}</text>`;
+  svg += `<text x="${ml + iw / 2}" y="${Hh - 1}" text-anchor="middle">volatilidade a.a. →</text>`;
+  for (const p of dentro) svg += `<circle cx="${x(p.vol).toFixed(1)}" cy="${y(p.ret).toFixed(1)}" r="2.6" fill="var(--rule-2)"/>`;
+  if (dentro.length <= 25) for (const p of dentro) svg += `<text x="${x(p.vol) + 4}" y="${y(p.ret) + 3}" style="font-size:9px">${esc(rotuloAtivo(p.t).slice(0, 8))}</text>`;
+  svg += `<polyline points="${o.fronteira.map((p) => `${x(p.vol).toFixed(1)},${y(p.ret).toFixed(1)}`).join(' ')}" fill="none" stroke="var(--accent)" stroke-width="2"/>`;
+  const marca = (p, cor, t) => `<circle cx="${x(p.vol)}" cy="${y(p.ret)}" r="6" fill="${cor}" stroke="var(--panel)" stroke-width="2"/><text x="${x(p.vol) + 9}" y="${y(p.ret) - 7}" style="fill:${cor};font-weight:600">${t}</text>`;
+  if (o.wRef) svg += marca(o.wRef, 'var(--pB)', esc(o.refNome.slice(0, 14)));
+  svg += marca(o.est, 'var(--amber)', 'Otimizada') + '</svg>';
+  box.innerHTML = svg;
+  $('ot-leg').innerHTML = '<span><i class="ln" style="border-color:var(--accent)"></i>Fronteira eficiente</span><span><i style="background:var(--rule-2)"></i>Ativos isolados</span>' +
+    `<span>Retornos estimados com encolhimento (James-Stein)${fora ? ` · ${fora} ${fora === 1 ? 'ativo' : 'ativos'} de risco muito alto fora da escala` : ''}</span>`;
+  // fora da amostra
+  if (o.wf) {
+    $('ot-wf-meta').textContent = o.wf.meta;
+    $('ot-wf').innerHTML = `<thead><tr><th></th><th>Treino</th><th>Depois</th><th class="hide-s">Vol. depois</th><th>Queda depois</th></tr></thead><tbody>` +
+      o.wf.map((l) => `<tr><td class="t" style="white-space:normal">${esc(l.n)}</td><td>${pct(l.treino)}</td><td class="${l.depois.cagr < 0 ? 'neg' : 'pos'}"><b>${pct(l.depois.cagr)}</b></td><td class="hide-s">${pct(l.depois.vol)}</td><td>${pct(l.depois.maxdd)}</td></tr>`).join('') + '</tbody>';
+  } else { $('ot-wf').innerHTML = '<tbody><tr><td class="empty">Janela curta demais para o teste (precisa de 48+ meses).</td></tr></tbody>'; $('ot-wf-meta').textContent = ''; }
+}
+function salvarOtimizada(e) {
+  const b = e.target.closest('[data-slot]'); if (!b || !otUltimo) return;
+  const o = otUltimo, itens = o.uni.map((t, k) => ({ t, p: Math.round(o.w[k] * 1000) / 10 })).filter((i) => i.p >= 0.5);
+  fecha100(itens);
+  const nome = `Otimizada (${{ sharpe: 'Sharpe', minvar: 'mín. risco', paridade: 'paridade', alvo: 'risco-alvo' }[S.ot.obj]})`;
+  if (b.dataset.slot === 'novo') { S.carteiras.push({ nome, itens }); S.ativa = S.carteiras.length - 1; } else { S.carteiras[+b.dataset.slot] = { nome, itens }; S.ativa = +b.dataset.slot; }
+  mudouCarteiras(); desenharCarteira(); prepararOtimizador(); desenharOtimizacao();
+  b.textContent = 'Salva ✓ — veja em Simulação';
+}
+
 // ---------------------------------------------------------------- início
 let redim;
 window.addEventListener('resize', () => {
@@ -1080,6 +1465,7 @@ window.addEventListener('resize', () => {
     if (vista === 'simulacao' && ultimo) { desenharLeque(); desenharHistograma(); }
     if (vista === 'historico') desenharHistorico();
     if (vista === 'analise') desenharAnalise();
+    if (vista === 'otimizar') desenharOtimizacao();
   }, 200);
 });
 (function inicio() {

@@ -85,8 +85,8 @@ def bcb_sgs(serie: int, inicio: str = "01/01/2000") -> dict[str, float]:
 
 
 def atualizar_base(cache: str | Path = TOOLS / "cache") -> None:
-    """Roda a coleta completa (fundos CVM, FIIs CVM, TradingView, BCB) e regrava data.js."""
+    """Roda a coleta completa (fundos CVM, FIIs CVM, TradingView, BCB, complemento Yahoo + Fundamentus) e regrava data.js."""
     import subprocess
-    for script in ("fundos_cvm.py", "fiis_cvm.py", "baixar_dados.py"):
+    for script in ("fundos_cvm.py", "fiis_cvm.py", "baixar_dados.py", "complementar_historico.py"):
         print(f"== {script}", flush=True)
         subprocess.run([sys.executable, str(TOOLS / script), str(cache)], check=True)

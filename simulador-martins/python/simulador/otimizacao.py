@@ -107,6 +107,8 @@ def otimizar(R: np.ndarray, objetivo: str = "max_sharpe", rf_m: float = 0.0, min
         if objetivo == "min_variancia":
             return _resolver(lambda w: w @ C_ @ w * 1e4, k, minimo, mx)
         if objetivo == "max_sharpe":
+            if mu_.max() <= rf_m:   # nenhum ativo acima do CDI: não há carteira tangente; usa mínima variância
+                return _resolver(lambda w: w @ C_ @ w * 1e4, k, minimo, mx)
             def f(w):
                 v = w @ C_ @ w
                 return -(anual(w @ mu_, v) - ((1 + rf_m) ** ANO - 1)) / np.sqrt(max(v * ANO, 1e-12))

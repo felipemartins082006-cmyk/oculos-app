@@ -31,6 +31,7 @@
     <button role="tab" data-v="simulacao" type="button">Simulação</button>
     <button role="tab" data-v="historico" type="button">Histórico</button>
     <button role="tab" data-v="analise" type="button">Análise</button>
+    <button role="tab" data-v="otimizar" type="button">Otimizar</button>
     <button role="tab" data-v="metodo" type="button">Metodologia</button>
   </nav>
 </header>
@@ -163,8 +164,10 @@
             <p class="help">Custo extra: taxa de custódia, consultoria etc. (fundos já vêm líquidos das próprias taxas). IR: cobrado uma vez no resgate final sobre o ganho nominal, nas carteiras e no CDI. Use 0 para ignorar.</p>
             <div class="field">
               <span class="lbl">Cenários</span>
-              <div class="seg full" id="seg-n"><button type="button" data-v="1000">1.000</button><button type="button" data-v="5000">5.000</button><button type="button" data-v="10000">10.000</button></div>
+              <div class="seg full wrap" id="seg-n"><button type="button" data-v="5000">5 mil</button><button type="button" data-v="10000">10 mil</button><button type="button" data-v="20000">20 mil</button><button type="button" data-v="50000">50 mil</button><button type="button" data-v="100000">100 mil</button></div>
+              <p class="help">Mais cenários reduzem o erro da própria simulação. 100 mil levam alguns segundos no celular; a versão Python roda milhões.</p>
             </div>
+            <label class="chk"><span>Estender históricos curtos<small>Estima os anos antes do início de cada ativo por modelo de fatores (IFIX, CDI, IPCA, Ibovespa, S&amp;P). Os meses estimados não são dados reais.</small></span><input type="checkbox" id="in-estender"></label>
             <label class="chk"><span>Valores reais<small>Resultados em reais de hoje (descontado o IPCA)</small></span><input type="checkbox" id="in-real"></label>
             <p class="err" id="err" hidden></p>
             <button class="run" id="btn-sim" type="button"><svg class="ic" viewBox="0 0 24 24"><path d="M6 4l14 8-14 8z"/></svg><span id="btn-sim-label">Rodar simulação</span></button>
@@ -262,6 +265,71 @@
     </div>
   </section>
 
+
+  <!-- ======================= OTIMIZAR ======================= -->
+  <section class="view" id="v-otimizar" role="tabpanel">
+    <div class="layout">
+      <div class="col ctl">
+        <section class="panel">
+          <div class="ph"><h2>Universo</h2><span class="meta" id="ot-univ-meta"></span></div>
+          <div class="pb">
+            <div class="field"><span class="lbl">De onde vêm os ativos</span>
+              <div class="seg full" id="seg-ot-fonte"><button type="button" data-v="filtro">Filtrar a base</button><button type="button" data-v="cart">Ativos de uma carteira</button></div></div>
+            <div class="field" id="ot-filtro"><span class="lbl">Classes (toque para marcar várias)</span><div class="chips wrap" id="ot-classes"></div>
+              <div class="form" style="margin-top:8px">
+                <div class="field"><label class="lbl" for="ot-min">Histórico mínimo</label><select id="ot-min" class="sel"><option value="3">3 anos</option><option value="5">5 anos</option><option value="8">8 anos</option><option value="10">10 anos</option></select></div>
+                <div class="field"><label class="lbl" for="ot-max">Maiores do universo</label><select id="ot-max" class="sel"><option value="30">30 ativos</option><option value="60">60 ativos</option><option value="120">120 ativos</option></select></div>
+              </div></div>
+            <div class="field" id="ot-cart"><span class="lbl">Carteira</span><div class="seg full" id="seg-ot-cart"></div></div>
+            <div class="field"><span class="lbl">Janela de otimização</span>
+              <div class="seg full" id="seg-ot-janela"><button type="button" data-v="3">3 anos</button><button type="button" data-v="6">6 anos</button><button type="button" data-v="10">10 anos</button><button type="button" data-v="99">Máx.</button></div>
+              <p class="help">Só entram ativos com dados em toda a janela.</p></div>
+            <label class="chk"><span>Estender históricos curtos<small>Modelo de fatores para os anos antes do início de cada ativo</small></span><input type="checkbox" id="ot-estender"></label>
+          </div>
+        </section>
+        <section class="panel">
+          <div class="ph"><h2>Objetivo e limites</h2></div>
+          <div class="pb">
+            <div class="field"><span class="lbl">Objetivo</span>
+              <div class="seg full wrap" id="seg-ot-obj"><button type="button" data-v="sharpe">Máx. Sharpe</button><button type="button" data-v="minvar">Mín. risco</button><button type="button" data-v="paridade">Paridade de risco</button><button type="button" data-v="alvo">Risco-alvo</button></div>
+              <p class="help" id="ot-obj-help"></p></div>
+            <div class="form">
+              <div class="field" id="f-ot-vol"><label class="lbl" for="ot-vol">Volatilidade-alvo</label><div class="inp"><input id="ot-vol" inputmode="decimal"><span>% a.a.</span></div></div>
+              <div class="field"><label class="lbl" for="ot-peso">Peso máximo</label><div class="inp"><input id="ot-peso" inputmode="decimal"><span>%</span></div></div>
+              <div class="field"><label class="lbl" for="ot-nmax">Nº máximo de ativos</label><div class="inp"><input id="ot-nmax" inputmode="numeric"></div></div>
+            </div>
+            <label class="chk"><span>Reamostragem (50×)<small>Repete a otimização em 50 versões sorteadas do histórico e tira a média: pesos mais estáveis e menos ajustados ao acaso</small></span><input type="checkbox" id="ot-reamostra"></label>
+            <p class="err" id="ot-err" hidden></p>
+            <button class="run" id="btn-ot" type="button"><svg class="ic" viewBox="0 0 24 24"><path d="M4 18l6-6 4 4 6-8"/><circle cx="20" cy="8" r="1.5"/></svg><span id="btn-ot-label">Otimizar</span></button>
+          </div>
+        </section>
+      </div>
+      <div class="col" id="ot-res">
+        <div class="runline" id="ot-runline"></div>
+        <div class="kpis" id="ot-kpis"></div>
+        <section class="panel">
+          <div class="ph"><h2>Carteira otimizada</h2><span class="meta" id="ot-pesos-meta"></span></div>
+          <div class="tbl-wrap"><table id="ot-pesos"></table></div>
+          <div class="pb"><div class="btns" id="ot-salvar" style="padding:0"></div></div>
+        </section>
+        <section class="panel">
+          <div class="ph"><h2>Fronteira eficiente</h2><span class="meta">risco × retorno histórico, em R$</span></div>
+          <div class="chart" id="ot-chart"></div>
+          <div class="legend" id="ot-leg"></div>
+        </section>
+        <section class="panel">
+          <div class="ph"><h2>Teste fora da amostra</h2><span class="meta" id="ot-wf-meta"></span></div>
+          <div class="tbl-wrap"><table id="ot-wf"></table></div>
+          <div class="pb"><p class="help">Retorno ao ano no treino e depois. A otimização é refeita só com os anos mais antigos da janela e medida nos últimos, que ela não viu. Se o retorno "depois" cai muito em relação ao "treino", os pesos estavam ajustados a ruído do passado.</p></div>
+        </section>
+        <section class="panel">
+          <div class="ph"><h2>Como funciona</h2></div>
+          <div class="pb"><p class="help">Médias encolhidas para a média geral (James-Stein) e covariância de Ledoit-Wolf reduzem o erro de estimação. Sem venda a descoberto; soma de 100%. Máximo Sharpe usa o CDI como taxa livre de risco. Paridade de risco iguala a contribuição de cada ativo para a volatilidade. Para escolher pela chance de atingir uma meta com restrição de queda, e para mais objetivos (mínimo CVaR, Sortino), use a versão Python.</p></div>
+        </section>
+      </div>
+    </div>
+  </section>
+
   <!-- ======================= METODOLOGIA ======================= -->
   <section class="view" id="v-metodo" role="tabpanel">
     <div class="col">
@@ -273,7 +341,9 @@
             <ol>
               <li><b>Retornos mensais reais</b> de cada ativo, com proventos reinvestidos. Ativos em dólar são convertidos pelo câmbio do mesmo mês, então a variação do dólar entra no risco.</li>
               <li><b>Quatro modelos.</b> Bootstrap: sorteia meses do passado (o mesmo mês para todos os ativos). Blocos: sorteia trechos seguidos de 3 a 24 meses, preservando crises e tendências. Normal: sorteia da distribuição normal com a média e a covariância históricas. t-Student: igual à normal, com caudas gordas (5 graus de liberdade), gerando mais meses extremos.</li>
-              <li><b>Mesmos sorteios para todas as carteiras</b> (números aleatórios comuns), para a diferença entre elas não ser sorte.</li>
+              <li><b>Mesmos sorteios para todas as carteiras</b> (números aleatórios comuns), para a diferença entre elas não ser sorte. Até 100 mil cenários, calculados em segundo plano.</li>
+              <li><b>Históricos curtos</b> podem ser estendidos por um modelo de fatores (FIIs pelo IFIX e IPCA; ações pelo Ibovespa e small caps; ativos americanos pelo SPY), com variação sorteada dos erros reais do próprio ativo. Validado fora da amostra: erro mediano de ~4 p.p. no retorno anual e sem viés nos FIIs de papel.</li>
+              <li><b>Otimizador:</b> médias encolhidas (James-Stein), covariância Ledoit-Wolf, reamostragem de Michaud, limites de peso e de número de ativos, e teste fora da amostra.</li>
               <li><b>Plano:</b> aporte no fim do mês (corrigido pelo IPCA e com aumento real, se escolhido), retiradas a partir do ano escolhido, custo extra mensal e rebalanceamento na frequência escolhida. Sem rebalanceamento, os pesos derivam e os aportes seguem os pesos-alvo.</li>
               <li><b>Leitura:</b> percentis do patrimônio, chance de perda, de bater o CDI, de atingir a meta e de esgotar o dinheiro. Retorno anual e queda máxima são da carteira, sem o efeito dos aportes.</li>
             </ol>
@@ -283,7 +353,10 @@
             <ul>
               <li><b>TradingView:</b> lista de ativos (B3 com negociação média de R$ 100 mil por dia ou mais, 600 maiores empresas dos EUA, ETFs americanos sem alavancagem) e histórico mensal com ajuste de dividendos. É o mesmo protocolo de dados usado pelos projetos open source tvdatafeed e TradingView-API.</li>
               <li><b>CVM (dados abertos):</b> cota diária dos fundos de investimento. Entram fundos abertos e não exclusivos, para público geral ou qualificado, fora de previdência, com 100+ cotistas e entre os maiores de cada classe. A cota já é líquida das taxas do fundo.</li>
+              <li><b>CVM, informe mensal de FIIs:</b> mandato (papel, tijolo, híbrido), segmento, valor patrimonial (P/VP) e cotistas.</li>
+              <li><b>Yahoo Finance + Fundamentus:</b> completam o começo do histórico de 31 ativos em que o TradingView começa tarde, só quando as duas fontes batem no período em comum.</li>
               <li><b>Banco Central:</b> CDI (SGS 4391) e IPCA (SGS 433).</li>
+              <li><b>Versão Python</b> (pasta python/): milhões de cenários, 7 modelos (inclui GARCH e mudança de regime), otimização por meta com restrição de queda, mínimo CVaR e relatório completo.</li>
               <li><b>Renda fixa por modelo:</b> CDI × %, IPCA + taxa e prefixado são calculados com o CDI e o IPCA históricos. Não têm marcação a mercado.</li>
             </ul>
             <h3 style="margin-top:14px">Limitações</h3>
