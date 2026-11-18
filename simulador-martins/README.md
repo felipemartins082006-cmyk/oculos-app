@@ -7,6 +7,11 @@ Funciona sem internet depois da primeira abertura e sem login. A carteira e o pl
 Endereço (depois de publicado no GitHub Pages):
 https://felipemartins082006-cmyk.github.io/oculos-app/simulador-martins/
 
+## Programa para Windows
+
+A pasta `desktop/` gera o **Simulador Martins.exe** (Electron): mesma interface, janela própria, sem
+internet, Monte Carlo em todos os núcleos do processador. Veja `desktop/README.md`.
+
 ## Instalar no Android (APK)
 
 O arquivo **`SimuladorMartins.apk`** desta pasta é o app pronto. Passe para o celular, abra e toque em

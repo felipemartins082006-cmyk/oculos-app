@@ -6,6 +6,13 @@ teste fora da amostra e **relatório HTML** completo.
 
 ## Instalar
 
+**No Windows, o jeito fácil:** dê dois cliques em `Simulador Python (Windows).bat`. Na primeira vez ele
+prepara o ambiente (precisa do Python de python.org, com "Add python.exe to PATH" marcado) e depois
+mostra um menu: rodar os estudos de exemplo, um estudo seu, uma simulação gigante ou atualizar os dados.
+O relatório abre no navegador ao terminar.
+
+Manualmente:
+
 Python 3.10 ou mais novo.
 
 ```
@@ -48,8 +55,9 @@ saques), a simulação (modelo, nº de cenários, janela) e os modelos de robust
 | `backtest.py` | Backtest com Sharpe, Sortino, drawdown, VaR/CVaR, beta, retorno por ano |
 | `relatorio.py` | Relatório HTML de arquivo único com gráficos |
 
-Desempenho medido (bootstrap, 3 carteiras, 40 anos): 10 milhões de cenários em ~6 min, então
-100 milhões em ~1 h. Até 2 milhões os percentis são exatos; acima, vêm de histogramas de 50 mil
+Desempenho medido (bootstrap, 3 carteiras, 40 anos): 1 milhão de cenários em 39 s com 1 núcleo e
+10 s com 4 núcleos — a simulação usa todos os núcleos do PC (`processos=` limita). Num PC de 8 a 16
+núcleos, 100 milhões levam de alguns minutos a ~15 min. Até 2 milhões os percentis são exatos; acima, vêm de histogramas de 50 mil
 faixas (diferença medida contra o exato: menos de 0,2%), com memória constante. As probabilidades
 (perda, superar o CDI, meta) são contadas cenário a cenário. Estudo completo com 200 mil cenários,
 6 modelos de robustez e otimizações em ~1 min.

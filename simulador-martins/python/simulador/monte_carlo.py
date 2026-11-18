@@ -10,7 +10,9 @@ Probabilidades (perda, superar o CDI, meta, dinheiro acabar) são contadas cená
 """
 from __future__ import annotations
 
+import os
 import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -71,12 +73,39 @@ class Config:
 class Acum:
     """Guarda todos os valores até EXATO; acima disso, histograma fino. Sempre guarda uma amostra."""
 
-    def __init__(self, tipo: str, total: int):
+    def __init__(self, tipo: str, total: int, faixa: tuple | None = None):
         self.tipo, self.total = tipo, total          # tipo: 'log' (≥ 0), 'log1p' (> −1), 'lin'
         self.exato = total <= EXATO
         self.partes, self.n, self.soma = [], 0, 0.0
         self.hist = None; self.zeros = 0; self.lo = self.hi = 0.0
         self.amostra = None
+        if not self.exato and faixa is not None:     # faixas iguais em todos os processos
+            self.lo, self.hi = faixa; self.hist = np.zeros(FAIXAS)
+
+    def faixa(self) -> tuple:
+        v = self.valores(); v = v[v > 0] if self.tipo == "log" else v
+        y = self._tf(v) if len(v) else np.array([0.0, 1.0])
+        span = max(float(y.max() - y.min()), 1e-6)
+        lo, hi = float(y.min() - span), float(y.max() + span)
+        if self.tipo == "lin":
+            lo, hi = min(lo, -1.0), max(hi, 0.0)
+        return lo, hi
+
+    @classmethod
+    def unir(cls, lista: list) -> "Acum":
+        a0 = lista[0]
+        u = cls(a0.tipo, sum(a.total for a in lista) if all(a.exato for a in lista) else max(EXATO + 1, sum(a.total for a in lista)))
+        u.exato = all(a.exato for a in lista)
+        u.n = sum(a.n for a in lista); u.soma = sum(a.soma for a in lista)
+        guardar = u.n if u.exato else AMOSTRA
+        partes, k = [], 0
+        for a in lista:
+            v = a.valores()[: max(0, guardar - k)]; partes.append(v); k += len(v)
+        u.partes = partes
+        if not u.exato:
+            u.lo, u.hi = a0.lo, a0.hi
+            u.hist = np.sum([a.hist for a in lista], axis=0); u.zeros = sum(a.zeros for a in lista)
+        return u
 
     def _tf(self, x):
         return np.log(x) if self.tipo == "log" else np.log1p(x) if self.tipo == "log1p" else x
@@ -272,38 +301,28 @@ class Resultado:
 
 
 # ---------------------------------------------------------------- simulação
-def simular(base, carteiras: dict[str, dict[str, float]], plano: Plano = Plano(), cfg: Config = Config(),
-            janela: Janela | None = None, progresso: bool = True) -> Resultado:
-    t0 = time.time()
-    J = janela or preparar(base, carteiras, cfg.inicio(base.retornos.index[-1]), cfg.cambio, modo=cfg.modo())
-    rng = np.random.default_rng(cfg.semente)
-    C, K, L, N, S = len(J.nomes), len(J.codigos), len(J.meses), int(plano.anos * 12), int(cfg.cenarios)
-    risco = np.array([not c.startswith("RF:") for c in J.codigos])
-    R = J.R.to_numpy().copy()
-    if cfg.ajuste:
-        R[:, risco] = (1 + R[:, risco]) * (1 + cfg.ajuste / 100) ** (1 / 12) - 1
-    P, Rc = compor(R, J.W)                                # L × C ; por carteira L × K
-    X = np.column_stack([P, J.cdi, J.ipca])
-    mod = M.criar(cfg.modelo, bloco=cfg.bloco, gl=cfg.gl, estados=cfg.estados, fixas=(C, C + 1)).ajustar(X)
+def _parte(args):
+    """Roda `n` cenários (um pedaço da simulação). Pode rodar em outro processo/núcleo."""
+    J, plano, cfg, mod, P, Rc, n, semente, total, faixas, G = args
+    rng = np.random.default_rng(semente)
+    C, N = len(J.nomes), int(plano.anos * 12)
     por_ativo = mod.reamostragem and cfg.rebal != 1
     taxa_m = (1 + plano.taxa / 100) ** (-1 / 12)
     m_saque = int(round(plano.saque_ano * 12)) if plano.saque_ano is not None else N + 1
     passo = max(1, -(-N // 120))
     pontos = np.unique(np.r_[np.arange(0, N + 1, passo), N])
-    G = min(cfg.caminhos_grafico, S)
     D = C + 2
     lote = max(1000, min(50_000, int(1.2e7 / (N * (D if not mod.reamostragem else 1)))))
-
-    fin = [Acum("log", S) for _ in range(C)]; fin_cdi = Acum("log", S)
-    anual = [Acum("log1p", S) for _ in range(C)]; queda = [Acum("lin", S) for _ in range(C)]
-    cont = {n: {"perda": 0, "cdi": 0, "meta": 0, "ruina": 0} for n in J.nomes}; ruina_cdi = 0
+    fx = faixas or {}
+    fin = [Acum("log", total, fx.get(("fin", c))) for c in range(C)]; fin_cdi = Acum("log", total, fx.get("cdi"))
+    anual = [Acum("log1p", total, fx.get(("anu", c))) for c in range(C)]; queda = [Acum("lin", total, fx.get(("qd", c))) for c in range(C)]
+    cont = {n_: {"perda": 0, "cdi": 0, "meta": 0, "ruina": 0} for n_ in J.nomes}; ruina_cdi = 0
     cam = np.empty((G, len(pontos), C), dtype=np.float32)
     soma_cdi = np.zeros(len(pontos)); soma_inv = np.zeros(len(pontos))
     ks = [np.flatnonzero(J.W[c] > 0) for c in range(C)]
-
-    feito, t_ult = 0, time.time()
-    while feito < S:
-        B = min(lote, S - feito)
+    feito = 0
+    while feito < n:
+        B = min(lote, n - feito)
         if mod.reamostragem:
             idx = mod.indices(B, N, rng)
         else:
@@ -381,19 +400,75 @@ def simular(base, carteiras: dict[str, dict[str, float]], plano: Plano = Plano()
         F = liq(V) / d[:, None]
         Fc = liq(vc[:, None])[:, 0] / d
         inv = inv_real if plano.real else inv_nom
-        for c, n in enumerate(J.nomes):
+        for c, n_ in enumerate(J.nomes):
             fin[c].add(F[:, c]); anual[c].add(np.exp(cresce[:, c] / N * 12) - 1); queda[c].add(np.expm1(qd[:, c]))
-            k = cont[n]
+            k = cont[n_]
             k["perda"] += int((F[:, c] < inv).sum()); k["cdi"] += int((F[:, c] > Fc).sum())
             k["meta"] += int((F[:, c] >= plano.meta).sum()) if plano.meta else 0
             k["ruina"] += int((morto[:, c] > 0).sum())
         fin_cdi.add(Fc); ruina_cdi += int(morto_c.sum())
         feito += B
-        if progresso and (time.time() - t_ult > 1 or feito == S):
-            t_ult = time.time(); dec = t_ult - t0
-            falta = dec * (S - feito) / feito if feito else 0
-            print(f"\r  {feito:,}/{S:,} cenários ({feito / S:.1%}) · faltam ~{falta / 60:.1f} min   ".replace(",", "."), end="", flush=True)
+    for a in fin + anual + queda + [fin_cdi]:
+        a.valores()                                    # junta as partes antes de voltar ao processo principal
+    return dict(n=n, fin=fin, fin_cdi=fin_cdi, anual=anual, queda=queda, cont=cont, ruina_cdi=ruina_cdi,
+                cam=cam, soma_cdi=soma_cdi, soma_inv=soma_inv, pontos=pontos)
+
+
+def simular(base, carteiras: dict[str, dict[str, float]], plano: Plano = Plano(), cfg: Config = Config(),
+            janela: Janela | None = None, progresso: bool = True, processos: int | None = None) -> Resultado:
+    """processos: quantos núcleos usar (padrão: todos). Abaixo de 200 mil cenários usa um só."""
+    t0 = time.time()
+    J = janela or preparar(base, carteiras, cfg.inicio(base.retornos.index[-1]), cfg.cambio, modo=cfg.modo())
+    C, S = len(J.nomes), int(cfg.cenarios)
+    risco = np.array([not c.startswith("RF:") for c in J.codigos])
+    R = J.R.to_numpy().copy()
+    if cfg.ajuste:
+        R[:, risco] = (1 + R[:, risco]) * (1 + cfg.ajuste / 100) ** (1 / 12) - 1
+    P, Rc = compor(R, J.W)                                # L × C ; por carteira L × K
+    X = np.column_stack([P, J.cdi, J.ipca])
+    mod = M.criar(cfg.modelo, bloco=cfg.bloco, gl=cfg.gl, estados=cfg.estados, fixas=(C, C + 1)).ajustar(X)
+    G = min(cfg.caminhos_grafico, S)
+    nproc = max(1, processos or os.cpu_count() or 1)
+    if S < 200_000:
+        nproc = 1
+    sementes = np.random.SeedSequence(cfg.semente).spawn(max(1, nproc * 8) + 1)
+    faixas, feito_piloto = None, 0
+    if S > EXATO:
+        # rodada-piloto curta: fixa as faixas dos histogramas, iguais em todos os processos
+        pil = _parte((J, plano, cfg, mod, P, Rc, 20_000, sementes[-1], 20_000, None, 0))
+        faixas = {("fin", c): pil["fin"][c].faixa() for c in range(C)}
+        faixas.update({("anu", c): pil["anual"][c].faixa() for c in range(C)})
+        faixas.update({("qd", c): pil["queda"][c].faixa() for c in range(C)})
+        faixas["cdi"] = pil["fin_cdi"].faixa()
+    # divide em pedaços (vários por núcleo, para o progresso andar suave)
+    npecas = 1 if nproc == 1 else nproc * 8
+    tam = [S // npecas + (1 if i < S % npecas else 0) for i in range(npecas)]
+    args, resta_g = [], G
+    for i, n in enumerate(tam):
+        if n == 0:
+            continue
+        g = min(resta_g, n); resta_g -= g
+        args.append((J, plano, cfg, mod, P, Rc, n, sementes[i], S, faixas, g))
+    partes, feito = [], 0
+    def mostra():
+        if progresso:
+            dec = time.time() - t0; falta = dec * (S - feito) / feito if feito else 0
+            print(f"\r  {feito:,}/{S:,} cenários ({feito / S:.1%}) · {nproc} núcleos · faltam ~{falta / 60:.1f} min   ".replace(",", "."), end="", flush=True)
+    if nproc == 1:
+        for a in args:
+            partes.append(_parte(a)); feito += a[6]; mostra()
+    else:
+        with ProcessPoolExecutor(max_workers=nproc) as ex:
+            futs = {ex.submit(_parte, a): a[6] for a in args}
+            for f in as_completed(futs):
+                partes.append(f.result()); feito += futs[f]; mostra()
     if progresso:
         print()
-    return Resultado(J.nomes, plano, cfg, J, fin, fin_cdi, anual, queda, cont, ruina_cdi, pontos, cam,
-                     soma_cdi / S, soma_inv / S, time.time() - t0, mod.descricao(), S)
+    cont = {n_: {k: sum(p["cont"][n_][k] for p in partes) for k in ("perda", "cdi", "meta", "ruina")} for n_ in J.nomes}
+    cams = [p["cam"] for p in sorted(partes, key=lambda p: -len(p["cam"])) if len(p["cam"])]
+    cam = np.concatenate(cams) if cams else np.empty((0, len(partes[0]["pontos"]), C), dtype=np.float32)
+    return Resultado(J.nomes, plano, cfg, J,
+                     [Acum.unir([p["fin"][c] for p in partes]) for c in range(C)], Acum.unir([p["fin_cdi"] for p in partes]),
+                     [Acum.unir([p["anual"][c] for p in partes]) for c in range(C)], [Acum.unir([p["queda"][c] for p in partes]) for c in range(C)],
+                     cont, sum(p["ruina_cdi"] for p in partes), partes[0]["pontos"], cam,
+                     sum(p["soma_cdi"] for p in partes) / S, sum(p["soma_inv"] for p in partes) / S, time.time() - t0, mod.descricao(), S)

@@ -1,0 +1,61 @@
+{
+  "name": "simulador-martins",
+  "productName": "Simulador Martins",
+  "version": "4.2.0",
+  "description": "Monte Carlo, otimização e backtest de carteiras (B3, fundos, EUA e cripto)",
+  "author": "Martins",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "copiar": "node copiar-web.js",
+    "start": "npm run copiar && electron .",
+    "build": "npm run copiar && electron-builder --win --x64 --dir && node icone.js && electron-builder --win --x64 --prepackaged dist/win-unpacked"
+  },
+  "devDependencies": {
+    "electron": "33.4.11",
+    "electron-builder": "25.1.8",
+    "resedit": "2.0.3"
+  },
+  "build": {
+    "appId": "com.martins.simulador",
+    "productName": "Simulador Martins",
+    "files": [
+      "main.js",
+      "web/**/*"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "signAndEditExecutable": false,
+      "icon": "build/icon.ico",
+      "artifactName": "SimuladorMartins-Portatil-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Simulador Martins",
+      "artifactName": "SimuladorMartins-Instalador-${version}.exe",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "language": "1046"
+    }
+  }
+}

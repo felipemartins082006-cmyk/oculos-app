@@ -392,7 +392,12 @@ function ativosNovos(itens, desde) {
 // Até EXATO cenários: guarda todos os valores (percentis exatos). Acima: histograma de NB faixas
 // montado a partir dos primeiros PILOTO cenários; erro dos percentis bem menor que 0,1%.
 const EXATO = 200000, PILOTO = 20000, NB = 20000;
-function acumNovo(tipo, n) { return { tipo, n: 0, exato: n <= EXATO, v: new Float64Array(Math.min(n, EXATO)), h: null, lo: 0, hi: 0, zeros: 0, soma: 0, ord: null }; }
+// total = cenários da simulação inteira (somando todos os núcleos); faixa = [lo, hi] fixos do histograma (iguais em todos os núcleos)
+function acumNovo(tipo, n, total = n, faixa = null) {
+  const a = { tipo, n: 0, exato: total <= EXATO, v: new Float64Array(Math.min(n, EXATO)), h: null, lo: 0, hi: 0, zeros: 0, soma: 0, ord: null };
+  if (!a.exato && faixa) { a.lo = faixa[0]; a.hi = faixa[1]; a.h = new Float64Array(NB); }
+  return a;
+}
 function acumTf(a, x) { return a.tipo === 'log' ? Math.log(x) : a.tipo === 'log1p' ? Math.log1p(x) : x; }
 function acumInv(a, y) { return a.tipo === 'log' ? Math.exp(y) : a.tipo === 'log1p' ? Math.expm1(y) : y; }
 function acumBin(a, x) {
@@ -434,7 +439,8 @@ function acumQ(a, q) {
 // ---------------------------------------------------------------- Monte Carlo
 function simular(H, o, progresso) {
   const nC = H.cs.length, K = H.uni.length, L = H.L, N = o.anos * 12, nS = o.n;
-  const nCam = Math.min(nS, 10000); // caminhos guardados para o gráfico do leque
+  const nCam = Math.min(nS, o.nCam || 10000); // caminhos guardados para o gráfico do leque
+  const total = o.nTotal || nS, fx = o.faixas || null;
   const ajM = Math.pow(1 + o.ajuste / 100, 1 / 12);
   const taxaM = Math.pow(1 + o.taxa / 100, -1 / 12);
   const parametrico = o.metodo === 'normal' || o.metodo === 't';
@@ -468,8 +474,9 @@ function simular(H, o, progresso) {
   const Pn = pontos.length;
   const cam = H.cs.map(() => new Float32Array(nCam * Pn));
   const somaCdi = new Float64Array(Pn), somaInv = new Float64Array(Pn);
-  const aFin = H.cs.map(() => acumNovo('log', nS)), aAnu = H.cs.map(() => acumNovo('log1p', nS)), aQd = H.cs.map(() => acumNovo('lin', nS));
-  const aCdi = acumNovo('log', nS);
+  const aFin = H.cs.map((_, c) => acumNovo('log', nS, total, fx && fx.fin[c])), aAnu = H.cs.map((_, c) => acumNovo('log1p', nS, total, fx && fx.anu[c])),
+    aQd = H.cs.map((_, c) => acumNovo('lin', nS, total, fx && fx.qd[c]));
+  const aCdi = acumNovo('log', nS, total, fx && fx.cdi);
   const perde = new Float64Array(nC), bate = new Float64Array(nC), meta = new Float64Array(nC), ruin = new Float64Array(nC);
   let ruinCdi = 0;
   const mSaque = o.saqueOn ? Math.max(1, Math.round(o.saqueAno * 12)) : Infinity;
@@ -556,23 +563,58 @@ function simular(H, o, progresso) {
     }
     acumAdd(aCdi, fc); if (mortoCdi) ruinCdi++;
   }
+  // parte bruta (cada núcleo devolve a sua; combinar() junta tudo)
+  return {
+    nomes: H.cs.map((c) => c.nome), cam, nCam, Pn, pontos, N, nS, aFin, aAnu, aQd, aCdi,
+    perde: Array.from(perde), bate: Array.from(bate), meta: Array.from(meta), ruin: Array.from(ruin), ruinCdi,
+    somaCdi, somaInv, porAtivo, parametrico, temMeta: o.meta > 0,
+  };
+}
+
+// ---------------------------------------------------------------- juntar os núcleos
+function acumUnir(lista) {
+  const a0 = lista[0], n = lista.reduce((s, a) => s + a.n, 0), soma = lista.reduce((s, a) => s + a.soma, 0);
+  const amostra = Math.min(n, EXATO), v = new Float64Array(amostra);
+  let k = 0;
+  for (const a of lista) { const m = Math.min(a.n, a.v.length, amostra - k); if (m > 0) { v.set(a.v.subarray(0, m), k); k += m; } }
+  const u = { tipo: a0.tipo, n, soma, exato: lista.every((a) => a.exato), v: v.subarray(0, k), h: null, lo: a0.lo, hi: a0.hi, zeros: 0, ord: null };
+  if (!u.exato) { u.h = new Float64Array(NB); for (const a of lista) { for (let i = 0; i < NB; i++) u.h[i] += a.h[i]; u.zeros += a.zeros; } }
+  return acumFecha(u);
+}
+function faixaDe(a) { // faixa do histograma a partir dos valores de uma rodada-piloto
+  let mn = Infinity, mx = -Infinity;
+  for (let i = 0; i < Math.min(a.n, a.v.length); i++) { const v = a.v[i]; if (a.tipo === 'log' && v <= 0) continue; const y = acumTf(a, v); if (y < mn) mn = y; if (y > mx) mx = y; }
+  if (!isFinite(mn)) { mn = 0; mx = 1; }
+  const span = Math.max(mx - mn, 1e-6); let lo = mn - span * 0.6, hi = mx + span * 0.6;
+  if (a.tipo === 'lin') { lo = Math.min(lo, -1); hi = Math.max(hi, 0); }
+  return [lo, hi];
+}
+function combinar(partes) {
+  const p0 = partes[0], nC = p0.nomes.length, Pn = p0.Pn, nS = partes.reduce((s, p) => s + p.nS, 0);
+  const nCam = partes.reduce((s, p) => s + p.nCam, 0);
   const QS = [0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95];
+  const somaCdi = new Float64Array(Pn), somaInv = new Float64Array(Pn);
+  for (const p of partes) for (let k = 0; k < Pn; k++) { somaCdi[k] += p.somaCdi[k]; somaInv[k] += p.somaInv[k]; }
   const col = new Float32Array(nCam);
-  const res = H.cs.map((cart, c) => {
+  const res = p0.nomes.map((nome, c) => {
+    const cam = new Float32Array(nCam * Pn); let off = 0;
+    for (const p of partes) { cam.set(p.cam[c], off); off += p.nCam * Pn; }
     const faixas = QS.map(() => new Float64Array(Pn));
     for (let k = 0; k < Pn; k++) {
-      for (let s = 0; s < nCam; s++) col[s] = cam[c][s * Pn + k];
+      for (let s = 0; s < nCam; s++) col[s] = cam[s * Pn + k];
       col.sort();
       QS.forEach((q, i) => { faixas[i][k] = quantil(col, q); });
     }
+    const soma = (f) => partes.reduce((s, p) => s + p[f][c], 0) / nS;
     return {
-      nome: cart.nome, faixas, cam: cam[c], aFin: acumFecha(aFin[c]), aAnu: acumFecha(aAnu[c]), aQd: acumFecha(aQd[c]),
-      pPerde: perde[c] / nS, pCdi: bate[c] / nS, pMeta: o.meta > 0 ? meta[c] / nS : null, pRuina: ruin[c] / nS,
+      nome, faixas, cam, aFin: acumUnir(partes.map((p) => p.aFin[c])), aAnu: acumUnir(partes.map((p) => p.aAnu[c])), aQd: acumUnir(partes.map((p) => p.aQd[c])),
+      pPerde: soma('perde'), pCdi: soma('bate'), pMeta: p0.temMeta ? soma('meta') : null, pRuina: soma('ruin'),
     };
   });
   return {
-    res, N, Pn, pontos, nS, nCam, QS, cdi: Array.from(somaCdi, (v) => v / nS), inv: Array.from(somaInv, (v) => v / nS),
-    aCdi: acumFecha(aCdi), pRuinaCdi: ruinCdi / nS, porAtivo, parametrico, exato: nS <= EXATO,
+    res, N: p0.N, Pn, pontos: p0.pontos, nS, nCam, QS, cdi: Array.from(somaCdi, (v) => v / nS), inv: Array.from(somaInv, (v) => v / nS),
+    aCdi: acumUnir(partes.map((p) => p.aCdi)), pRuinaCdi: partes.reduce((s, p) => s + p.ruinCdi, 0) / nS,
+    porAtivo: p0.porAtivo, parametrico: p0.parametrico, exato: nS <= EXATO, nucleos: partes.length,
   };
 }
 // funções de leitura (não viajam do worker)
@@ -585,26 +627,61 @@ function hidratar(R) {
   return R;
 }
 
-// Monte Carlo num Web Worker (a tela continua respondendo e dá para parar); sem Worker, roda direto.
-let worker = null, cancelar = null;
+// Monte Carlo em vários Web Workers, um por núcleo do processador (a tela continua respondendo e dá
+// para parar). Sem Worker, roda direto numa parte só.
+const NUCLEOS = Math.max(1, Math.min(32, (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 4));
+let workerURL = null, cancelar = null, semWorker = false;
 function criarWorker() {
   try {
-    const src = [quantil, media, cholesky, gauss, acumNovo, acumTf, acumInv, acumBin, acumAdd, acumFecha, simular].map((f) => f.toString()).join('\n') +
-      `\nconst EXATO = ${EXATO}, PILOTO = ${PILOTO}, NB = ${NB};\nlet gaussExtra = null;\nonmessage = (e) => { const { H, o } = e.data; const R = simular(H, o, (p) => postMessage({ p })); postMessage({ R }); };`;
-    const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
-    return new Worker(url);
+    if (!workerURL) {
+      const src = [quantil, media, cholesky, gauss, acumNovo, acumTf, acumInv, acumBin, acumAdd, acumFecha, simular].map((f) => f.toString()).join('\n') +
+        `\nconst EXATO = ${EXATO}, PILOTO = ${PILOTO}, NB = ${NB};\nlet gaussExtra = null;\nonmessage = (e) => { const { H, o } = e.data; const R = simular(H, o, (p) => postMessage({ p })); postMessage({ R }); };`;
+      workerURL = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+    }
+    return new Worker(workerURL);
   } catch (e) { return null; }
 }
-function simularAssincrono(H, o, aoProgresso) {
-  const Hw = { cs: H.cs.map((c) => ({ nome: c.nome })), uni: H.uni, R: H.R, Rc: H.Rc, risco: H.risco, W: H.W, cdi: H.cdi, ipca: H.ipca, L: H.L };
+function rodarPartes(Hw, lista, aoProgresso) {
+  // lista: [{ o, peso }] — cada item vira um worker; o progresso é a média ponderada
   return new Promise((ok, falha) => {
-    if (worker === null) worker = criarWorker() || false;
-    if (!worker) { setTimeout(() => { try { ok(simular(Hw, o, aoProgresso)); } catch (e) { falha(e); } }, 20); return; }
-    cancelar = () => { worker.terminate(); worker = null; cancelar = null; falha(new Error('cancelado')); };
-    worker.onmessage = (e) => { if (e.data.p !== undefined) aoProgresso(e.data.p); else { cancelar = null; ok(e.data.R); } };
-    worker.onerror = (e) => { worker.terminate(); worker = false; cancelar = null; try { ok(simular(Hw, o, aoProgresso)); } catch (x) { falha(x); } e.preventDefault(); };
-    worker.postMessage({ H: Hw, o });
+    const ws = [], prog = lista.map(() => 0), out = new Array(lista.length);
+    let restam = lista.length, acabou = false;
+    const fim = (erro) => { if (acabou) return; acabou = true; ws.forEach((w) => w && w.terminate()); cancelar = null; erro ? falha(erro) : ok(out); };
+    cancelar = () => fim(new Error('cancelado'));
+    lista.forEach((item, i) => {
+      const w = semWorker ? null : criarWorker();
+      if (!w) { semWorker = true; }
+      ws.push(w);
+      if (!w) {
+        setTimeout(() => { try { out[i] = simular(Hw, item.o, (p) => { prog[i] = p; aoProgresso(prog.reduce((s, x, k) => s + x * lista[k].peso, 0)); }); if (--restam === 0) fim(); } catch (e) { fim(e); } }, 20);
+        return;
+      }
+      w.onmessage = (e) => {
+        if (e.data.p !== undefined) { prog[i] = e.data.p; aoProgresso(prog.reduce((s, x, k) => s + x * lista[k].peso, 0)); return; }
+        out[i] = e.data.R; if (--restam === 0) fim();
+      };
+      w.onerror = (e) => { e.preventDefault(); fim(new Error(e.message || 'erro no núcleo de cálculo')); };
+      w.postMessage({ H: Hw, o: item.o });
+    });
   });
+}
+async function simularAssincrono(H, o, aoProgresso) {
+  const Hw = { cs: H.cs.map((c) => ({ nome: c.nome })), uni: H.uni, R: H.R, Rc: H.Rc, risco: H.risco, W: H.W, cdi: H.cdi, ipca: H.ipca, L: H.L };
+  const nW = o.n >= 20000 ? NUCLEOS : 1;
+  let faixas = null, pesoPiloto = 0;
+  if (o.n > EXATO && nW > 1) {
+    // rodada-piloto curta só para fixar as faixas dos histogramas (iguais em todos os núcleos)
+    pesoPiloto = PILOTO / o.n;
+    const [pil] = await rodarPartes(Hw, [{ o: { ...o, n: PILOTO, nCam: 1 }, peso: pesoPiloto }], aoProgresso);
+    faixas = { fin: pil.aFin.map(faixaDe), anu: pil.aAnu.map(faixaDe), qd: pil.aQd.map(faixaDe), cdi: faixaDe(pil.aCdi) };
+  }
+  const base = Math.floor(o.n / nW), extra = o.n % nW, camPor = Math.ceil(10000 / nW);
+  const lista = Array.from({ length: nW }, (_, i) => {
+    const n = base + (i < extra ? 1 : 0);
+    return { o: { ...o, n, nTotal: o.n, faixas, nCam: camPor }, peso: (1 - pesoPiloto) * n / o.n };
+  }).filter((x) => x.o.n > 0);
+  const partes = await rodarPartes(Hw, lista, (p) => aoProgresso(pesoPiloto + p));
+  return combinar(partes);
 }
 
 // ---------------------------------------------------------------- navegação (abas)
@@ -954,7 +1031,7 @@ function desenharSimulacao() {
     ['Janela', `${rotulo(H.ini)}–${rotulo(H.fim)} (${H.L} m)`], ['Modelo', metodoNome],
     ['Rebal.', R.parametrico || o.rebal === 1 ? 'mensal' : o.rebal ? `${o.rebal} m` : 'nunca'],
     ['Base', o.real ? 'real (descontada a inflação, IPCA)' : 'nominal'], ['Tempo', ultimo.ms < 60e3 ? `${(ultimo.ms / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} s` : `${Math.round(ultimo.ms / 60e3)} min`],
-    ['Ativos novos', NOME_CURTO[H.modo] || ''], ['Percentis', R.exato ? 'exatos' : 'histograma de 20 mil faixas'],
+    ['Ativos novos', NOME_CURTO[H.modo] || ''], ['Percentis', R.exato ? 'exatos' : 'histograma de 20 mil faixas'], ['Núcleos do processador', `${R.nucleos} de ${NUCLEOS}`],
   ].map(([k, v]) => `<span>${k}: <b>${v}</b></span>`).join('') + (H.limitante ? `<span>Contagem começa em ${rotulo(H.ini)}, por: <b>${esc(rotuloAtivo(H.limitante))}</b></span>` : '');
   if (Object.keys(H.estimados || {}).length) $('runline').innerHTML += `<span>Meses estimados por fatores: <b>${Object.entries(H.estimados).map(([t, n]) => `${esc(rotuloAtivo(t))} ${n}`).join(', ')}</b></span>`;
   const anosJ = H.L / 12, avisos = [];
