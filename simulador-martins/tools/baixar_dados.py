@@ -377,6 +377,10 @@ def main():
     js = ("// Gerado por tools/baixar_dados.py — não edite à mão.\n"
           "window.DADOS = " + json.dumps(data, ensure_ascii=False, separators=(",", ":")) + ";\n")
     (base / "data.js").write_text(js, encoding="utf-8")
+    if (cache / "fiis.json").exists():  # segmento, mandato, DY e P/VP dos FIIs (tools/fiis_cvm.py)
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from enriquecer import enriquecer
+        print(f"  FIIs enriquecidos com a CVM: {len(enriquecer(base, cache))}", flush=True)
     from collections import Counter
     print("Por tipo:", dict(Counter(a["tipo"] for a in meta)), flush=True)
     print(f"Falharam ({len(falhas)}): {' '.join(sorted(falhas)[:80])}", flush=True)

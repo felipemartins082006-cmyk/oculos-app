@@ -1,0 +1,116 @@
+{
+  "titulo": "Qual a melhor carteira para chegar a R$ 1 milhão?",
+  "subtitulo": "Universo amplo (ETFs da B3 e dos EUA, ouro, Treasuries, IFIX e CDI), escolhida pela chance de atingir a meta com risco aceitável",
+  "carteiras": {
+    "Equilibrado BR": {
+      "BOVA11": 25,
+      "ITUB4": 10,
+      "TAEE11": 10,
+      "WEGE3": 10,
+      "HGLG11": 15,
+      "KNRI11": 10,
+      "MXRF11": 10,
+      "KNCR11": 10
+    }
+  },
+  "otimizacoes": [
+    {
+      "nome": "Ótima para a meta (queda até 20%)",
+      "objetivo": "por_meta",
+      "criterio": "prob_meta",
+      "pontos": 15,
+      "cenarios": 20000,
+      "maximo": 0.35,
+      "queda_max": -0.2,
+      "universo": {
+        "codigos": [
+          "BOVA11",
+          "SMAL11",
+          "DIVO11",
+          "IVVB11",
+          "SPY",
+          "QQQ",
+          "VT",
+          "TLT",
+          "GLD",
+          "IFIX",
+          "RF:CDI:100"
+        ]
+      }
+    },
+    {
+      "nome": "Ótima reamostrada (máx. Sharpe)",
+      "objetivo": "max_sharpe",
+      "reamostragem": 100,
+      "maximo": 0.35,
+      "universo": {
+        "codigos": [
+          "BOVA11",
+          "SMAL11",
+          "DIVO11",
+          "IVVB11",
+          "SPY",
+          "QQQ",
+          "VT",
+          "TLT",
+          "GLD",
+          "IFIX",
+          "RF:CDI:100"
+        ]
+      }
+    },
+    {
+      "nome": "Paridade de risco",
+      "objetivo": "paridade_risco",
+      "maximo": 0.35,
+      "universo": {
+        "codigos": [
+          "BOVA11",
+          "SMAL11",
+          "DIVO11",
+          "IVVB11",
+          "SPY",
+          "QQQ",
+          "VT",
+          "TLT",
+          "GLD",
+          "IFIX",
+          "RF:CDI:100"
+        ]
+      }
+    }
+  ],
+  "comparar_com": {
+    "S&P 500": {
+      "SPY": 100
+    },
+    "CDI 100%": {
+      "RF:CDI:100": 100
+    }
+  },
+  "plano": {
+    "inicial": 10000,
+    "aporte": 1000,
+    "anos": 20,
+    "meta": 1000000,
+    "corrige": true,
+    "real": true
+  },
+  "simulacao": {
+    "modelo": "blocos",
+    "bloco": 12,
+    "cenarios": 200000,
+    "desde": 2000,
+    "ajuste": -1.0
+  },
+  "robustez": [
+    "bootstrap",
+    "estacionario",
+    "normal",
+    "t",
+    "garch",
+    "regimes"
+  ],
+  "cenarios_robustez": 50000,
+  "saida": "saida/melhor_carteira_global.html"
+}

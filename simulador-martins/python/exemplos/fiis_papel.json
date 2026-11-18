@@ -1,0 +1,19 @@
+{
+  "titulo": "Qual a melhor carteira de FIIs de papel?",
+  "subtitulo": "Otimização sobre todos os FIIs de papel com 5+ anos de histórico, testada por Monte Carlo em 7 modelos",
+  "carteiras": {
+    "Minha carteira de papel": {"KNCR11": 20, "CPTS11": 20, "KNIP11": 20, "RBRR11": 20, "HGCR11": 20}
+  },
+  "otimizacoes": [
+    {"nome": "Ótima reamostrada (máx. Sharpe)", "objetivo": "max_sharpe", "reamostragem": 100, "maximo": 0.20, "max_ativos": 8,
+     "universo": {"tipos": ["fii"], "mandato": "papel", "min_meses": 60, "janela_meses": 72}},
+    {"nome": "Ótima mín. CVaR", "objetivo": "min_cvar", "maximo": 0.20, "max_ativos": 8,
+     "universo": {"tipos": ["fii"], "mandato": "papel", "min_meses": 60, "janela_meses": 72}}
+  ],
+  "comparar_com": {"IFIX": {"IFIX": 100}, "CDI 100%": {"RF:CDI:100": 100}},
+  "plano": {"inicial": 10000, "aporte": 1000, "anos": 20, "meta": 600000, "corrige": true, "real": true},
+  "simulacao": {"modelo": "blocos", "bloco": 12, "cenarios": 200000, "desde": 2000, "estender": true},
+  "robustez": ["bootstrap", "estacionario", "normal", "t", "garch", "regimes"],
+  "cenarios_robustez": 50000,
+  "saida": "saida/fiis_papel.html"
+}
