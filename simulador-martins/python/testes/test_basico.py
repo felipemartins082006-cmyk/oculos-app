@@ -53,6 +53,16 @@ def test_redistribuir_ativo_novo():
     assert Jc.meses[0].year >= 2020
 
 
+def test_ativo_muito_novo_nao_recusa():
+    from simulador.monte_carlo import preparar
+    J = preparar(BASE, {"So novo": {"RBFY11": 100}}, 1995, modo="redistribuir")
+    assert len(J.meses) >= 36 and J.proxies and J.proxies[0][0] == "So novo"
+    J2 = preparar(BASE, {"X": {"RBFY11": 50, "KNCR11": 50}}, 1995, modo="cortar")
+    assert J2.trocou_modo == "cortar" and len(J2.meses) > 100
+    r = simular(BASE, {"So novo": {"RBFY11": 100}}, Plano(anos=10), Config(cenarios=2000), progresso=False)
+    assert np.isfinite(r.resumo().loc["So novo", "P50"])
+
+
 def test_aposentadoria():
     r = simular(BASE, CART, Plano(inicial=100000, aporte=0, anos=30, saque_ano=0, saque=5000), Config(cenarios=2000), progresso=False)
     assert "prob. dinheiro acabar" in r.resumo().columns

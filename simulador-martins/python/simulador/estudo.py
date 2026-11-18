@@ -135,6 +135,10 @@ def executar(caminho: str | Path, base: Base | None = None, verbose: bool = True
             if soma < 0.999:
                 texto += (f'<p class="aviso">Em {J.meses[0]}, <b>{n}</b> começa com só {soma:.0%} dos pesos-alvo existindo ({", ".join(disp)}); '
                           'esses ativos valem 100% da carteira até os outros começarem. Se tiveram um período excepcional, isso pesa no resultado.</p>')
+    if J.trocou_modo:
+        texto += '<p class="aviso">Os ativos tinham pouco histórico em comum para cortar a janela; por isso cada ativo entra quando começa.</p>'
+    for n_, de, ate, k in J.proxies:
+        texto += f'<p class="aviso">{n_}: de {de} a {ate} nenhum ativo da carteira existia; esses {k} meses usam o índice de referência da classe (IFIX, Ibovespa, S&amp;P 500, Bitcoin ou CDI).</p>'
     if len(J.meses) < 216:
         texto += f'<p class="aviso">Janela de {len(J.meses) / 12:.0f} anos: os resultados refletem muito esse período. Veja a tabela de robustez e o backtest.</p>'
     if J.estimados:

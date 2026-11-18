@@ -170,21 +170,46 @@ class Janela:
     jovens: list = field(default_factory=list)   # (ativo, mês de início) dos que entram depois do início da janela
     modo: str = "cortar"
     pedido: pd.Period | None = None
+    Rp: np.ndarray | None = None  # índice de referência da classe de cada ativo (meses × ativos)
+    proxies: list = field(default_factory=list)  # (carteira, de, até, meses) cobertos por índice de classe
+    trocou_modo: str | None = None
 
     @property
     def P(self) -> np.ndarray:    # retornos mensais das carteiras (rebalanceamento mensal, pesos redistribuídos)
-        return compor(self.R.to_numpy(), self.W)[0]
+        return compor(self.R.to_numpy(), self.W, self.Rp)[0]
 
 
-def compor(R: np.ndarray, W: np.ndarray):
+def compor(R: np.ndarray, W: np.ndarray, Rp: np.ndarray | None = None):
     """Retorno de cada carteira com os pesos dos ativos que ainda não existiam redistribuídos entre os
-    demais, e (por carteira) a matriz de retornos com esses meses preenchidos pelo retorno da carteira."""
+    demais, e (por carteira) a matriz de retornos com esses meses preenchidos pelo retorno da carteira.
+    Num mês em que nenhum ativo da carteira existia, usa o índice de referência da classe (Rp)."""
     ok = ~np.isnan(R)
     R0 = np.where(ok, R, 0.0)
     pesos_ok = ok.astype(float) @ W.T                        # L × C
     P = (R0 @ W.T) / np.where(pesos_ok > 0, pesos_ok, 1.0)
+    if Rp is not None:
+        P = np.where(pesos_ok > 0, P, np.nan_to_num(Rp) @ W.T)
     Rc = [np.where(ok, R, P[:, [c]]) for c in range(W.shape[0])]
     return P, Rc
+
+
+INDICE_CLASSE = {"fii": "IFIX", "fiagro": "IFIX", "fiinfra": "IFIX", "acao": "IBOV", "etf": "IBOV", "fundo_acoes": "IBOV",
+                 "acao_us": "SPY", "etf_us": "SPY", "cripto": "BTC", "fundo_cambial": "USDBRL"}
+
+
+def indice_classe(base, codigos: list, cambio: bool) -> pd.DataFrame:
+    """Retorno do índice de referência da classe de cada ativo (CDI quando não há índice no mês)."""
+    cdi = base.retornos["CDI"]; fx = base.retornos["USDBRL"]
+    out = {}
+    for c in codigos:
+        if c.startswith("RF:"):
+            out[c] = base.retornos_brl([c], cambio)[c]; continue
+        ref = INDICE_CLASSE.get(base.meta.loc[c, "tipo"])
+        r = base.retornos[ref] if ref in base.retornos else pd.Series(np.nan, index=cdi.index)
+        if ref and base.meta.loc[ref, "moeda"] == "USD" and cambio:
+            r = (1 + r) * (1 + fx) - 1
+        out[c] = r.fillna(cdi)
+    return pd.DataFrame(out)
 
 
 def preparar(base, carteiras: dict[str, dict[str, float]], desde: int = 1995, cambio: bool = True,
@@ -215,16 +240,21 @@ def preparar(base, carteiras: dict[str, dict[str, float]], desde: int = 1995, ca
             cods = [c for c, p in cart.items() if p > 0]
             ini_cart[n_] = ini_macro if any(c.startswith("RF:") for c in cods) else min(inicio[c] for c in cods)
         lim_cart = max(ini_cart, key=lambda k: ini_cart[k])
-        ini = max(pedido, ini_macro, ini_cart[lim_cart])
+        ultimo = R.index[-1] if len(R.index) else pedido
+        # nunca menos de 3 anos: meses sem nenhum ativo da carteira usam o índice da classe
+        ini = max(pedido, ini_macro, min(ini_cart[lim_cart], ultimo - 35))
         cods_lim = [c for c, p in carteiras[lim_cart].items() if p > 0 and not c.startswith("RF:")]
         lim = min(cods_lim, key=lambda c: inicio[c]) if cods_lim else None
         R = R.loc[ini:, codigos + list(macro.columns)].dropna(subset=list(macro.columns))
-        R = R.dropna(axis=0, how="all", subset=[c for c in codigos])
     else:
         lim = max(inicio, key=lambda c: inicio[c])
         R = R.loc[pedido:, codigos + list(macro.columns)].dropna()
+        if len(R) < 24:   # pouco histórico em comum: cada ativo entra quando começa (não recusa a carteira)
+            J = preparar(base, carteiras, desde, cambio, False, semente, "redistribuir")
+            J.trocou_modo = modo
+            return J
     if len(R) < 24:
-        raise ValueError(f"Só {len(R)} meses de histórico na janela (limitado por {lim}).")
+        raise ValueError(f"Não há dados de CDI/IPCA na janela ({len(R)} meses).")
     W = np.zeros((len(nomes), len(codigos)))
     for i, n in enumerate(nomes):
         tot = sum(p for p in carteiras[n].values() if p > 0)
@@ -232,10 +262,18 @@ def preparar(base, carteiras: dict[str, dict[str, float]], desde: int = 1995, ca
             if p > 0:
                 W[i, codigos.index(c)] += p / tot
     jovens = [(c, inicio[c]) for c in codigos if not c.startswith("RF:") and inicio[c] > R.index[0]] if modo == "redistribuir" else []
+    Rp, proxies = None, []
+    if modo == "redistribuir":
+        Rp = indice_classe(base, codigos, cambio).reindex(R.index).to_numpy()
+        ok = (~np.isnan(R[codigos].to_numpy())).astype(float) @ W.T
+        for i, n in enumerate(nomes):
+            sem = np.flatnonzero(ok[:, i] == 0)
+            if len(sem):
+                proxies.append((n, R.index[sem[0]], R.index[sem[-1]], len(sem)))
     jovens.sort(key=lambda x: x[1], reverse=True)
     lim = lim if R.index[0] > pedido else None
     return Janela(codigos, R[codigos], W, nomes, R["CDI_m"].to_numpy(), R["IPCA_m"].to_numpy(), R.index, lim,
-                  estimados, jovens, modo, pedido)
+                  estimados, jovens, modo, pedido, Rp, proxies)
 
 
 # ---------------------------------------------------------------- resultado
@@ -424,7 +462,10 @@ def simular(base, carteiras: dict[str, dict[str, float]], plano: Plano = Plano()
     R = J.R.to_numpy().copy()
     if cfg.ajuste:
         R[:, risco] = (1 + R[:, risco]) * (1 + cfg.ajuste / 100) ** (1 / 12) - 1
-    P, Rc = compor(R, J.W)                                # L × C ; por carteira L × K
+    Rp = None if J.Rp is None else J.Rp.copy()
+    if Rp is not None and cfg.ajuste:
+        Rp[:, risco] = (1 + Rp[:, risco]) * (1 + cfg.ajuste / 100) ** (1 / 12) - 1
+    P, Rc = compor(R, J.W, Rp)                            # L × C ; por carteira L × K
     X = np.column_stack([P, J.cdi, J.ipca])
     mod = M.criar(cfg.modelo, bloco=cfg.bloco, gl=cfg.gl, estados=cfg.estados, fixas=(C, C + 1)).ajustar(X)
     G = min(cfg.caminhos_grafico, S)

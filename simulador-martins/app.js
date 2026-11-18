@@ -316,6 +316,9 @@ function preparar(carts, desde, cambio = 1, modo = 'cortar') {
       const c0 = rf ? -Infinity : Math.min(...c.itens.map((i) => sr(i.t).i0));
       if (c0 > novo) { novo = c0; limitante = c.itens.reduce((a, i) => (sr(i.t).i0 < sr(a).i0 ? i.t : a), c.itens.find((i) => !i.t.startsWith('RF:'))?.t || c.itens[0].t); }
     }
+    // nunca menos de 3 anos: se o ativo mais antigo for mais novo que isso, a janela recua e os meses
+    // em que nenhum ativo da carteira existia usam o índice de referência da classe (ver indiceClasse)
+    if (novo > fim - 35) { novo = fim - 35; limitante = null; }
     ini = Math.max(ini, novo);
   } else {
     for (const t of reais) { const s = sr(t); if (s.i0 > novo) { novo = s.i0; limitante = t; } ini = Math.max(ini, s.i0); }
@@ -325,11 +328,14 @@ function preparar(carts, desde, cambio = 1, modo = 'cortar') {
   for (let mi = ini; mi <= fim; mi++) {
     if (isNaN(val(sc, mi)) || isNaN(val(si, mi)) || isNaN(val(sf, mi))) continue;
     if (!redis && ss.some((s) => isNaN(val(s, mi)))) continue;
-    if (redis && cs.some((c) => c.itens.every((i) => !i.t.startsWith('RF:') && isNaN(val(sr(i.t), mi))))) continue;
     meses.push(mi);
   }
   const L = meses.length;
-  if (L < 24) return { erro: `Os ativos escolhidos só têm ${L} meses de histórico na janela (limitado por ${rotuloAtivo(limitante)}). Escolha ativos mais antigos ou uma janela maior.`, meses };
+  if (L < 24) {
+    // pouco histórico em comum para cortar a janela: os ativos entram quando começam (sem recusar a carteira)
+    if (!redis) { const H2 = preparar(carts, desde, cambio, 'redistribuir'); if (!H2.erro) H2.trocouModo = modo; return H2; }
+    return { erro: `Não há dados de CDI/IPCA na janela escolhida (${L} meses).`, meses };
+  }
   const cdi = new Float64Array(L), ipca = new Float64Array(L), fx = new Float64Array(L);
   meses.forEach((mi, j) => { cdi[j] = val(sc, mi); ipca[j] = val(si, mi); fx[j] = val(sf, mi); });
   const R = uni.map((t) => {
@@ -348,13 +354,19 @@ function preparar(carts, desde, cambio = 1, modo = 'cortar') {
     for (const i of c.itens) w[uni.indexOf(i.t)] += i.p / soma;
     return w;
   });
-  // retorno mensal de cada carteira (pesos redistribuídos entre os ativos que existiam no mês)
-  const P = W.map((w) => {
+  // retorno mensal de cada carteira (pesos redistribuídos entre os ativos que existiam no mês);
+  // num mês em que nenhum ativo dela existia, usa o índice de referência da classe de cada ativo
+  const proxies = cs.map(() => ({ n: 0, de: null, ate: null, indices: new Set() }));
+  const P = W.map((w, c) => {
     const p = new Float64Array(L);
     for (let j = 0; j < L; j++) {
       let s = 0, sw = 0;
       for (let k = 0; k < uni.length; k++) if (w[k] && !isNaN(R[k][j])) { s += w[k] * R[k][j]; sw += w[k]; }
-      p[j] = sw > 0 ? s / sw : 0;
+      if (sw > 0) { p[j] = s / sw; continue; }
+      let sp = 0;
+      for (let k = 0; k < uni.length; k++) if (w[k]) { const [nome, r] = indiceClasse(uni[k], meses[j], cdi[j], fx[j], cambio); sp += w[k] * r; proxies[c].indices.add(nome); }
+      p[j] = sp;
+      const pr = proxies[c]; pr.n++; if (pr.de === null) pr.de = meses[j]; pr.ate = meses[j];
     }
     return p;
   });
@@ -369,7 +381,29 @@ function preparar(carts, desde, cambio = 1, modo = 'cortar') {
   return {
     cs, uni, R, Rc, risco, W, P, meses, cdi, ipca, fx, L, ini: meses[0], fim: meses[L - 1], modo,
     limitante: meses[0] > desdeI ? limitante : null, estimados, jovens,
+    proxies: proxies.map((pr, c) => ({ nome: cs[c].nome, n: pr.n, de: pr.de, ate: pr.ate, indices: [...pr.indices] })).filter((x) => x.n),
   };
+}
+// índice de referência da classe (usado só nos meses em que nenhum ativo da carteira existia)
+function indiceClasse(t, mi, cdi, fx, cambio) {
+  const a = info(t);
+  if (a.tipo === 'rf') return [a.n, a.rf === 'CDI' ? cdi * a.taxa / 100 : NaN];
+  const ref = { fii: 'IFIX', fiagro: 'IFIX', fiinfra: 'IFIX', acao: 'IBOV', etf: 'IBOV', fundo_acoes: 'IBOV', acao_us: 'SPY', etf_us: 'SPY', cripto: 'BTC', fundo_cambial: 'USDBRL' }[a.tipo];
+  if (ref) {
+    const x = val(serie(ref), mi);
+    if (!isNaN(x)) {
+      const usd = info(ref) && info(ref).moeda === 'USD';
+      return [{ IFIX: 'IFIX', IBOV: 'Ibovespa', SPY: 'S&P 500', BTC: 'Bitcoin', USDBRL: 'dólar' }[ref], usd && cambio ? (1 + x) * (1 + fx) - 1 : x];
+    }
+  }
+  return ['CDI', cdi];
+}
+// avisos sobre trechos cobertos por índice de classe e troca automática de modo
+function avisoProxies(H) {
+  const a = [];
+  if (H.trocouModo) a.push(`Os ativos tinham pouco histórico em comum para ${H.trocouModo === 'estimar' ? 'estimar por fatores' : 'cortar a janela'}; por isso cada ativo entra quando começa.`);
+  for (const x of H.proxies || []) a.push(`${esc(x.nome)}: de ${rotulo(x.de)} a ${rotulo(x.ate)} nenhum ativo da carteira existia; esses ${x.n} meses usam o índice de referência da classe (${x.indices.join(', ')}).`);
+  return a.join(' ');
 }
 // como cada carteira começa a janela: que parte dos pesos-alvo já existia (o resto foi redistribuído)
 function inicioCarteiras(H) {
@@ -377,7 +411,7 @@ function inicioCarteiras(H) {
   const partes = H.cs.map((c, ci) => {
     const disp = H.uni.map((t, k) => (H.W[ci][k] > 0 && !isNaN(H.R[k][0]) ? k : -1)).filter((k) => k >= 0);
     const soma = disp.reduce((a, k) => a + H.W[ci][k], 0);
-    if (soma > 0.999) return '';
+    if (soma > 0.999 || soma === 0) return '';
     return `${esc(c.nome)} começa com ${pct(soma, 0)} dos pesos-alvo existindo (${disp.map((k) => esc(rotuloAtivo(H.uni[k]))).join(', ')}), que valem 100% da carteira até os outros ativos começarem`;
   }).filter(Boolean);
   return partes.length ? `Em ${rotulo(H.ini)}: ${partes.join('; ')}. Se esses primeiros ativos tiveram um período muito bom ou muito ruim, isso pesa no resultado; compare com "Cortar a janela".` : '';
@@ -1037,6 +1071,7 @@ function desenharSimulacao() {
   const anosJ = H.L / 12, avisos = [];
   if (H.ini > idx(`${desdeDe(o.janela)}-01`)) avisos.push(`Você pediu ${o.janela} anos de passado, mas os ativos só permitem contar a partir de ${rotulo(H.ini)} (${num(anosJ, 0)} anos).`);
   if (H.jovens && H.jovens.length) avisos.push(`Ativos mais novos que a janela (entram quando começam; antes disso o peso deles vai para os demais): ${H.jovens.map((j) => `${esc(rotuloAtivo(j.t))} desde ${rotulo(j.desde)}`).join(', ')}.`, inicioCarteiras(H));
+  avisos.push(avisoProxies(H));
   if (anosJ < 18) avisos.push(`O sorteio usa só ${num(anosJ, 0)} anos de história: o resultado reflete muito esse período. Para um cenário mais prudente, use ajuste negativo no retorno, o modelo t-Student ou ativos mais antigos.`);
   const av2 = avisos.filter(Boolean);
   $('aviso').hidden = !av2.length;
@@ -1234,6 +1269,7 @@ function desenharHistorico() {
   const av = [];
   if (!H.erro && H.ini > idx(`${desdeDe(S.btJanela)}-01`)) av.push(`A contagem começa em ${rotulo(H.ini)}, quando começa o ativo mais antigo de cada carteira.`);
   if (!H.erro && H.jovens && H.jovens.length) av.push(`Entram depois, quando passam a existir (antes disso o peso deles fica com os demais): ${H.jovens.map((j) => `${esc(rotuloAtivo(j.t))} em ${rotulo(j.desde)}`).join(', ')}.`, inicioCarteiras(H));
+  if (!H.erro) av.push(avisoProxies(H));
   const av2 = av.filter(Boolean);
   $('bt-aviso').hidden = !av2.length; $('bt-aviso').innerHTML = av2.length ? `<b>Atenção.</b> ${av2.join(' ')}` : '';
   if (H.erro) {
@@ -1306,11 +1342,16 @@ function desenharAnalise() {
   if (S.an >= S.carteiras.length) S.an = 0;
   $('seg-an').innerHTML = S.carteiras.map((c, i) => `<button type="button" data-v="${i}" class="${i === S.an ? 'on' : ''}"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;background:${CORES_CART[i]}"></span>${esc(c.nome.slice(0, 18))}</button>`).join('');
   const cart = S.carteiras[S.an];
-  const H = preparar([cart], 2000, S.cambio);
+  // correlação e fronteira precisam de todos os ativos no mesmo período: os com menos de 2 anos ficam de fora daqui
+  const novos = cart.itens.filter((i) => !i.t.startsWith('RF:') && info(i.t) && serie(i.t).i1 - serie(i.t).i0 < 23);
+  const cartA = { ...cart, itens: cart.itens.filter((i) => !novos.includes(i)) };
+  const H = cartA.itens.length ? preparar([cartA], Math.floor(BASE / 12), S.cambio, 'cortar') : { erro: 'Todos os ativos desta carteira têm menos de 2 anos de histórico: a análise de correlação e a fronteira precisam de mais dados. A simulação e o histórico funcionam normalmente.' };
   const vazio = (msg) => { ['risk-bars', 'ef-chart'].forEach((id) => { $(id).innerHTML = `<p class="empty-note">${esc(msg)}</p>`; }); ['tbl-corr', 'tbl-ef'].forEach((id) => { $(id).innerHTML = ''; }); $('an-runline').innerHTML = ''; $('ef-leg').innerHTML = ''; };
   if (H.erro) return vazio(H.erro);
   const K = H.uni.length, L = H.L, w = H.W[0];
-  $('an-runline').innerHTML = `<span>Janela: <b>${rotulo(H.ini)}–${rotulo(H.fim)} (${L} m)</b></span><span>Ativos: <b>${K}</b></span><span>Valores: <b>em reais</b></span>`;
+  $('an-runline').innerHTML = `<span>Janela: <b>${rotulo(H.ini)}–${rotulo(H.fim)} (${L} m)</b></span><span>Ativos: <b>${K}</b></span><span>Valores: <b>em reais</b></span>` +
+    (novos.length ? `<span>Fora desta análise (menos de 2 anos de dados): <b>${novos.map((i) => esc(rotuloAtivo(i.t))).join(', ')}</b></span>` : '') +
+    (H.trocouModo ? '<span>Ativos com pouco histórico em comum: cada um entra quando começa</span>' : '');
   const mu = H.R.map((r) => media(r));
   const cov = []; for (let i = 0; i < K; i++) cov.push(new Float64Array(K));
   for (let i = 0; i < K; i++) for (let j = 0; j <= i; j++) { let s = 0; for (let t = 0; t < L; t++) s += (H.R[i][t] - mu[i]) * (H.R[j][t] - mu[j]); cov[i][j] = cov[j][i] = s / (L - 1); }
