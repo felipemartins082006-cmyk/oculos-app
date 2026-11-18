@@ -3,11 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0a0b0f">
-<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#11171f" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Simulador">
 <title>Simulador Martins</title>
 <link rel="manifest" href="manifest.webmanifest">
@@ -16,191 +17,183 @@
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<div class="glow" aria-hidden="true"></div>
 
-<div class="wrap">
-  <header class="top">
-    <div>
-      <h1>Simulador Martins</h1>
-      <p>Monte Carlo com ações e FIIs da B3</p>
+<header class="bar">
+  <div class="bar-in gut">
+    <div class="brand">
+      <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 18c5-1 9-4 18-12"/><path d="M3 18c6-.5 11-3 18-7" opacity=".55"/><path d="M3 18c6 0 12-1 18-3" opacity=".3"/></svg></span>
+      <div><h1>Simulador Martins</h1><p>Monte Carlo · renda variável B3</p></div>
     </div>
-    <div class="mkt" role="tablist" aria-label="Mercado">
-      <button class="on" role="tab" aria-selected="true">Brasil</button>
-      <button role="tab" aria-selected="false" disabled title="Ainda não disponível">EUA<small>em breve</small></button>
-    </div>
-  </header>
-
-  <!-- ============ CARTEIRA ============ -->
-  <section class="card" aria-labelledby="h-cart">
-    <div class="card-head">
-      <h2 id="h-cart">Sua carteira</h2>
-      <span class="note" id="cart-count"></span>
-    </div>
-    <div class="presets" id="presets"></div>
-    <div class="holdings" id="holdings"></div>
-    <div class="sum" id="sum"></div>
-    <div class="row-btns">
-      <button class="ghost grow" id="btn-add" type="button">
-        <svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Adicionar ativo
-      </button>
-      <button class="ghost" id="btn-equal" type="button">Dividir igual</button>
-    </div>
-  </section>
-
-  <!-- ============ PLANO ============ -->
-  <section class="card" aria-labelledby="h-plano">
-    <h2 id="h-plano">Seu plano</h2>
-    <div class="fields">
-      <div class="field">
-        <label for="in-inicial">Valor inicial</label>
-        <div class="money"><span>R$</span><input id="in-inicial" inputmode="numeric" autocomplete="off"></div>
-      </div>
-      <div class="field">
-        <label for="in-aporte">Aporte por mês</label>
-        <div class="money"><span>R$</span><input id="in-aporte" inputmode="numeric" autocomplete="off"></div>
-      </div>
-      <div class="field full">
-        <label for="in-anos">Prazo</label>
-        <div class="years"><input type="range" id="in-anos" min="1" max="40" step="1"><output id="out-anos" for="in-anos"></output></div>
-      </div>
-      <div class="field full">
-        <label for="in-meta">Meta (opcional)</label>
-        <div class="money"><span>R$</span><input id="in-meta" inputmode="numeric" autocomplete="off" placeholder="ex.: 1.000.000"></div>
+    <div class="bar-r">
+      <span class="stamp" id="stamp"></span>
+      <div class="seg" role="tablist" aria-label="Mercado">
+        <button class="on" role="tab" aria-selected="true" type="button">Brasil</button>
+        <button role="tab" aria-selected="false" type="button" disabled title="Em breve">EUA · em breve</button>
       </div>
     </div>
+  </div>
+</header>
 
-    <details class="adv" id="adv">
-      <summary>Ajustes da simulação <svg class="ic" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
-      <div class="adv-body">
+<div class="layout gut">
+  <!-- ================= PARÂMETROS ================= -->
+  <div class="col ctl">
+    <section class="panel" aria-labelledby="h-cart">
+      <div class="ph"><h2 id="h-cart">Carteira</h2><span class="meta" id="cart-count"></span></div>
+      <div class="pb">
+        <div class="presets" id="presets"></div>
+        <div class="alloc" id="alloc" aria-hidden="true"></div>
+        <div class="alloc-leg" id="alloc-leg"></div>
+      </div>
+      <div class="tbl-wrap"><table id="holdings"></table></div>
+      <div class="sum" id="sum"></div>
+      <div class="btns">
+        <button class="btn grow" id="btn-add" type="button"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Adicionar ativo</button>
+        <button class="btn" id="btn-equal" type="button">Pesos iguais</button>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="h-par">
+      <div class="ph"><h2 id="h-par">Parâmetros</h2></div>
+      <div class="pb">
+        <div class="form">
+          <div class="field">
+            <label class="lbl" for="in-inicial">Aporte inicial</label>
+            <div class="inp"><span>R$</span><input id="in-inicial" inputmode="numeric" autocomplete="off"></div>
+          </div>
+          <div class="field">
+            <label class="lbl" for="in-aporte">Aporte mensal</label>
+            <div class="inp"><span>R$</span><input id="in-aporte" inputmode="numeric" autocomplete="off"></div>
+          </div>
+          <div class="field full">
+            <label class="lbl" for="in-anos">Horizonte</label>
+            <div class="range"><input type="range" id="in-anos" min="1" max="40" step="1"><output id="out-anos" for="in-anos"></output></div>
+          </div>
+          <div class="field full">
+            <label class="lbl" for="in-meta">Meta de patrimônio (opcional)</label>
+            <div class="inp"><span>R$</span><input id="in-meta" inputmode="numeric" autocomplete="off" placeholder="1.000.000"></div>
+          </div>
+        </div>
+        <hr class="sep">
         <div class="field">
-          <span class="lbl">Quantos futuros simular</span>
-          <div class="seg" id="seg-n">
+          <span class="lbl">Cenários</span>
+          <div class="seg full" id="seg-n">
             <button type="button" data-v="1000">1.000</button>
             <button type="button" data-v="5000">5.000</button>
             <button type="button" data-v="10000">10.000</button>
           </div>
         </div>
         <div class="field">
-          <span class="lbl">Histórico usado no sorteio</span>
-          <div class="seg" id="seg-desde">
-            <button type="button" data-v="2010">Tudo</button>
+          <span class="lbl">Janela histórica</span>
+          <div class="seg full" id="seg-desde">
+            <button type="button" data-v="2010">Desde 2010</button>
             <button type="button" data-v="2015">Desde 2015</button>
             <button type="button" data-v="2020">Desde 2020</button>
           </div>
-          <p class="help">O histórico começa no ativo mais novo da carteira (FIIs: em geral 2017).</p>
+          <p class="help">A janela começa no ativo mais recente da carteira. FIIs têm proventos confiáveis a partir de 2017.</p>
         </div>
         <div class="field">
-          <span class="lbl">Como sortear os meses</span>
-          <div class="seg" id="seg-bloco">
-            <button type="button" data-v="1">Mês a mês</button>
+          <span class="lbl">Reamostragem</span>
+          <div class="seg full" id="seg-bloco">
+            <button type="button" data-v="1">Mensal</button>
             <button type="button" data-v="12">Blocos de 12 meses</button>
           </div>
-          <p class="help">Em blocos, um ano real inteiro entra em sequência. Isso preserva crises que duram vários meses, como a de 2020.</p>
+          <p class="help">Em blocos, cada sorteio traz 12 meses reais seguidos. Isso preserva crises longas e tendências.</p>
         </div>
-        <label class="switch"><span>Valores de hoje<small>Desconta a inflação (IPCA) do resultado</small></span><input type="checkbox" id="in-real"></label>
-        <label class="switch"><span>Aporte sobe com a inflação<small>O aporte é corrigido pelo IPCA todo mês</small></span><input type="checkbox" id="in-corrige"></label>
+        <label class="chk"><span>Valores reais<small>Resultados deflacionados pelo IPCA (em reais de hoje)</small></span><input type="checkbox" id="in-real"></label>
+        <label class="chk"><span>Aporte corrigido pelo IPCA<small>O aporte mensal acompanha a inflação</small></span><input type="checkbox" id="in-corrige"></label>
+        <p class="err" id="err" hidden></p>
+        <button class="run" id="btn-sim" type="button"><svg class="ic" viewBox="0 0 24 24"><path d="M6 4l14 8-14 8z"/></svg><span id="btn-sim-label">Rodar simulação</span></button>
       </div>
-    </details>
-
-    <p class="err" id="err" hidden></p>
-    <button class="cta" id="btn-sim" type="button">
-      <svg class="ic" viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg>
-      <span id="btn-sim-label">Simular</span>
-    </button>
-  </section>
-
-  <!-- ============ RESULTADO ============ -->
-  <div id="res" hidden>
-    <div style="display:flex;flex-direction:column;gap:14px">
-      <section class="hero" aria-live="polite">
-        <span class="k" id="r-k"></span>
-        <div class="v" id="r-med"></div>
-        <p class="s" id="r-faixa"></p>
-        <div class="grid3">
-          <div><small>Pessimista (10%)</small><b id="r-p10"></b></div>
-          <div><small>Investido</small><b id="r-inv"></b></div>
-          <div><small>Otimista (90%)</small><b id="r-p90"></b></div>
-        </div>
-      </section>
-
-      <div class="odds" id="odds"></div>
-
-      <section class="card">
-        <div class="card-head"><h2>Futuros possíveis</h2><span class="note" id="fan-note"></span></div>
-        <div class="readout" id="readout">Toque ou arraste no gráfico para ver cada ano.</div>
-        <div class="chart" id="fan"></div>
-        <div class="legend">
-          <span><i style="background:var(--fan-50)"></i>Metade central</span>
-          <span><i style="background:var(--fan-90)"></i>8 em cada 10</span>
-          <span><i style="background:var(--fan-line);height:3px"></i>Mediana</span>
-          <span><i style="background:var(--blue);height:3px"></i>No CDI</span>
-          <span><i style="background:var(--text-2);height:2px"></i>Investido</span>
-          <span><i style="background:var(--path);height:2px"></i>Alguns futuros sorteados</span>
-        </div>
-      </section>
-
-      <section class="card">
-        <div class="card-head"><h2>Onde os futuros terminaram</h2><span class="note" id="hist-note"></span></div>
-        <div class="chart" id="hist"></div>
-        <p class="help" id="hist-help"></p>
-      </section>
-
-      <section class="card">
-        <h2>Resultado por faixa</h2>
-        <div class="tbl-wrap"><table id="tbl-pct"></table></div>
-        <p class="help" id="pct-help"></p>
-      </section>
-
-      <section class="card">
-        <div class="card-head"><h2>Histórico usado</h2><span class="note" id="hist-range"></span></div>
-        <div class="tbl-wrap"><table id="tbl-ativos"></table></div>
-        <p class="help">Retorno com proventos reinvestidos (JCP líquido de 15% de IR). Volatilidade é quanto o ativo costuma oscilar num ano: quanto maior, mais larga fica a faixa de futuros.</p>
-      </section>
-    </div>
+    </section>
   </div>
 
-  <!-- ============ COMO FUNCIONA ============ -->
-  <section class="card how">
-    <h2>Como a simulação funciona</h2>
-    <ol>
-      <li><b>Pega a história real.</b> Para cada mês desde 2010, guarda quanto cada ativo rendeu, já com dividendos e rendimentos reinvestidos.</li>
-      <li><b>Sorteia um mês do passado para cada mês do futuro.</b> Todos os ativos usam o mesmo mês sorteado. Assim, se março de 2020 sair, tudo cai junto, como aconteceu de verdade.</li>
-      <li><b>Aplica seu plano.</b> O dinheiro rende o que a carteira rendeu naquele mês e o aporte entra no fim do mês. A carteira é rebalanceada para os seus pesos todo mês.</li>
-      <li><b>Repete milhares de vezes.</b> Cada repetição é um futuro possível, com sorte ou azar diferente.</li>
-      <li><b>Ordena os resultados.</b> A mediana é o futuro do meio. "8 em cada 10" é a faixa entre o 10º e o 90º percentil.</li>
-    </ol>
-    <h2>Limites</h2>
-    <ul>
-      <li>O futuro pode ser diferente do passado. A simulação só sorteia meses que já aconteceram.</li>
-      <li>Não considera imposto de renda, taxas de corretagem nem custos dos fundos.</li>
-      <li>FIIs só têm histórico confiável de rendimentos desde 2017, então carteiras com FIIs usam uma janela mais curta.</li>
-      <li>O CDI de comparação usa os mesmos meses sorteados e os mesmos aportes, sem imposto.</li>
-      <li>Não é recomendação de investimento.</li>
-    </ul>
-  </section>
+  <!-- ================= RESULTADOS ================= -->
+  <div class="col" id="res">
+    <div class="runline" id="runline"></div>
 
-  <p class="foot" id="foot"></p>
+    <div class="kpis" id="kpis" aria-live="polite"></div>
+
+    <section class="panel">
+      <div class="ph"><h2>Projeção do patrimônio</h2><span class="meta" id="fan-meta"></span></div>
+      <div class="readout" id="readout">Toque ou passe o cursor no gráfico para ver cada ano.</div>
+      <div class="chart" id="fan"></div>
+      <div class="legend">
+        <span><i class="ln" style="border-color:var(--median)"></i>Mediana</span>
+        <span><i style="background:var(--band-50)"></i>P25–P75</span>
+        <span><i style="background:var(--band-90)"></i>P10–P90</span>
+        <span><i class="ln" style="border-color:var(--cdi);border-top-style:dashed"></i>CDI (mesmos aportes)</span>
+        <span><i class="ln" style="border-color:var(--muted);border-top-style:dotted"></i>Total aportado</span>
+        <span><i class="ln" style="border-color:var(--path);border-top-width:1px"></i>Cenários individuais</span>
+      </div>
+    </section>
+
+    <div class="grid2">
+      <section class="panel">
+        <div class="ph"><h2>Distribuição final</h2><span class="meta" id="hist-meta"></span></div>
+        <div class="chart" id="hist"></div>
+        <div class="pb" style="padding-top:4px"><p class="help" id="hist-help"></p></div>
+      </section>
+      <section class="panel">
+        <div class="ph"><h2>Percentis</h2><span class="meta" id="pct-meta"></span></div>
+        <div class="tbl-wrap"><table id="tbl-pct"></table></div>
+        <div class="pb"><p class="help" id="pct-help"></p></div>
+      </section>
+    </div>
+
+    <section class="panel">
+      <div class="ph"><h2>Histórico da janela</h2><span class="meta" id="win-meta"></span></div>
+      <div class="tbl-wrap"><table id="tbl-ativos"></table></div>
+      <div class="pb"><p class="help" id="win-help"></p></div>
+    </section>
+
+    <section class="panel">
+      <div class="ph"><h2>Metodologia</h2></div>
+      <div class="pb method">
+        <div>
+          <h3>Como funciona</h3>
+          <ol>
+            <li><b>Base histórica.</b> Retornos mensais reais de cada ativo desde 2010, com dividendos, JCP e rendimentos reinvestidos.</li>
+            <li><b>Sorteio conjunto.</b> Para cada mês do futuro é sorteado um mês do passado, o mesmo para todos os ativos. Isso preserva a correlação entre eles: numa crise, tudo cai junto.</li>
+            <li><b>Aplicação do plano.</b> A carteira rende o retorno sorteado e recebe o aporte no fim do mês. Rebalanceamento mensal aos pesos-alvo.</li>
+            <li><b>Repetição.</b> O processo se repete milhares de vezes. Cada repetição é um cenário possível.</li>
+            <li><b>Leitura.</b> Os cenários são ordenados: P50 é a mediana, e P10–P90 contém 80% dos resultados.</li>
+          </ol>
+        </div>
+        <div>
+          <h3>Limitações</h3>
+          <ul>
+            <li>Só sorteia meses que já aconteceram. O futuro pode ter cenários fora desse histórico.</li>
+            <li>Sem imposto de renda, corretagem ou taxas de administração.</li>
+            <li>Carteiras com FIIs usam janela a partir de 2017, por falta de proventos confiáveis antes disso.</li>
+            <li>O CDI de referência usa os mesmos meses sorteados e os mesmos aportes, sem IR.</li>
+            <li>Queda máxima: a maior perda do topo ao fundo da carteira em cada cenário, sem contar os aportes.</li>
+            <li>Material educativo. Não é recomendação de investimento.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </div>
 </div>
 
-<!-- ============ ESCOLHER ATIVOS ============ -->
-<div class="sheet-bg" id="sheet" hidden>
-  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
-    <div class="grab"></div>
-    <div class="sheet-head">
-      <h2 id="sheet-title">Escolher ativos</h2>
-      <button class="link" id="sheet-ok" type="button">Pronto</button>
+<p class="foot gut" id="foot"></p>
+
+<!-- ================= SELETOR DE ATIVOS ================= -->
+<div class="modal-bg" id="sheet" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <div class="ph"><h2 id="sheet-title">Universo de ativos</h2><button class="link" id="sheet-ok" type="button">Concluir</button></div>
+    <div class="mtools">
+      <div class="search">
+        <svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+        <input id="q" type="search" placeholder="Ticker, nome ou setor" autocomplete="off">
+      </div>
+      <div class="seg full" id="seg-tipo">
+        <button type="button" data-v="" class="on">Todos</button>
+        <button type="button" data-v="acao">Ações</button>
+        <button type="button" data-v="fii">FIIs</button>
+        <button type="button" data-v="etf">ETFs</button>
+      </div>
     </div>
-    <div class="search">
-      <svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
-      <input id="q" type="search" placeholder="Buscar: PETR4, logística, banco..." autocomplete="off">
-    </div>
-    <div class="seg" id="seg-tipo">
-      <button type="button" data-v="" class="on">Todos</button>
-      <button type="button" data-v="acao">Ações</button>
-      <button type="button" data-v="fii">FIIs</button>
-      <button type="button" data-v="etf">ETFs</button>
-    </div>
-    <div class="list" id="list"></div>
+    <div class="mlist"><table id="list"></table></div>
   </div>
 </div>
 

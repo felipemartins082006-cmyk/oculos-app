@@ -114,11 +114,11 @@ function simular(H, o) {
   const caminhos = new Float32Array(nSim * P);
   const somaCdi = new Float64Array(P), somaInv = new Float64Array(P);
   const finais = new Float64Array(nSim), finaisCdi = new Float64Array(nSim), investidos = new Float64Array(nSim);
-  const anuais = new Float64Array(nSim);
+  const anuais = new Float64Array(nSim), quedas = new Float64Array(nSim);
 
   for (let s = 0; s < nSim; s++) {
     let v = o.inicial, vc = o.inicial, inf = 1, inv = o.inicial, invReal = o.inicial, cresce = 0;
-    let pos = 0, resta = 0, k = 1;
+    let pos = 0, resta = 0, k = 1, nivel = 0, topo = 0, queda = 0;
     const base = s * P;
     caminhos[base] = v; somaCdi[0] += vc; somaInv[0] += inv;
     for (let m = 1; m <= N; m++) {
@@ -131,6 +131,8 @@ function simular(H, o) {
       vc = vc * (1 + H.cdi[pos]) + ap;
       inv += ap; invReal += ap / inf;
       cresce += Math.log1p(H.port[pos]) - (o.real ? Math.log1p(H.ipca[pos]) : 0);
+      nivel += Math.log1p(H.port[pos]);
+      if (nivel > topo) topo = nivel; else if (nivel - topo < queda) queda = nivel - topo;
       if (m === pontos[k]) {
         const d = o.real ? inf : 1;
         caminhos[base + k] = v / d;
@@ -142,6 +144,7 @@ function simular(H, o) {
     const d = o.real ? inf : 1;
     finais[s] = v / d; finaisCdi[s] = vc / d; investidos[s] = o.real ? invReal : inv;
     anuais[s] = Math.exp(cresce / N * 12) - 1;
+    quedas[s] = Math.expm1(queda);
   }
 
   // percentis por ponto do tempo
@@ -155,6 +158,7 @@ function simular(H, o) {
   }
   const ord = Float64Array.from(finais).sort();
   const ordAnual = Float64Array.from(anuais).sort();
+  const ordQueda = Float64Array.from(quedas).sort();
   let perde = 0, bateCdi = 0, meta = 0;
   for (let s = 0; s < nSim; s++) {
     if (finais[s] < investidos[s]) perde++;
@@ -166,7 +170,7 @@ function simular(H, o) {
     cdi: Array.from(somaCdi, (x) => x / nSim), inv: Array.from(somaInv, (x) => x / nSim),
     ord, ordAnual, finais,
     pPerde: perde / nSim, pCdi: bateCdi / nSim, pMeta: o.meta > 0 ? meta / nSim : null,
-    q: (p) => quantil(ord, p), qa: (p) => quantil(ordAnual, p),
+    q: (p) => quantil(ord, p), qa: (p) => quantil(ordAnual, p), qd: (p) => quantil(ordQueda, p),
   };
 }
 function quantil(arr, q) {
@@ -175,32 +179,42 @@ function quantil(arr, q) {
 }
 
 // ---------------------------------------------------------------- carteira (tela)
+const CLASSES = [['acao', 'Ações'], ['fii', 'FIIs'], ['etf', 'ETFs'], ['indice', 'Índice']];
 function desenharCarteira() {
   const h = $('holdings');
-  h.innerHTML = S.carteira.map((c, i) => {
-    const a = ATIVOS[c.t];
-    return `<div class="hold">
-      <div class="who"><div class="tk">${esc(a.t)} <span class="tag ${a.tipo}">${TIPO_NOME[a.tipo]}</span></div>
-      <div class="nm">${esc(a.n)} · ${esc(a.setor)}</div></div>
-      <label class="pct"><input type="number" inputmode="decimal" min="0" max="100" step="1" id="w-${esc(a.t)}" data-i="${i}" value="${+c.p.toFixed(2)}" aria-label="Peso de ${esc(a.t)} em %"><span>%</span></label>
-      <button class="rm" type="button" data-rm="${i}" aria-label="Tirar ${esc(a.t)}"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
-    </div>`;
-  }).join('') || '<p class="lead">Nenhum ativo ainda. Escolha um exemplo acima ou adicione ativos.</p>';
-  $('cart-count').textContent = S.carteira.length ? `${S.carteira.length} ${S.carteira.length === 1 ? 'ativo' : 'ativos'}` : '';
+  h.innerHTML = S.carteira.length ? `<thead><tr><th>Ativo</th><th>Classe</th><th>Peso</th><th></th></tr></thead><tbody>` +
+    S.carteira.map((c, i) => {
+      const a = ATIVOS[c.t];
+      return `<tr><td class="t"><span class="tk">${esc(a.t)}</span><span class="nm">${esc(a.n)}</span></td>
+        <td><span class="cls"><i class="sw" style="background:var(--c-${a.tipo})"></i>${TIPO_NOME[a.tipo]}</span></td>
+        <td><label class="w"><input type="number" inputmode="decimal" min="0" max="100" step="1" id="w-${esc(a.t)}" data-i="${i}" value="${+c.p.toFixed(2)}" aria-label="Peso de ${esc(a.t)} em %"><span>%</span></label></td>
+        <td><button class="rm" type="button" data-rm="${i}" aria-label="Remover ${esc(a.t)}"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></td></tr>`;
+    }).join('') + '</tbody>'
+    : '<tbody><tr><td class="empty">Carteira vazia. Escolha um modelo acima ou adicione ativos.</td></tr></tbody>';
+  $('cart-count').textContent = `${S.carteira.length} ${S.carteira.length === 1 ? 'ativo' : 'ativos'}`;
   desenharSoma();
   desenharPresets();
+}
+function desenharAlocacao() {
+  const soma = S.carteira.reduce((a, c) => a + c.p, 0) || 1;
+  const por = {};
+  for (const c of S.carteira) { const t = ATIVOS[c.t].tipo; por[t] = (por[t] || 0) + c.p / soma; }
+  const cls = CLASSES.filter(([t]) => por[t] > 0);
+  $('alloc').innerHTML = cls.map(([t]) => `<i style="width:${(por[t] * 100).toFixed(2)}%;background:var(--c-${t})"></i>`).join('');
+  $('alloc-leg').innerHTML = cls.map(([t, n]) => `<span><i class="sw" style="background:var(--c-${t})"></i>${n} <b>${pct(por[t], 0)}</b></span>`).join('');
 }
 function desenharSoma() {
   const soma = S.carteira.reduce((a, c) => a + c.p, 0);
   const ok = Math.abs(soma - 100) < 0.5;
-  $('sum').innerHTML = !S.carteira.length ? '' : ok
-    ? `<span class="ok">Total: 100%</span>`
-    : `<span class="bad">Total: ${soma.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%</span>${soma > 0 ? '<button class="link" type="button" id="btn-fix">Ajustar para 100%</button>' : ''}`;
+  $('sum').innerHTML = !S.carteira.length ? '' :
+    `<span>Soma dos pesos <span class="v ${ok ? 'ok' : 'bad'}">${soma.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%</span></span>` +
+    (!ok && soma > 0 ? '<button class="link" type="button" id="btn-fix">Normalizar para 100%</button>' : '');
+  desenharAlocacao();
 }
 function desenharPresets() {
   const atual = JSON.stringify(Object.fromEntries(S.carteira.map((c) => [c.t, c.p])));
   $('presets').innerHTML = PRESETS.map((p, i) =>
-    `<button type="button" class="chip${JSON.stringify(p.c) === atual ? ' on' : ''}" data-preset="${i}">${esc(p.nome)}</button>`).join('');
+    `<button type="button" class="preset${JSON.stringify(p.c) === atual ? ' on' : ''}" data-preset="${i}" aria-pressed="${JSON.stringify(p.c) === atual}">${esc(p.nome)}</button>`).join('');
 }
 
 $('presets').addEventListener('click', (e) => {
@@ -267,15 +281,18 @@ function desenharLista() {
     if (filtroTipo && !(a.tipo === filtroTipo || (filtroTipo === 'etf' && a.tipo === 'indice'))) return false;
     return !q || semAcento(`${a.t} ${a.n} ${a.setor}`).includes(q);
   });
-  $('list').innerHTML = itens.map((a) => {
-    const e = ESTAT[a.t];
-    return `<button type="button" class="opt${sel.has(a.t) ? ' sel' : ''}" data-t="${esc(a.t)}" aria-pressed="${sel.has(a.t)}">
-      <div class="who"><div class="tk">${esc(a.t)} <span class="tag ${a.tipo}">${TIPO_NOME[a.tipo]}</span>${sel.has(a.t) ? ' <svg class="ic" viewBox="0 0 24 24" style="color:var(--lime);width:16px;height:16px"><path d="M5 12l5 5 9-10"/></svg>' : ''}</div>
-      <div class="nm">${esc(a.n)} · ${esc(a.setor)}</div></div>
-      <div class="st"><b class="${e.anual < 0 ? 'neg' : ''}">${pct(e.anual)} ao ano</b>oscila ${pct(e.vol, 0)} · desde ${e.desde}</div>
-    </button>`;
-  }).join('') || '<p class="empty-list">Nenhum ativo encontrado.</p>';
+  $('list').innerHTML = `<thead><tr><th>Ativo</th><th class="hide-s">Classe · setor</th><th>Ret. a.a.</th><th>Vol.</th><th>Desde</th></tr></thead><tbody>` +
+    (itens.map((a) => {
+      const e = ESTAT[a.t], on = sel.has(a.t);
+      return `<tr class="${on ? 'sel' : ''}" data-t="${esc(a.t)}" tabindex="0" role="checkbox" aria-checked="${on}">
+        <td class="t"><span class="ck"><svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg></span><span class="tk">${esc(a.t)}</span><span class="nm" style="padding-left:24px">${esc(a.n)}</span></td>
+        <td class="t hide-s"><span class="cls"><i class="sw" style="background:var(--c-${a.tipo})"></i>${TIPO_NOME[a.tipo]}</span><span class="nm">${esc(a.setor)}</span></td>
+        <td class="${e.anual < 0 ? 'neg' : ''}">${pct(e.anual)}</td><td>${pct(e.vol, 0)}</td><td>${e.desde}</td></tr>`;
+    }).join('') || '<tr><td colspan="5" class="empty">Nenhum ativo encontrado.</td></tr>') + '</tbody>';
 }
+$('list').addEventListener('keydown', (e) => {
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.dataset.t) { e.preventDefault(); e.target.click(); }
+});
 
 // ---------------------------------------------------------------- plano (tela)
 function ligarDinheiro(id, chave) {
@@ -333,40 +350,47 @@ function rodar(rolar) {
   }
   erro('');
   const btn = $('btn-sim');
-  btn.disabled = true; $('btn-sim-label').textContent = 'Simulando…';
+  btn.disabled = true; $('btn-sim-label').textContent = 'Processando…';
   setTimeout(() => {
     const t0 = performance.now();
     const R = simular(H, S);
     ultimo = { H, R, o: { ...S }, cart, ms: performance.now() - t0 };
     mostrarResultado();
-    btn.disabled = false; $('btn-sim-label').textContent = 'Simular de novo';
-    if (rolar) $('res').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    btn.disabled = false; $('btn-sim-label').textContent = 'Rodar novamente';
+    if (rolar && window.innerWidth < 1000) $('res').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, 30);
 }
 
 // ---------------------------------------------------------------- resultado
 function mostrarResultado() {
-  const { H, R, o, cart } = ultimo;
-  $('res').hidden = false;
-  const termo = o.real ? 'em dinheiro de hoje' : 'em valores da época';
+  const { H, R, o } = ultimo;
   const invFinal = R.inv[R.P - 1];
-  $('r-k').textContent = `Em ${o.anos} ${o.anos === 1 ? 'ano' : 'anos'}, no futuro do meio (${termo})`;
-  $('r-med').textContent = brl(R.q(0.5));
-  $('r-faixa').textContent = `8 em cada 10 futuros terminaram entre ${curto(R.q(0.1))} e ${curto(R.q(0.9))}.`;
-  $('r-p10').textContent = curto(R.q(0.1));
-  $('r-inv').textContent = curto(invFinal);
-  $('r-p90').textContent = curto(R.q(0.9));
+  const base = o.real ? 'R$ de hoje' : 'R$ nominais';
+  $('runline').innerHTML = [
+    ['Cenários', R.nSim.toLocaleString('pt-BR')],
+    ['Horizonte', `${R.N} meses`],
+    ['Janela', `${rotulo(H.ini)}–${rotulo(H.fim)} (${H.meses.length} m)`],
+    ['Reamostragem', o.bloco > 1 ? `blocos de ${o.bloco} m` : 'mensal'],
+    ['Base', o.real ? 'real (IPCA)' : 'nominal'],
+  ].map(([k, v]) => `<span>${k}: <b>${v}</b></span>`).join('');
 
-  const tom = (p, bomSeAlto) => (bomSeAlto ? p >= 0.6 : p <= 0.1) ? 'good' : (bomSeAlto ? p < 0.4 : p > 0.25) ? 'bad' : 'mid';
-  const odds = [
-    { v: R.pPerde, t: o.real ? 'de terminar com menos do que investiu (já descontada a inflação)' : 'de terminar com menos do que investiu', c: tom(R.pPerde, false) },
-    { v: R.pCdi, t: 'de ganhar do CDI com os mesmos aportes', c: tom(R.pCdi, true) },
-  ];
-  if (R.pMeta !== null) odds.push({ v: R.pMeta, t: `de chegar na meta de ${curto(o.meta)}`, c: tom(R.pMeta, true) });
-  $('odds').innerHTML = odds.map((x) => `<div class="odd ${x.c}"><b>${pct(x.v, 0)}</b><span>chance ${esc(x.t)}</span></div>`).join('')
-    + `<div class="odd"><b>${curto(R.q(0.5) * 0.005)}<small style="font-size:13px;font-weight:700">/mês</small></b><span>de renda, se a mediana render 0,5% ao mês</span></div>`;
+  const cor = (p, bomSeAlto) => (bomSeAlto ? p >= 0.6 : p <= 0.1) ? 'pos' : (bomSeAlto ? p < 0.4 : p > 0.25) ? 'neg' : 'amb';
+  const ra = R.qa(0.5), dd = R.qd(0.5);
+  const kpi = (k, v, s, cls = '', extra = '') => `<div class="kpi ${extra}"><span class="k">${k}</span><span class="v ${cls}">${v}</span><span class="s">${s}</span></div>`;
+  $('kpis').innerHTML =
+    kpi('Patrimônio mediano (P50)', brl(R.q(0.5)), `em ${o.anos} ${o.anos === 1 ? 'ano' : 'anos'} · ${base}`, '', 'lead') +
+    kpi('Intervalo P10–P90', `${curto(R.q(0.1))} – ${curto(R.q(0.9))}`, '80% dos cenários', '', 'lead sm') +
+    kpi('Total aportado', curto(invFinal), o.real ? 'em R$ de hoje' : 'nominal') +
+    kpi('Retorno a.a. (P50)', pct(ra), o.real ? 'acima do IPCA' : 'nominal', ra < 0 ? 'neg' : '') +
+    kpi('Queda máxima (P50)', pct(dd, 0), `pior 10%: ${pct(R.qd(0.1), 0)}`, 'neg') +
+    kpi('Prob. de perda', pct(R.pPerde, 0), o.real ? 'abaixo do aportado, real' : 'abaixo do aportado', cor(R.pPerde, false)) +
+    kpi('Prob. de superar o CDI', pct(R.pCdi, 0), 'mesmos aportes', cor(R.pCdi, true)) +
+    kpi('Mesmo plano no CDI', curto(R.cdi[R.P - 1]), 'média dos cenários, sem IR') +
+    kpi('Volatilidade a.a.', pct(estatisticas(Array.from(H.port)).vol), 'da carteira, na janela') +
+    (R.pMeta !== null ? kpi('Prob. de atingir a meta', pct(R.pMeta, 0), `meta ${curto(o.meta)}`, cor(R.pMeta, true))
+      : kpi('Prob. de atingir a meta', '—', 'defina uma meta'));
 
-  $('fan-note').textContent = `${R.nSim.toLocaleString('pt-BR')} futuros`;
+  $('fan-meta').textContent = base;
   desenharLeque();
   desenharHistograma();
   desenharTabelas();
@@ -374,29 +398,24 @@ function mostrarResultado() {
 
 function desenharTabelas() {
   const { H, R, o, cart } = ultimo;
-  const linhas = [
-    ['Muito pessimista', 0.05], ['Pessimista', 0.1], ['Abaixo do meio', 0.25], ['Mediana', 0.5],
-    ['Acima do meio', 0.75], ['Otimista', 0.9], ['Muito otimista', 0.95],
-  ];
-  $('tbl-pct').innerHTML = `<thead><tr><th>Cenário</th><th>Valor final</th><th>Ao ano</th></tr></thead><tbody>` +
+  const linhas = [['P5', 0.05], ['P10', 0.1], ['P25', 0.25], ['P50', 0.5], ['P75', 0.75], ['P90', 0.9], ['P95', 0.95]];
+  $('tbl-pct').innerHTML = `<thead><tr><th>Pctl.</th><th>Patrimônio (R$)</th><th>Ret. a.a.</th><th>Queda máx.</th></tr></thead><tbody>` +
     linhas.map(([n, q]) => {
-      const a = R.qa(q);
-      return `<tr class="${q === 0.5 ? 'med' : ''}"><td>${n}<small class="sub">${q === 0.5 ? 'metade abaixo, metade acima' : `${pct(q, 0)} dos futuros abaixo`}</small></td><td>${brl(R.q(q))}</td><td class="${a < 0 ? 'neg' : 'pos'}">${pct(a)}</td></tr>`;
+      const a = R.qa(q), d = R.qd(1 - q);
+      return `<tr class="${q === 0.5 ? 'tot' : ''}"><td class="t">${n}</td><td>${Math.round(R.q(q)).toLocaleString('pt-BR')}</td><td class="${a < 0 ? 'neg' : ''}">${pct(a)}</td><td>${pct(d, 0)}</td></tr>`;
     }).join('') + '</tbody>';
-  $('pct-help').textContent = `"Ao ano" é quanto a carteira rendeu por ano em cada cenário${o.real ? ', acima da inflação' : ''}, sem contar os aportes. Cada coluna foi ordenada separadamente.`;
+  $('pct-meta').textContent = o.real ? 'R$ de hoje' : 'R$ nominais';
+  $('pct-help').textContent = `Cada coluna é ordenada separadamente. Retorno a.a. é o da carteira${o.real ? ', acima do IPCA' : ''}, sem efeito dos aportes. Queda máxima é a maior perda do topo ao fundo; nos percentis altos aparecem as menores quedas.`;
 
-  $('hist-range').textContent = `${H.meses.length} meses`;
   const linhasAtivos = cart.map((c, j) => ({ t: c.t, p: H.pesos[j], e: estatisticas(H.porAtivo[j]) }));
   const eCart = estatisticas(Array.from(H.port)), eCdi = estatisticas(Array.from(H.cdi)), eIpca = estatisticas(Array.from(H.ipca));
-  const linha = (nome, peso, e, cls = '') => `<tr class="${cls}"><td>${nome}</td><td>${peso}</td><td class="${e.anual < 0 ? 'neg' : 'pos'}">${pct(e.anual)}</td><td>${pct(e.vol, 0)}</td><td class="${e.pior < -0.005 ? 'neg' : ''}">${pct(e.pior, 0)}</td></tr>`;
-  $('tbl-ativos').innerHTML = `<thead><tr><th>Ativo</th><th>Peso</th><th>Ao ano</th><th>Oscila</th><th>Pior mês</th></tr></thead><tbody>` +
-    linhasAtivos.map((x) => linha(esc(x.t), pct(x.p, 0), x.e)).join('') +
-    linha('Carteira', '100%', eCart, 'med') + linha('CDI', '—', eCdi) + linha('IPCA', '—', eIpca) + '</tbody>';
-  const lim = H.limitante ? ` A janela começa em ${rotulo(H.ini)} porque é quando começa o histórico de ${H.limitante}.` : '';
-  $('hist-note').textContent = '';
-  ultimo.notaJanela = `Sorteio feito com os meses de ${rotulo(H.ini)} a ${rotulo(H.fim)}.${lim}`;
-  $('tbl-ativos').closest('.card').querySelector('.help').textContent =
-    `${ultimo.notaJanela} Valores sem descontar a inflação, com proventos reinvestidos (JCP líquido de 15% de IR). "Oscila" é a volatilidade anual: quanto maior, mais larga fica a faixa de futuros.`;
+  const linha = (nome, peso, e, cls = '') => `<tr class="${cls}"><td class="t">${nome}</td><td>${peso}</td><td class="${e.anual < 0 ? 'neg' : ''}">${pct(e.anual)}</td><td>${pct(e.vol)}</td><td class="${e.pior < -0.005 ? 'neg' : ''}">${pct(e.pior)}</td></tr>`;
+  $('tbl-ativos').innerHTML = `<thead><tr><th>Ativo</th><th>Peso</th><th>Ret. a.a.</th><th>Vol. a.a.</th><th>Pior mês</th></tr></thead><tbody>` +
+    linhasAtivos.map((x) => linha(`<span class="tk">${esc(x.t)}</span>`, pct(x.p, 1), x.e)).join('') +
+    linha('Carteira', '100,0%', eCart, 'tot') + linha('CDI', '—', eCdi, 'ref') + linha('IPCA', '—', eIpca, 'ref') + '</tbody>';
+  $('win-meta').textContent = `${rotulo(H.ini)}–${rotulo(H.fim)} · ${H.meses.length} m`;
+  const lim = H.limitante ? ` A janela começa em ${rotulo(H.ini)}, início do histórico de ${H.limitante}.` : '';
+  $('win-help').textContent = `Valores nominais com proventos reinvestidos (JCP líquido de 15% de IR), calculados só nos meses usados no sorteio.${lim}`;
 }
 
 // ---------------------------------------------------------------- gráficos (SVG feito à mão)
@@ -427,12 +446,12 @@ function desenharLeque() {
   let svg = `<svg viewBox="0 0 ${W} ${Hh}" role="img" aria-label="Leque de futuros: mediana e faixas de percentis ao longo de ${o.anos} anos">`;
   svg += `<defs><clipPath id="clip"><rect x="${ml}" y="${mt - 4}" width="${iw}" height="${ih + 4}"/></clipPath></defs>`;
   for (let v = 0; v <= ymax + 1e-6; v += passoY) {
-    svg += `<line x1="${ml}" x2="${W - mr}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" stroke-width="1"/>`;
+    svg += `<line x1="${ml}" x2="${W - mr}" y1="${y(v)}" y2="${y(v)}" stroke="var(--rule)" stroke-width="1"/>`;
     svg += `<text x="${ml - 8}" y="${y(v) + 4}" text-anchor="end">${esc(curtoEixo(v))}</text>`;
   }
   const passoAno = o.anos <= 6 ? 1 : o.anos <= 12 ? 2 : o.anos <= 25 ? 5 : 10;
   for (let a = 0; a <= o.anos; a += passoAno) {
-    svg += `<text x="${x(a * 12)}" y="${Hh - 6}" text-anchor="middle">${a === 0 ? 'hoje' : a + (a === passoAno && a < 2 ? ' ano' : 'a')}</text>`;
+    svg += `<text x="${x(a * 12)}" y="${Hh - 6}" text-anchor="middle">${a === 0 ? 'hoje' : `ano ${a}`}</text>`;
   }
   svg += `<g clip-path="url(#clip)">`;
   // alguns futuros sorteados, para mostrar o que é cada "futuro"
@@ -441,14 +460,14 @@ function desenharLeque() {
     const arr = R.caminhos.subarray(s * R.P, (s + 1) * R.P);
     svg += `<polyline points="${linhaPts(Array.from(arr))}" fill="none" stroke="var(--path)" stroke-width="1"/>`;
   }
-  svg += `<polygon points="${banda(p10, p90)}" fill="var(--fan-90)"/>`;
-  svg += `<polygon points="${banda(p25, p75)}" fill="var(--fan-50)"/>`;
-  svg += `<polyline points="${linhaPts(R.inv)}" fill="none" stroke="var(--text-2)" stroke-width="1.5" stroke-dasharray="2 4"/>`;
-  svg += `<polyline points="${linhaPts(R.cdi)}" fill="none" stroke="var(--blue)" stroke-width="2" stroke-dasharray="6 4"/>`;
-  svg += `<polyline points="${linhaPts(Array.from(p50))}" fill="none" stroke="var(--fan-line)" stroke-width="2.5"/>`;
+  svg += `<polygon points="${banda(p10, p90)}" fill="var(--band-90)"/>`;
+  svg += `<polygon points="${banda(p25, p75)}" fill="var(--band-50)"/>`;
+  svg += `<polyline points="${linhaPts(R.inv)}" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="2 4"/>`;
+  svg += `<polyline points="${linhaPts(R.cdi)}" fill="none" stroke="var(--cdi)" stroke-width="1.75" stroke-dasharray="6 4"/>`;
+  svg += `<polyline points="${linhaPts(Array.from(p50))}" fill="none" stroke="var(--median)" stroke-width="2.25"/>`;
   svg += `</g>`;
-  svg += `<circle cx="${x(R.N)}" cy="${y(p50[R.P - 1])}" r="4" fill="var(--fan-line)"/>`;
-  svg += `<g id="cursor" style="display:none"><line id="cur-l" y1="${mt}" y2="${mt + ih}" stroke="var(--text-2)" stroke-width="1"/><circle id="cur-c" r="5" fill="var(--fan-line)" stroke="var(--bg)" stroke-width="2"/></g>`;
+  svg += `<circle cx="${x(R.N)}" cy="${y(p50[R.P - 1])}" r="3.5" fill="var(--median)"/>`;
+  svg += `<g id="cursor" style="display:none"><line id="cur-l" y1="${mt}" y2="${mt + ih}" stroke="var(--rule-2)" stroke-width="1"/><circle id="cur-c" r="4.5" fill="var(--median)" stroke="var(--panel)" stroke-width="2"/></g>`;
   svg += `<rect x="${ml}" y="${mt}" width="${iw}" height="${ih}" fill="transparent" id="hit"/>`;
   svg += `</svg>`;
   box.innerHTML = svg;
@@ -465,8 +484,8 @@ function desenharLeque() {
     el.querySelector('#cur-l').setAttribute('x1', cx); el.querySelector('#cur-l').setAttribute('x2', cx);
     el.querySelector('#cur-c').setAttribute('cx', cx); el.querySelector('#cur-c').setAttribute('cy', y(p50[k]));
     const mes = R.pontos[k], anos = Math.floor(mes / 12), resto = mes % 12;
-    const quando = mes === 0 ? 'Hoje' : `Em ${anos ? `${anos} ${anos === 1 ? 'ano' : 'anos'}` : ''}${anos && resto ? ' e ' : ''}${resto ? `${resto} ${resto === 1 ? 'mês' : 'meses'}` : ''}`;
-    $('readout').innerHTML = `<b>${quando}:</b> mediana <b>${brl(p50[k])}</b> · 8 em cada 10 entre ${curto(p10[k])} e ${curto(p90[k])} · investido ${curto(R.inv[k])} · no CDI ${curto(R.cdi[k])}`;
+    const quando = mes === 0 ? 'Hoje' : `${anos ? `${anos} ${anos === 1 ? 'ano' : 'anos'}` : ''}${anos && resto ? ' e ' : ''}${resto ? `${resto} ${resto === 1 ? 'mês' : 'meses'}` : ''}`;
+    $('readout').innerHTML = `<b>${quando}</b> · P50 <b>${curto(p50[k])}</b> · P10–P90 ${curto(p10[k])}–${curto(p90[k])} · aportado ${curto(R.inv[k])} · CDI ${curto(R.cdi[k])}`;
   };
   el.addEventListener('pointerdown', mover);
   el.addEventListener('pointermove', mover);
@@ -497,10 +516,10 @@ function desenharHistograma() {
   let svg = `<svg viewBox="0 0 ${W} ${Hh}" role="img" aria-label="Distribuição do valor final">`;
   cont.forEach((c, i) => {
     const v0 = lo + i * larg, bh = (c / cmax) * ih;
-    const cor = v0 + larg / 2 < inv ? 'var(--out)' : 'var(--in)';
-    svg += `<rect x="${(x(v0) + 0.5).toFixed(1)}" y="${(mt + ih - bh).toFixed(1)}" width="${Math.max(1, iw / nb - 1.5).toFixed(1)}" height="${bh.toFixed(1)}" rx="2" fill="${cor}" opacity="0.8"/>`;
+    const cor = v0 + larg / 2 < inv ? 'var(--neg)' : 'var(--accent)';
+    svg += `<rect x="${(x(v0) + 0.5).toFixed(1)}" y="${(mt + ih - bh).toFixed(1)}" width="${Math.max(1, iw / nb - 1.5).toFixed(1)}" height="${bh.toFixed(1)}" rx="2" fill="${cor}" opacity="0.85"/>`;
   });
-  svg += `<line x1="${ml}" x2="${W - mr}" y1="${mt + ih}" y2="${mt + ih}" stroke="var(--line-2)"/>`;
+  svg += `<line x1="${ml}" x2="${W - mr}" y1="${mt + ih}" y2="${mt + ih}" stroke="var(--rule-2)"/>`;
   const marca = (v, cor, txt, ancora) => {
     if (v < lo || v > hi) return '';
     const xx = x(v);
@@ -508,16 +527,16 @@ function desenharHistograma() {
     return `<line x1="${xx}" x2="${xx}" y1="${mt - 2}" y2="${mt + ih}" stroke="${cor}" stroke-width="2" stroke-dasharray="4 3"/>` +
       `<text x="${xx}" y="${mt - 5}" text-anchor="${a}" style="fill:${cor}">${esc(txt)}</text>`;
   };
-  svg += marca(R.q(0.5), 'var(--fan-line)', 'mediana');
-  if (Math.abs(x(inv) - x(R.q(0.5))) > 60) svg += marca(inv, 'var(--text-2)', 'investido');
-  if (o.meta > 0 && Math.abs(x(o.meta) - x(R.q(0.5))) > 50) svg += marca(o.meta, 'var(--warn)', 'meta');
+  svg += marca(R.q(0.5), 'var(--ink)', 'P50');
+  if (Math.abs(x(inv) - x(R.q(0.5))) > 60) svg += marca(inv, 'var(--muted)', 'aportado');
+  if (o.meta > 0 && Math.abs(x(o.meta) - x(R.q(0.5))) > 50) svg += marca(o.meta, 'var(--amber)', 'meta');
   svg += `<text x="${ml}" y="${Hh - 6}" text-anchor="start">${esc(curtoEixo(lo))}</text>`;
-  svg += `<text x="${W / 2}" y="${Hh - 6}" text-anchor="middle">mediana ${esc(curtoEixo(R.q(0.5)))}</text>`;
+  svg += `<text x="${W / 2}" y="${Hh - 6}" text-anchor="middle">P50 ${esc(curtoEixo(R.q(0.5)))}</text>`;
   svg += `<text x="${W - mr}" y="${Hh - 6}" text-anchor="end">${esc(curtoEixo(hi))}</text>`;
   svg += `</svg>`;
   box.innerHTML = svg;
-  $('hist-note').textContent = '';
-  $('hist-help').textContent = `Cada barra junta futuros que terminaram com valores parecidos. Em vermelho, os que terminaram abaixo do que foi investido. Os 1% mais extremos de cada lado ficaram de fora.`;
+  $('hist-meta').textContent = `P1–P99 · ${nb} faixas`;
+  $('hist-help').textContent = `Frequência dos cenários por patrimônio final. Em vermelho, os cenários que terminaram abaixo do total aportado. Os 1% extremos de cada lado ficam fora do gráfico.`;
 }
 
 let redim;
@@ -531,6 +550,7 @@ window.addEventListener('resize', () => {
   let fimDados = 0;
   for (const t in D.series) fimDados = Math.max(fimDados, idx(D.series[t].inicio) + D.series[t].r.length - 1);
   const [y, m, d] = D.atualizado.split('-');
+  $('stamp').textContent = `Base ${rotulo(fimDados)}`;
   $('foot').textContent = `${D.ativos.length} ativos · dados até ${rotulo(fimDados)} (baixados em ${d}/${m}/${y}). Preços: Yahoo Finance. Proventos: Fundamentus. CDI e IPCA: Banco Central.`;
   desenharCarteira();
   rodar(false);
