@@ -1,44 +1,50 @@
 package br.bolsavillager.market;
 
 import br.bolsavillager.BolsaConfig;
-import br.bolsavillager.BolsaMod;
+import br.bolsavillager.mixin.RaidsAccessor;
 import br.bolsavillager.net.MarketSyncPayload;
+import br.bolsavillager.net.NotifyPayload;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.ChatFormatting;
-import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.HoverEvent;
-import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.npc.villager.AbstractVillager;
 import net.minecraft.world.entity.npc.villager.Villager;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.inventory.MerchantMenu;
+import net.minecraft.world.entity.raid.Raid;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.trading.MerchantOffer;
 import net.minecraft.world.level.entity.EntityTypeTest;
-import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.AABB;
 import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
-import java.util.HashMap;
+import java.util.EnumSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.WeakHashMap;
 
 /**
- * O "pregão": junta tudo o que os villagers fazem (trocas, reposições, mortes, censo) e
+ * O "pregão": junta tudo o que os villagers fazem (trocas, reposições, mortes, censo, raids) e
  * transforma em variação de preço a cada pregão ({@link BolsaConfig#sessionIntervalTicks}).
  *
  * <p>Modelo de preço (por ação, em log-retorno a cada pregão):
@@ -46,22 +52,27 @@ import java.util.UUID;
  *   r = força_dos_eventos * pressão + reversão * ln(valor_justo / preço) + ruído(σ = volatilidade)
  *   preço = preço * e^r
  * </pre>
- * O valor justo cresce com a população da profissão. A pressão vem das trocas
- * (mais esmeraldas movimentadas = alta), reposições, estoque esgotado, mortes e compras/vendas de jogadores.
- * Na virada de cada dia do Minecraft, as empresas pagam dividendos aos acionistas.
+ * Também cuida das ordens programadas, do balcão onde jogadores vendem itens às guildas,
+ * dos dividendos diários e dos avisos (que aparecem como notificação, nunca no chat).
  */
 public final class MarketEngine {
 	public static final long DAY_LENGTH = 24000L;
 	public static final double MIN_PRICE = 0.25;
 	public static final int MAX_ORDER = 64;
+	/** Distância do centro do raid em que os villagers contam como "da vila atacada". */
+	private static final double RAID_RADIUS = 96;
 
 	private static final Map<StockDef, Double> pressure = new EnumMap<>(StockDef.class);
-	/** Último terminal usado por cada jogador (para validar ordens vindas da tela do terminal). */
-	private static final Map<UUID, BlockPos> lastTerminal = new HashMap<>();
-	/** Ação do villager com quem cada jogador está negociando agora. */
-	private static final Map<UUID, StockDef> merchantStock = new HashMap<>();
 	private static final RandomSource random = RandomSource.create();
+	/** Raids acompanhados: fase (1 = em andamento, 2 = encerrado) e guildas afetadas. */
+	private static final Map<Raid, RaidWatch> raids = new WeakHashMap<>();
 	private static int tickCounter;
+	private static int raidCheckCounter;
+
+	private static final class RaidWatch {
+		int phase;
+		Set<StockDef> guilds = EnumSet.noneOf(StockDef.class);
+	}
 
 	private MarketEngine() {
 	}
@@ -69,17 +80,31 @@ public final class MarketEngine {
 	/** Limpa o estado em memória quando o servidor fecha (ex.: sair de um mundo e entrar em outro). */
 	public static void reset() {
 		pressure.clear();
-		lastTerminal.clear();
-		merchantStock.clear();
+		raids.clear();
 		tickCounter = 0;
+		raidCheckCounter = 0;
 	}
 
 	public static MarketData data(MinecraftServer server) {
 		return server.getDataStorage().computeIfAbsent(MarketData.TYPE);
 	}
 
+	/** Pressão acumulada desde o último pregão (para testes e diagnóstico). */
+	public static double pendingPressure(StockDef def) {
+		return pressure.getOrDefault(def, 0.0);
+	}
+
 	private static void addPressure(StockDef def, double amount) {
 		pressure.merge(def, amount, Double::sum);
+	}
+
+	/** Nível do efeito Herói da Vila do jogador (0 = nível I), ou -1 se não tiver. */
+	public static int heroLevel(@Nullable Player player) {
+		if (player == null) {
+			return -1;
+		}
+		MobEffectInstance effect = player.getEffect(MobEffects.HERO_OF_THE_VILLAGE);
+		return effect == null ? -1 : effect.getAmplifier();
 	}
 
 	// ---------------------------------------------------------------------------------------------
@@ -170,10 +195,79 @@ public final class MarketEngine {
 	}
 
 	// ---------------------------------------------------------------------------------------------
-	// Pregão e dividendos
+	// Raids
+	// ---------------------------------------------------------------------------------------------
+
+	/** Acompanha os raids: começo derruba as guildas da vila, vitória dá alta, derrota derruba forte. */
+	private static void checkRaids(MinecraftServer server) {
+		BolsaConfig config = BolsaConfig.get();
+		for (ServerLevel level : server.getAllLevels()) {
+			for (Raid raid : ((RaidsAccessor) level.getRaids()).bolsavillager$getRaidMap().values()) {
+				if (raid.isStopped()) {
+					continue;
+				}
+				RaidWatch watch = raids.computeIfAbsent(raid, r -> new RaidWatch());
+				if (watch.phase == 0 && raid.hasFirstWaveSpawned()) {
+					watch.phase = 1;
+					watch.guilds = guildsNear(level, raid);
+					for (StockDef def : watch.guilds) {
+						addPressure(def, -config.raidStartShock);
+					}
+					notifyLevel(level, NotifyPayload.RAID, Component.translatable("bolsavillager.raid.start.title"),
+							Component.translatable("bolsavillager.raid.start.message"));
+					syncEveryone(server);
+				}
+				if (watch.phase < 2 && raid.isOver()) {
+					if (watch.phase == 0) {
+						watch.guilds = guildsNear(level, raid);
+					}
+					watch.phase = 2;
+					boolean victory = raid.isVictory();
+					for (StockDef def : watch.guilds) {
+						addPressure(def, victory ? config.raidVictoryRally : -config.raidLossCrash);
+					}
+					notifyLevel(level, NotifyPayload.RAID,
+							Component.translatable(victory ? "bolsavillager.raid.victory.title" : "bolsavillager.raid.loss.title"),
+							Component.translatable(victory ? "bolsavillager.raid.victory.message" : "bolsavillager.raid.loss.message"));
+					syncEveryone(server);
+				}
+			}
+		}
+	}
+
+	private static Set<StockDef> guildsNear(ServerLevel level, Raid raid) {
+		Set<StockDef> guilds = EnumSet.noneOf(StockDef.class);
+		AABB area = new AABB(raid.getCenter()).inflate(RAID_RADIUS);
+		for (Villager v : level.getEntitiesOfClass(Villager.class, area, Villager::isAlive)) {
+			StockDef def = StockDef.forEntity(v);
+			if (def != null) {
+				guilds.add(def);
+			}
+		}
+		if (guilds.isEmpty()) {
+			guilds.addAll(EnumSet.complementOf(EnumSet.of(StockDef.WANDERING_TRADER)));
+		}
+		return guilds;
+	}
+
+	public static boolean raidOngoing() {
+		for (Map.Entry<Raid, RaidWatch> e : raids.entrySet()) {
+			if (e.getValue().phase == 1 && !e.getKey().isOver() && !e.getKey().isStopped()) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// ---------------------------------------------------------------------------------------------
+	// Pregão, ordens programadas e dividendos
 	// ---------------------------------------------------------------------------------------------
 
 	public static void onServerTick(MinecraftServer server) {
+		if (++raidCheckCounter >= 20) {
+			raidCheckCounter = 0;
+			checkRaids(server);
+		}
 		if (++tickCounter < BolsaConfig.get().sessionIntervalTicks) {
 			return;
 		}
@@ -204,6 +298,15 @@ public final class MarketEngine {
 			StockDef def = StockDef.byId(id);
 			if (def != null) {
 				population.merge(def, 1, Integer::sum);
+			}
+		}
+
+		// Raid em andamento: medo contínuo nas guildas da vila atacada.
+		for (Map.Entry<Raid, RaidWatch> e : raids.entrySet()) {
+			if (e.getValue().phase == 1 && !e.getKey().isOver()) {
+				for (StockDef def : e.getValue().guilds) {
+					addPressure(def, -config.raidOngoingPressure);
+				}
 			}
 		}
 
@@ -248,15 +351,64 @@ public final class MarketEngine {
 				}
 			}
 		}
+		if (newDay) {
+			data.soldToday().clear();
+		}
 		pressure.clear();
 		data.day = day;
+		processOrders(server, data);
 		data.setDirty();
 		syncEveryone(server);
 	}
 
+	/** Executa as ordens programadas cujo preço-alvo foi atingido (jogador online ou não). */
+	private static void processOrders(MinecraftServer server, MarketData data) {
+		MarketRules rules = MarketRules.current();
+		for (Map.Entry<UUID, Account> entry : data.accounts().entrySet()) {
+			Account account = entry.getValue();
+			ServerPlayer player = server.getPlayerList().getPlayer(entry.getKey());
+			int hero = heroLevel(player);
+			Iterator<LimitOrder> it = account.orders.iterator();
+			while (it.hasNext()) {
+				LimitOrder order = it.next();
+				StockDef def = order.stock();
+				if (def == null) {
+					it.remove();
+					continue;
+				}
+				StockState state = data.stock(def);
+				if (!order.type().triggered(state.price, order.target())) {
+					continue;
+				}
+				double price = state.price;
+				if (order.type().isBuy()) {
+					double cost = rules.buyCost(price, order.quantity(), hero);
+					if (account.balance + 1e-9 < cost) {
+						continue; // sem saldo: a ordem espera
+					}
+					buy(account, state, def, order.quantity(), cost, rules);
+					it.remove();
+					notify(player, NotifyPayload.ORDER, Component.translatable("bolsavillager.order.done.title"),
+							Component.translatable("bolsavillager.order.done.buy", order.quantity(), def.ticker, fmt(cost)));
+				} else {
+					int qty = Math.min(order.quantity(), account.sharesOf(def));
+					it.remove();
+					if (qty <= 0) {
+						notify(player, NotifyPayload.ORDER, Component.translatable("bolsavillager.order.cancelled.title"),
+								Component.translatable("bolsavillager.order.cancelled.no_shares", def.ticker));
+						continue;
+					}
+					double proceeds = sell(account, state, def, qty, rules, hero);
+					notify(player, NotifyPayload.ORDER, Component.translatable("bolsavillager.order.done.title"),
+							Component.translatable("bolsavillager.order.done.sell", qty, def.ticker, fmt(proceeds)));
+				}
+			}
+		}
+	}
+
 	/**
-	 * Paga os dividendos do dia {@code day} a todos os acionistas (online ou não) e avisa quem está online.
-	 * Retorna o total distribuído.
+	 * Paga os dividendos do dia {@code day} a todos os acionistas (online ou não) e avisa quem está online
+	 * com uma notificação. Retorna o total distribuído.
 	 */
 	public static double payDividends(MinecraftServer server, MarketData data, long day) {
 		MarketRules rules = MarketRules.current();
@@ -273,17 +425,14 @@ public final class MarketEngine {
 		for (Map.Entry<UUID, Account> entry : data.accounts().entrySet()) {
 			Account account = entry.getValue();
 			double total = 0;
-			MutableComponent breakdown = Component.empty();
+			StockDef best = null;
+			double bestAmount = 0;
 			for (StockDef def : StockDef.values()) {
-				int shares = account.sharesOf(def);
-				double amount = shares * perShare.get(def);
-				if (amount > 0) {
-					total += amount;
-					if (!breakdown.getSiblings().isEmpty()) {
-						breakdown.append("\n");
-					}
-					breakdown.append(Component.translatable("bolsavillager.msg.dividend_line",
-							def.ticker, shares, fmt(perShare.get(def)), fmt(amount)));
+				double amount = account.sharesOf(def) * perShare.get(def);
+				total += amount;
+				if (amount > bestAmount) {
+					bestAmount = amount;
+					best = def;
 				}
 			}
 			if (total <= 0) {
@@ -295,11 +444,9 @@ public final class MarketEngine {
 			account.totalDividends += total;
 			distributed += total;
 
-			ServerPlayer player = server.getPlayerList().getPlayer(entry.getKey());
-			if (player != null) {
-				player.sendSystemMessage(Component.translatable("bolsavillager.msg.dividends", fmt(total))
-						.withStyle(style -> style.withColor(ChatFormatting.GOLD).withHoverEvent(new HoverEvent.ShowText(breakdown))));
-			}
+			notify(server.getPlayerList().getPlayer(entry.getKey()), NotifyPayload.DIVIDENDS,
+					Component.translatable("bolsavillager.dividends.title", fmt(total)),
+					Component.translatable("bolsavillager.dividends.message", best.ticker, fmt(bestAmount)));
 		}
 		data.setDirty();
 		return distributed;
@@ -309,73 +456,66 @@ public final class MarketEngine {
 	// Jogadores
 	// ---------------------------------------------------------------------------------------------
 
-	public static void sync(ServerPlayer player, boolean openTerminal) {
+	public static void sync(ServerPlayer player) {
 		if (ServerPlayNetworking.canSend(player, MarketSyncPayload.TYPE)) {
 			MarketData data = data(player.level().getServer());
 			ServerPlayNetworking.send(player, MarketSyncPayload.of(data, data.account(player.getUUID()),
-					MarketRules.current(), openTerminal));
+					MarketRules.current(), raidOngoing()));
 		}
 	}
 
 	public static void syncEveryone(MinecraftServer server) {
 		for (ServerPlayer p : server.getPlayerList().getPlayers()) {
-			sync(p, false);
+			sync(p);
 		}
 	}
 
-	public static void onTerminalUsed(ServerPlayer player, BlockPos pos) {
-		lastTerminal.put(player.getUUID(), pos.immutable());
-		sync(player, true);
+	private static void notify(@Nullable ServerPlayer player, int kind, Component title, Component message) {
+		if (player != null && ServerPlayNetworking.canSend(player, NotifyPayload.TYPE)) {
+			ServerPlayNetworking.send(player, new NotifyPayload(kind, title, message));
+		}
 	}
 
-	public static void onMerchantInteract(Player player, Entity entity) {
-		StockDef def = StockDef.forEntity(entity);
-		if (def != null) {
-			merchantStock.put(player.getUUID(), def);
+	private static void notifyLevel(ServerLevel level, int kind, Component title, Component message) {
+		for (ServerPlayer p : level.players()) {
+			notify(p, kind, title, message);
+		}
+	}
+
+	/** Mensagem curta na barra acima da hotbar (nada de chat). */
+	private static void feedback(ServerPlayer player, Component message) {
+		player.sendSystemMessage(message, true);
+	}
+
+	private static void buy(Account account, StockState state, StockDef def, int qty, double cost, MarketRules rules) {
+		account.balance -= cost;
+		account.shares.merge(def.id, qty, Integer::sum);
+		account.costBasis.merge(def.id, cost, Double::sum);
+		state.price *= Math.exp(rules.impactPerShare() * qty);
+	}
+
+	private static double sell(Account account, StockState state, StockDef def, int qty, MarketRules rules, int hero) {
+		int owned = account.sharesOf(def);
+		double proceeds = rules.sellProceeds(state.price, qty, hero);
+		double basis = account.costBasis.getOrDefault(def.id, 0.0);
+		double basisSold = basis * qty / owned;
+		account.balance += proceeds;
+		if (owned == qty) {
+			account.shares.remove(def.id);
+			account.costBasis.remove(def.id);
 		} else {
-			merchantStock.remove(player.getUUID());
+			account.shares.put(def.id, owned - qty);
+			account.costBasis.put(def.id, basis - basisSold);
 		}
-	}
-
-	public static void onDisconnect(ServerPlayer player) {
-		lastTerminal.remove(player.getUUID());
-		merchantStock.remove(player.getUUID());
-	}
-
-	/** Ordens vindas das telas: precisa estar na tela de trocas da guilda certa ou perto do terminal aberto. */
-	private static boolean canOperateFromScreen(ServerPlayer player, StockDef def) {
-		if (player.containerMenu instanceof MerchantMenu) {
-			return merchantStock.get(player.getUUID()) == def;
-		}
-		BlockPos pos = lastTerminal.get(player.getUUID());
-		return pos != null
-				&& player.level().getBlockState(pos).is(BolsaMod.TERMINAL)
-				&& player.position().closerThan(Vec3.atCenterOf(pos), BolsaConfig.get().terminalRange);
-	}
-
-	/** Ordens vindas do chat: perto de qualquer Terminal da Bolsa (ou em qualquer lugar, se a config deixar). */
-	public static boolean canTradeFromChat(ServerPlayer player) {
-		BolsaConfig config = BolsaConfig.get();
-		if (config.chatTradingAnywhere) {
-			return true;
-		}
-		int radius = Math.min(config.terminalRange, 10);
-		return BlockPos.findClosestMatch(player.blockPosition(), radius, radius,
-				pos -> player.level().getBlockState(pos).is(BolsaMod.TERMINAL)).isPresent();
-	}
-
-	/** Ordem vinda de uma tela (terminal ou painel do villager). */
-	public static void trade(ServerPlayer player, StockDef def, int quantity) {
-		if (canOperateFromScreen(player, def)) {
-			executeTrade(player, def, quantity, true);
-		}
+		state.price = Math.max(MIN_PRICE, state.price * Math.exp(-rules.impactPerShare() * qty));
+		return proceeds;
 	}
 
 	/**
-	 * Executa uma ordem: quantity > 0 compra, quantity < 0 vende. A confirmação vai para a barra de ação
-	 * (telas) ou para o chat (comando). Retorna se a ordem foi executada.
+	 * Compra/venda imediata de ações: quantity > 0 compra, quantity < 0 vende.
+	 * Na compra, se o saldo não bastar, as esmeraldas saem da mochila. Retorna se executou.
 	 */
-	public static boolean executeTrade(ServerPlayer player, StockDef def, int quantity, boolean actionBar) {
+	public static boolean executeTrade(ServerPlayer player, StockDef def, int quantity) {
 		if (quantity == 0 || Math.abs(quantity) > MAX_ORDER) {
 			return false;
 		}
@@ -384,54 +524,86 @@ public final class MarketEngine {
 		MarketData data = data(server);
 		StockState state = data.stock(def);
 		Account account = data.account(player.getUUID());
+		int hero = heroLevel(player);
 		int qty = Math.abs(quantity);
 
 		if (quantity > 0) {
-			double cost = rules.buyCost(state.price, qty);
+			double cost = rules.buyCost(state.price, qty, hero);
 			if (account.balance < cost) {
 				int needed = (int) Math.ceil(cost - account.balance - 1e-9);
 				if (countEmeralds(player) < needed) {
-					player.sendSystemMessage(Component.translatable("bolsavillager.msg.no_funds",
-							fmt(cost), def.ticker).withStyle(ChatFormatting.RED), actionBar);
+					feedback(player, Component.translatable("bolsavillager.msg.no_funds", fmt(cost), def.ticker)
+							.withStyle(ChatFormatting.RED));
 					return false;
 				}
 				removeEmeralds(player, needed);
 				account.balance += needed;
 			}
-			account.balance -= cost;
-			account.shares.merge(def.id, qty, Integer::sum);
-			account.costBasis.merge(def.id, cost, Double::sum);
-			// Impacto de mercado da ordem.
-			state.price *= Math.exp(rules.impactPerShare() * qty);
-			player.sendSystemMessage(Component.translatable("bolsavillager.msg.bought",
-					qty, def.ticker, fmt(cost)).withStyle(ChatFormatting.GREEN), actionBar);
+			buy(account, state, def, qty, cost, rules);
+			feedback(player, Component.translatable("bolsavillager.msg.bought", qty, def.ticker, fmt(cost))
+					.withStyle(ChatFormatting.GREEN));
 		} else {
 			int owned = account.sharesOf(def);
 			if (owned < qty) {
-				player.sendSystemMessage(Component.translatable("bolsavillager.msg.no_shares", def.ticker)
-						.withStyle(ChatFormatting.RED), actionBar);
+				feedback(player, Component.translatable("bolsavillager.msg.no_shares", def.ticker).withStyle(ChatFormatting.RED));
 				return false;
 			}
-			double proceeds = rules.sellProceeds(state.price, qty);
-			double basis = account.costBasis.getOrDefault(def.id, 0.0);
-			double basisSold = basis * qty / owned;
-			account.balance += proceeds;
-			if (owned == qty) {
-				account.shares.remove(def.id);
-				account.costBasis.remove(def.id);
-			} else {
-				account.shares.put(def.id, owned - qty);
-				account.costBasis.put(def.id, basis - basisSold);
-			}
-			state.price = Math.max(MIN_PRICE, state.price * Math.exp(-rules.impactPerShare() * qty));
+			double basisSold = account.costBasis.getOrDefault(def.id, 0.0) * qty / owned;
+			double proceeds = sell(account, state, def, qty, rules, hero);
 			double profit = proceeds - basisSold;
-			player.sendSystemMessage(Component.translatable("bolsavillager.msg.sold",
-					qty, def.ticker, fmt(proceeds), (profit >= 0 ? "+" : "") + fmt(profit))
-					.withStyle(profit >= 0 ? ChatFormatting.GREEN : ChatFormatting.GOLD), actionBar);
+			feedback(player, Component.translatable("bolsavillager.msg.sold", qty, def.ticker, fmt(proceeds),
+					(profit >= 0 ? "+" : "") + fmt(profit)).withStyle(profit >= 0 ? ChatFormatting.GREEN : ChatFormatting.GOLD));
 		}
 		data.setDirty();
 		syncEveryone(server);
 		return true;
+	}
+
+	public static void placeOrder(ServerPlayer player, LimitOrder order) {
+		StockDef def = order.stock();
+		if (def == null || order.quantity() < 1 || order.quantity() > MAX_ORDER
+				|| !Double.isFinite(order.target()) || order.target() <= 0 || order.target() > 1e6) {
+			return;
+		}
+		MarketData data = data(player.level().getServer());
+		Account account = data.account(player.getUUID());
+		if (account.orders.size() >= LimitOrder.MAX_PER_PLAYER) {
+			feedback(player, Component.translatable("bolsavillager.order.too_many", LimitOrder.MAX_PER_PLAYER)
+					.withStyle(ChatFormatting.RED));
+			return;
+		}
+		account.orders.add(order);
+		data.setDirty();
+		feedback(player, Component.translatable("bolsavillager.order.created",
+				Component.translatable(order.type().translationKey()), order.quantity(), def.ticker, fmt(order.target()))
+				.withStyle(ChatFormatting.AQUA));
+		sync(player);
+	}
+
+	public static void cancelOrder(ServerPlayer player, int index) {
+		MarketData data = data(player.level().getServer());
+		Account account = data.account(player.getUUID());
+		if (index >= 0 && index < account.orders.size()) {
+			account.orders.remove(index);
+			data.setDirty();
+			sync(player);
+		}
+	}
+
+	/** Deposita esmeraldas da mochila no saldo (0 = todas). */
+	public static int deposit(ServerPlayer player, int amount) {
+		int available = countEmeralds(player);
+		int n = amount <= 0 ? available : Math.min(amount, available);
+		if (n <= 0) {
+			return 0;
+		}
+		removeEmeralds(player, n);
+		MarketData data = data(player.level().getServer());
+		data.account(player.getUUID()).balance += n;
+		data.setDirty();
+		feedback(player, Component.translatable("bolsavillager.msg.deposited", n).withStyle(ChatFormatting.GREEN));
+		sync(player);
+		return n;
 	}
 
 	/** Saca o saldo inteiro da corretora como esmeraldas. Retorna quantas esmeraldas saíram. */
@@ -454,8 +626,70 @@ public final class MarketEngine {
 			left -= n;
 		}
 		player.containerMenu.broadcastChanges();
-		sync(player, false);
+		feedback(player, Component.translatable("bolsavillager.msg.withdrew", amount).withStyle(ChatFormatting.GREEN));
+		sync(player);
 		return amount;
+	}
+
+	/**
+	 * Balcão: o jogador vende itens da mochila para uma guilda, que decide quanto paga
+	 * (prosperidade, tamanho da guilda, saturação do dia e Herói da Vila). Retorna o valor recebido.
+	 */
+	public static double sellItems(ServerPlayer player, Identifier itemId, StockDef guild, int quantity) {
+		Item item = BuiltInRegistries.ITEM.getValue(itemId);
+		if (item == null || item == Items.AIR || quantity <= 0) {
+			return 0;
+		}
+		ItemDemand.Buyer buyer = ItemDemand.buyer(new ItemStack(item), guild);
+		if (buyer == null) {
+			return 0;
+		}
+		int owned = 0;
+		for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
+			ItemStack stack = player.getInventory().getItem(i);
+			if (stack.is(item) && ItemDemand.buyer(stack, guild) != null) {
+				owned += stack.getCount();
+			}
+		}
+		int qty = Math.min(quantity, owned);
+		if (qty <= 0) {
+			return 0;
+		}
+		MinecraftServer server = player.level().getServer();
+		MarketData data = data(server);
+		StockState state = data.stock(guild);
+		MarketRules rules = MarketRules.current();
+		int sold = data.soldToday().getOrDefault(buyer.saturationKey(), 0);
+		double total = rules.saleTotal(buyer, state.price, state.population, sold, qty, heroLevel(player));
+		if (total <= 0) {
+			feedback(player, Component.translatable("bolsavillager.sale.no_villagers",
+					Component.translatable(guild.translationKey())).withStyle(ChatFormatting.RED));
+			return 0;
+		}
+
+		int left = qty;
+		for (int i = 0; i < player.getInventory().getContainerSize() && left > 0; i++) {
+			ItemStack stack = player.getInventory().getItem(i);
+			if (stack.is(item) && ItemDemand.buyer(stack, guild) != null) {
+				int take = Math.min(left, stack.getCount());
+				stack.shrink(take);
+				left -= take;
+			}
+		}
+		player.containerMenu.broadcastChanges();
+
+		Account account = data.account(player.getUUID());
+		account.balance += total;
+		data.soldToday().merge(buyer.saturationKey(), qty, Integer::sum);
+		state.volumeDay += Math.max(1, (int) Math.round(total));
+		state.tradesDay++;
+		addPressure(guild, Math.min(0.0015 * Math.max(1, total), 0.05));
+		data.setDirty();
+
+		feedback(player, Component.translatable("bolsavillager.sale.done", qty, new ItemStack(item).getHoverName(),
+				Component.translatable(guild.translationKey()), fmt(total)).withStyle(ChatFormatting.GREEN));
+		syncEveryone(server);
+		return total;
 	}
 
 	// ---------------------------------------------------------------------------------------------
@@ -490,7 +724,8 @@ public final class MarketEngine {
 		player.containerMenu.broadcastChanges();
 	}
 
+	/** Número no formato brasileiro: vírgula como separador decimal. */
 	public static String fmt(double value) {
-		return String.format(Locale.ROOT, "%.2f", value);
+		return String.format(Locale.ROOT, "%.2f", value).replace('.', ',');
 	}
 }

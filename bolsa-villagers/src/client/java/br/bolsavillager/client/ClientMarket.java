@@ -1,5 +1,7 @@
 package br.bolsavillager.client;
 
+import br.bolsavillager.market.ItemDemand;
+import br.bolsavillager.market.MarketEngine;
 import br.bolsavillager.market.MarketRules;
 import br.bolsavillager.market.StockDef;
 import br.bolsavillager.net.MarketSyncPayload;
@@ -18,6 +20,10 @@ public final class ClientMarket {
 	private static MarketSyncPayload.AccountView account = MarketSyncPayload.AccountView.EMPTY;
 	/** Regras do servidor (corretagem, impacto, efeito nas trocas, dividendos). */
 	private static MarketRules rules = MarketRules.DEFAULT;
+	private static Map<String, Integer> soldToday = Map.of();
+	private static boolean raidOngoing;
+	/** Muda a cada atualização recebida, para as telas saberem quando se redesenhar. */
+	private static int version;
 	/** Ação do último villager/mercador com quem o jogador interagiu (para o painel na tela de trocas). */
 	private static @Nullable StockDef lastMerchantStock;
 
@@ -33,6 +39,26 @@ public final class ClientMarket {
 		}
 		account = payload.account();
 		rules = payload.rules();
+		soldToday = payload.soldToday();
+		raidOngoing = payload.raidOngoing();
+		version++;
+	}
+
+	public static int version() {
+		return version;
+	}
+
+	public static int soldToday(ItemDemand.Buyer buyer) {
+		return soldToday.getOrDefault(buyer.saturationKey(), 0);
+	}
+
+	public static boolean raidOngoing() {
+		return raidOngoing;
+	}
+
+	/** Nível do Herói da Vila do jogador local (-1 = sem o efeito). */
+	public static int heroLevel() {
+		return MarketEngine.heroLevel(Minecraft.getInstance().player);
 	}
 
 	public static MarketRules rules() {
@@ -43,6 +69,8 @@ public final class ClientMarket {
 		stocks.clear();
 		account = MarketSyncPayload.AccountView.EMPTY;
 		rules = MarketRules.DEFAULT;
+		soldToday = Map.of();
+		raidOngoing = false;
 		lastMerchantStock = null;
 	}
 

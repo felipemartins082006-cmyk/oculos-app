@@ -3,7 +3,7 @@
 	"id": "bolsavillager",
 	"version": "${version}",
 	"name": "Bolsa dos Villagers",
-	"description": "Uma bolsa de valores movida pela economia dos villagers: trocas, reposições, nascimentos e mortes mexem nas cotações de cada guilda. Invista suas esmeraldas no Terminal da Bolsa ou direto na tela de trocas.",
+	"description": "Uma bolsa de valores movida pela economia dos villagers: trocas, reposições, nascimentos, mortes e raids mexem nas cotações de cada guilda. Aperte B para investir, criar ordens programadas e vender itens para as guildas.",
 	"authors": [
 		"felipemartins082006-cmyk"
 	],

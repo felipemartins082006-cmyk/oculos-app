@@ -27,12 +27,17 @@ public final class MarketUi {
 	private MarketUi() {
 	}
 
+	/** Número no formato brasileiro (vírgula decimal). */
 	public static String money(double value) {
-		return String.format(Locale.ROOT, "%.2f", value);
+		return String.format(Locale.ROOT, "%.2f", value).replace('.', ',');
 	}
 
 	public static String percent(double value) {
-		return String.format(Locale.ROOT, "%+.2f%%", value);
+		return String.format(Locale.ROOT, "%+.2f%%", value).replace('.', ',');
+	}
+
+	public static String percent0(double value) {
+		return String.format(Locale.ROOT, "%+.0f%%", value);
 	}
 
 	public static int changeColor(double change) {

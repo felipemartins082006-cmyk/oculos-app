@@ -1,113 +1,106 @@
 # Bolsa dos Villagers
 
 Mod para **Minecraft Java 26.2** (Fabric) que cria uma **bolsa de valores movida pela economia dos villagers**.
-Cada profissão é uma empresa listada. As trocas, as reposições de estoque, os nascimentos, as mortes e as
-mudanças de profissão mexem nas cotações. Você investe suas esmeraldas e lucra (ou perde) com isso.
+Cada profissão é uma empresa listada. As trocas, as reposições de estoque, os nascimentos, as mortes, as
+mudanças de profissão e as invasões (raids) mexem nas cotações. Você investe suas esmeraldas e lucra (ou
+perde) com isso, e também pode vender itens para as guildas, que decidem quanto pagam.
 
-![O terminal da bolsa](docs/terminal.png)
+Tudo em português, sem chat e sem blocos: aperte **B** em qualquer lugar.
+
+![A bolsa](docs/acoes.png)
 
 ## Como jogar
 
-- **Terminal da Bolsa**: um bloco que você fabrica e coloca no mundo. Clique com o botão direito para abrir o
-  "home broker", com todas as ações, um gráfico da última hora, sua carteira e os botões de compra e venda.
-- **Na tela de trocas do villager**: ao abrir as trocas, aparece colado à tela um painel com a ação da
-  guilda daquele villager, um mini-gráfico, o efeito da bolsa no preço das trocas e botões para comprar e
-  vender ali mesmo.
-- **Os villagers sentem o mercado**: quando a ação da guilda sobe forte, eles soltam brilhos verdes. Quando cai,
-  ficam bravos.
-- **A bolsa afeta as trocas**: uma guilda valorizada cobra mais caro pelos produtos e pede menos itens quando
-  compra de você. Uma guilda em baixa entra em promoção. O efeito máximo é de ±30%.
+Aperte **B** (dá para trocar em *Opções → Controles → Bolsa dos Villagers*). A tela tem quatro abas:
 
-| Painel lateral (tela larga) | Faixa compacta (GUI grande) |
+| Aba | O que faz |
 |---|---|
-| ![painel](docs/villager-painel.png) | ![faixa](docs/villager-faixa.png) |
+| **Ações** | Lista de empresas, gráfico da última hora, sua posição e o dividendo previsto. Escolha a quantidade (1, 2, 5, 10, 16, 32, 64 ou **Máx**) e compre ou venda na hora. **Vender tudo** zera a posição. |
+| **Ordens** | Ordens programadas, executadas sozinhas num pregão quando o preço chega no alvo, mesmo com você offline: **comprar se cair até**, **vender se subir até** (realizar lucro) e **stop: vender se cair até** (limitar prejuízo). O alvo é ajustado em ±1% e ±5%. Até 6 ordens. |
+| **Vender itens** | O balcão: escolha um item da mochila e veja quais guildas compram e quanto cada uma oferece. O preço quem decide é a guilda (veja abaixo). |
+| **Carteira** | Saldo, valor em ações, patrimônio, lucro/prejuízo, dividendos e os botões **Depositar** e **Sacar** esmeraldas. |
 
-### Receita do Terminal
+| Ordens | Vender itens | Carteira |
+|---|---|---|
+| ![ordens](docs/ordens.png) | ![vender](docs/vender-itens.png) | ![carteira](docs/carteira.png) |
 
-```
-Vidro  Vidro   Vidro          (painéis de vidro)
-Esm.   Redst.  Esm.           (esmeralda, redstone, esmeralda)
-Tábua  Atril   Tábua          (qualquer tábua, atril, qualquer tábua)
-```
+**Na tela de trocas do villager** aparece um painel com a ação da guilda dele, um mini-gráfico, o efeito da
+bolsa no preço das trocas e botões para comprar e vender ali mesmo.
 
-A receita aparece no livro de receitas assim que você pega a primeira esmeralda.
+![villager](docs/villager.png)
+
+**Avisos** (dividendos, ordem executada, invasão) aparecem como notificação no canto da tela. Confirmações de
+compra e venda aparecem em cima da barra de itens. Nada vai para o chat.
 
 ### Dinheiro
 
 - Os preços são em esmeraldas (◆), com centavos.
 - Ao comprar, o valor sai do **saldo da corretora**. Se o saldo não bastar, as esmeraldas saem direto da mochila
   e o troco fica no saldo.
-- O valor das vendas vai para o saldo. O botão **Sacar ◆** transforma o saldo em esmeraldas de verdade.
+- Vendas de ações, vendas de itens e dividendos caem no saldo. **Sacar** transforma o saldo em esmeraldas.
+- **Ordens de compra programadas** usam só o saldo (você pode estar offline), então deposite antes.
 - A corretagem é de 1% por ordem. Cada ordem também move o preço (impacto de mercado), e você paga o preço
   médio desse movimento, então comprar e vender em seguida nunca dá lucro.
 
-## Comando /bolsa
+## Balcão: vender itens para as guildas
 
-Funciona em qualquer lugar para consultar. Para comprar ou vender pelo chat, você precisa estar perto de um
-Terminal da Bolsa, a não ser que a configuração `chatTradingAnywhere` esteja ligada. Os tickers aceitam letra
-maiúscula ou minúscula, e o Tab completa.
+Cada guilda compra o que os villagers dela compram nas trocas normais: agricultores compram trigo, batata e
+abóbora; bibliotecários e cartógrafos, papel; armeiros e ferramenteiros, carvão, ferro e diamante; e assim por
+diante. Quando mais de uma guilda compra o mesmo item, a tela mostra todas, e a escolhida de início é a que
+paga melhor.
 
-| Comando | O que faz |
+Quem decide o preço é a guilda:
+
+```
+preço da 1ª unidade = (1 ÷ unidades por esmeralda nas trocas) × prosperidade × bônus do Herói
+prosperidade        = √(cotação ÷ valor justo), entre 0,6 e 1,5
+```
+
+- **Guilda valorizada paga mais**, guilda em crise paga menos.
+- **Guilda sem nenhum villager não compra nada.**
+- **A guilda enjoa:** quanto mais ela compra de um item no dia, menos paga por unidade. A barra de
+  **Interesse** mostra isso, e ela volta a 100% no dia seguinte. Guildas maiores absorvem mais.
+- Itens danificados ou encantados não entram no balcão.
+- Cada venda conta como movimento da guilda: sobe um pouco a ação, entra no volume e nas trocas do dia
+  (que aumentam os dividendos).
+
+## Raids e descontos
+
+| Situação | Efeito |
 |---|---|
-| `/bolsa` | Visão geral: índice IVIL, todas as ações e o seu saldo. Clique num ticker para ver detalhes. |
-| `/bolsa <ticker>` | Detalhes: preço, gráfico da última hora, villagers, volume, valor justo, efeito nas trocas, dividendo previsto, sua posição e botões de comprar/vender. |
-| `/bolsa carteira` | Suas ações com lucro/prejuízo, saldo, total e dividendos recebidos. |
-| `/bolsa comprar <ticker> [qtd]` | Compra de 1 a 64 ações (o padrão é 1). |
-| `/bolsa vender <ticker> [qtd]` | Vende de 1 a 64 ações. |
-| `/bolsa vender <ticker> tudo` | Vende todas as ações da empresa. |
-| `/bolsa sacar` | Transforma o saldo da corretora em esmeraldas. |
-| `/bolsa admin pregao [vezes]` | (op) Roda pregões na hora. |
-| `/bolsa admin dividendos` | (op) Paga os dividendos do dia na hora. |
-| `/bolsa admin recarregar` | (op) Relê o arquivo de configuração. |
+| Raid começa (primeira onda) | Ações das guildas da vila atacada caem 4% e aparece **⚠ INVASÃO** na tela da bolsa |
+| Raid em andamento | −1% a mais por pregão |
+| Vitória | +6% para as guildas da vila |
+| Derrota | −12% |
 
-| Visão geral | Detalhes | Carteira |
-|---|---|---|
-| ![bolsa](docs/chat-bolsa.png) | ![detalhes](docs/chat-detalhes.png) | ![carteira](docs/chat-carteira.png) |
+"Guildas da vila" são as profissões dos villagers a até 96 blocos do centro do raid.
+
+**Descontos de troca continuam funcionando.** O jogo aplica primeiro os descontos normais (reputação e Herói
+da Vila) e depois a bolsa ajusta o preço:
+
+- Guilda valorizada cobra mais caro e, quando compra de você, pede menos itens.
+- Guilda em baixa entra em promoção.
+- O efeito vai até ±30%.
+- **Quem tem o efeito Herói da Vila nunca paga a alta da bolsa**, só aproveita as promoções.
+
+O Herói da Vila também ganha vantagens na bolsa: **corretagem pela metade** e **+10% no balcão** (+5% por
+nível extra). A tela mostra uma linha dourada quando o efeito está ativo.
+
+![raid](docs/raid.png)
 
 ## Dividendos
 
 Toda vez que vira o dia no Minecraft, cada empresa paga dividendos a quem tem ações dela. O valor cai direto
-no saldo da corretora, inclusive para quem está offline. Quem está online recebe um aviso no chat, e passar o
-mouse sobre ele mostra quanto veio de cada empresa.
+no saldo, inclusive para quem está offline:
 
 ```
 dividendo por ação = preço × (0,2% + 0,8% × min(1, trocas do dia ÷ 12))
 ```
 
-- Toda guilda com pelo menos um villager paga o mínimo de 0,2% ao dia.
-- Quanto mais trocas com villagers daquela profissão no dia, maior o dividendo, até 1% ao dia com 12 trocas.
+- Toda guilda com pelo menos um villager paga o mínimo; quanto mais trocas e vendas no dia, mais ela paga.
 - O mercador ambulante só paga se teve alguma troca no dia.
-- O terminal e o `/bolsa <ticker>` mostram o dividendo previsto do dia. O terminal e o `/bolsa carteira`
-  mostram o último dividendo recebido.
-
-Com os valores padrão, comprar antes da virada do dia e vender logo depois não compensa: a corretagem de ida e
-volta (2%) é maior que o dividendo máximo (1%). Se você mudar a configuração, mantenha
-`dividendBaseYield + dividendActivityYield` abaixo de `2 × brokerageFee`.
-
-## Configuração
-
-O arquivo `config/bolsavillager.json` é criado na primeira vez que o jogo abre. Edite e use
-`/bolsa admin recarregar` (ou reinicie). Valores fora da faixa são corrigidos sozinhos. Em multiplayer vale a
-configuração do servidor: ele manda as regras para os clientes, que mostram os custos certos.
-
-| Opção | Padrão | O que faz |
-|---|---|---|
-| `sessionIntervalTicks` | 600 | Ticks entre pregões (20 = 1 s; 600 = 30 s). |
-| `volatility` | 0.006 | Ruído aleatório por pregão (0,6%). Use 0 para só os villagers mexerem no preço. |
-| `meanReversion` | 0.08 | Quanto o preço volta ao valor justo por pregão. |
-| `maxMovePerSession` | 0.15 | Variação máxima de um pregão (±15%). |
-| `eventStrength` | 1.0 | Multiplica o efeito de todos os eventos dos villagers (2 = o dobro). |
-| `villagerParticles` | true | Villagers comemoram/reclamam com partículas. |
-| `tradePriceEffect` | 0.3 | Quanto a cotação muda o preço das trocas. Use 0 para desligar. |
-| `tradePriceEffectMax` | 0.3 | Limite do efeito nas trocas (±30%). |
-| `brokerageFee` | 0.01 | Corretagem por ordem (1%). |
-| `marketImpactPerShare` | 0.004 | Quanto cada ação negociada move o preço (0,4%). |
-| `chatTradingAnywhere` | false | Permite `/bolsa comprar/vender` longe do terminal. |
-| `terminalRange` | 8 | Distância máxima (em blocos) do terminal para negociar. |
-| `dividendsEnabled` | true | Liga/desliga os dividendos. |
-| `dividendBaseYield` | 0.002 | Dividendo mínimo por dia (0,2% do preço). |
-| `dividendActivityYield` | 0.008 | Dividendo extra por movimento (até +0,8%). |
-| `dividendTradesTarget` | 12 | Trocas no dia para o dividendo extra completo. |
+- Com os valores padrão, comprar antes da virada e vender logo depois não compensa: a corretagem de ida e
+  volta (2%) é maior que o dividendo máximo (1%).
 
 ## As empresas
 
@@ -132,26 +125,58 @@ O índice **IVIL** resume o mercado inteiro e começa em 1000 pontos.
 
 ## Como o preço se move
 
-Há um pregão a cada 30 segundos (`sessionIntervalTicks`). Em cada pregão, cada ação varia assim:
+Há um pregão a cada 30 segundos. Em cada pregão, cada ação varia assim:
 
 ```
 retorno = eventStrength × pressão dos eventos + meanReversion × ln(valor justo ÷ preço) + ruído (σ = volatility)
 preço   = preço × e^retorno         (limitado a ±maxMovePerSession)
 ```
 
-- **Valor justo** = preço base × (0,5 + 0,5 × √(1 + villagers da profissão)). Uma vila com mais agricultores
-  vale mais.
-- **Pressão dos eventos** acumulada entre pregões:
-  - Jogador comprando da guilda (pagando esmeraldas): +0,4% por esmeralda.
-  - Jogador vendendo para a guilda: +0,15% por esmeralda.
-  - Uma oferta que esgota: +1% (escassez).
-  - Reposição de estoque no posto de trabalho: +0,3%.
+- **Valor justo** = preço base × (0,5 + 0,5 × √(1 + villagers da profissão)).
+- **Pressão dos eventos**, acumulada entre pregões:
+  - Jogador comprando da guilda: +0,4% por esmeralda.
+  - Jogador vendendo para a guilda (troca ou balcão): +0,15% por esmeralda.
+  - Oferta que esgota: +1%.
+  - Reposição de estoque: +0,3%.
   - Villager novo na profissão: +2,5%. Perda de um villager: −2,5%.
-  - Morte de um villager: −4,5%. Se foi morto por um jogador: −7% (escândalo).
-- O **censo** lembra dos villagers mesmo com o chunk descarregado. Só sai dele quem morre, vira zumbi ou some.
-- A abertura do dia (para a variação "hoje") é reiniciada a cada dia do Minecraft.
+  - Morte de villager: −4,5%; −7% se foi morto por um jogador.
+  - Raids: tabela acima.
+- O **censo** lembra dos villagers mesmo com o chunk descarregado.
+- Quando a ação da guilda mexe forte, os villagers soltam brilho verde (alta) ou ficam bravos (queda).
 
 Tudo fica salvo no mundo, em `data/bolsavillager_market.dat`.
+
+## Configuração
+
+O arquivo `config/bolsavillager.json` é criado na primeira vez que o jogo abre. Edite e reinicie, ou use
+`/bolsa recarregar` (só op). Valores fora da faixa são corrigidos sozinhos. Em multiplayer vale a configuração
+do servidor, que manda as regras para os clientes.
+
+| Opção | Padrão | O que faz |
+|---|---|---|
+| `sessionIntervalTicks` | 600 | Ticks entre pregões (20 = 1 s). |
+| `volatility` | 0.006 | Ruído aleatório por pregão. Use 0 para só os villagers mexerem no preço. |
+| `meanReversion` | 0.08 | Quanto o preço volta ao valor justo por pregão. |
+| `maxMovePerSession` | 0.15 | Variação máxima de um pregão. |
+| `eventStrength` | 1.0 | Multiplica o efeito de todos os eventos dos villagers. |
+| `villagerParticles` | true | Villagers comemoram/reclamam com partículas. |
+| `tradePriceEffect` | 0.3 | Quanto a cotação muda o preço das trocas. Use 0 para desligar. |
+| `tradePriceEffectMax` | 0.3 | Limite do efeito nas trocas (±30%). |
+| `brokerageFee` | 0.01 | Corretagem por ordem. |
+| `marketImpactPerShare` | 0.004 | Quanto cada ação negociada move o preço. |
+| `saleDemandPerVillager` | 6.0 | Quanto uma guilda compra no balcão por dia antes de o preço cair pela metade (em esmeraldas de referência, × raiz do nº de villagers). |
+| `raidStartShock` | 0.04 | Queda quando um raid começa. |
+| `raidOngoingPressure` | 0.01 | Queda extra por pregão durante o raid. |
+| `raidVictoryRally` | 0.06 | Alta na vitória. |
+| `raidLossCrash` | 0.12 | Queda na derrota. |
+| `heroFeeDiscount` | 0.5 | Desconto na corretagem do Herói da Vila. |
+| `heroSaleBonus` | 0.10 | Bônus do Herói da Vila no balcão (+5% por nível extra). |
+| `dividendsEnabled` | true | Liga/desliga os dividendos. |
+| `dividendBaseYield` | 0.002 | Dividendo mínimo por dia (fração do preço). |
+| `dividendActivityYield` | 0.008 | Dividendo extra por movimento. |
+| `dividendTradesTarget` | 12 | Trocas no dia para o dividendo extra completo. |
+
+Comandos de administração (só op): `/bolsa pregao [vezes]`, `/bolsa dividendos`, `/bolsa recarregar`.
 
 ## Instalação
 
@@ -168,9 +193,7 @@ Precisa do Java 25.
 ./gradlew build
 ```
 
-O jar sai em `build/libs/bolsa-villagers-<versão>.jar`.
-
-Para abrir o jogo de desenvolvimento:
+O jar sai em `build/libs/bolsa-villagers-<versão>.jar`. Para abrir o jogo de desenvolvimento:
 
 ```bash
 ./gradlew runClient
@@ -178,17 +201,17 @@ Para abrir o jogo de desenvolvimento:
 
 ### Teste automatizado
 
-Este teste abre o jogo de verdade e faz o seguinte:
+Este teste abre o jogo de verdade, em português, e faz o seguinte:
 
-- cria um mundo com villagers e o terminal;
-- simula 40 pregões com trocas;
-- compra pelo terminal e compra e vende pela tela do villager;
-- usa o `/bolsa` (visão geral, detalhes, carteira, comprar, vender e sacar);
-- paga dividendos e confere o valor;
-- recarrega a configuração;
+- abre a bolsa pela tecla B, compra e vende;
+- cria uma ordem programada e confere se ela executa quando o preço sobe;
+- vende trigo no balcão, confere o valor pago e se a segunda leva vale menos;
+- deposita e saca;
+- liga o Herói da Vila;
+- abre a tela de trocas;
+- gera uma vila, começa um raid e confere a queda e a alta na vitória;
+- paga dividendos;
 - reabre o mundo para conferir se tudo foi salvo.
-
-Para rodar:
 
 ```bash
 ./gradlew runClientGameTest
@@ -201,19 +224,21 @@ com `xvfb-run -a`.
 
 ```
 src/main/java/br/bolsavillager/
-  BolsaMod.java            registro do bloco, rede, eventos e comando
-  BolsaCommand.java        comando /bolsa
-  BolsaConfig.java         config/bolsavillager.json
-  block/TerminalBlock.java bloco do terminal
-  market/StockDef.java     as empresas (profissão, ticker, preço base)
-  market/MarketEngine.java pregão, eventos, compra/venda, dividendos
-  market/MarketRules.java  regras compartilhadas com o cliente (custos, efeito nas trocas, dividendos)
-  market/MarketData.java   dados salvos (cotações, contas, censo)
-  mixin/                   ganchos em trocas, reposição e preços dos villagers
-  net/                     pacotes cliente <-> servidor
+  BolsaMod.java              rede, eventos e comandos de admin
+  BolsaCommand.java          /bolsa pregao | dividendos | recarregar (op)
+  BolsaConfig.java           config/bolsavillager.json
+  market/StockDef.java       as empresas (profissão, ticker, preço base)
+  market/MarketEngine.java   pregão, eventos, raids, ordens, balcão, dividendos
+  market/MarketRules.java    regras compartilhadas com o cliente (custos, trocas, balcão, dividendos, Herói)
+  market/ItemDemand.java     o que cada guilda compra no balcão
+  market/LimitOrder.java     ordens programadas
+  market/MarketData.java     dados salvos (cotações, contas, censo, compras do dia)
+  mixin/                     ganchos em trocas, reposição, preços dos villagers e raids
+  net/                       pacotes cliente <-> servidor
 src/client/java/br/bolsavillager/client/
-  screen/TerminalScreen.java home broker
+  BolsaClient.java           tecla B e notificações
+  screen/BolsaScreen.java    a tela da bolsa (abas)
   screen/VillagerPanel.java  painel na tela de trocas
-  screen/MarketUi.java       gráfico e cores
-src/gametest/              teste automatizado do cliente
+  screen/MarketUi.java       gráfico, cores e formatação
+src/gametest/                teste automatizado do cliente
 ```

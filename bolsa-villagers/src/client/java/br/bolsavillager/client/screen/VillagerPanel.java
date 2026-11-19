@@ -99,7 +99,7 @@ public final class VillagerPanel {
 		MarketSyncPayload.StockView view = ClientMarket.get(def);
 		int owned = ClientMarket.account().shares().getOrDefault(def.id, 0);
 		double funds = ClientMarket.account().balance() + ClientMarket.emeraldsInInventory();
-		double cost = view == null ? Double.MAX_VALUE : ClientMarket.rules().buyCost(view.price(), 1);
+		double cost = view == null ? Double.MAX_VALUE : ClientMarket.rules().buyCost(view.price(), 1, ClientMarket.heroLevel());
 		buy.active = funds >= cost;
 		sell.active = owned > 0;
 		if (view != null) {
@@ -123,7 +123,7 @@ public final class VillagerPanel {
 
 		MarketSyncPayload.StockView view = ClientMarket.get(def);
 		if (view == null) {
-			g.text(font, Component.translatable("bolsavillager.terminal.loading"), x + 5, y + 20, MarketUi.TEXT_DIM, false);
+			g.text(font, Component.translatable("bolsavillager.screen.loading"), x + 5, y + 20, MarketUi.TEXT_DIM, false);
 			return;
 		}
 		double change = ClientMarket.changePercent(view);
@@ -137,6 +137,9 @@ public final class VillagerPanel {
 		cy += 38;
 
 		double effect = priceEffectPercent(def, view);
+		if (effect > 0 && ClientMarket.heroLevel() >= 0) {
+			effect = 0; // Herói da Vila não paga a alta da bolsa
+		}
 		String effectText = (effect >= 0 ? "+" : "") + String.format(java.util.Locale.ROOT, "%.0f%%", effect);
 		g.text(font, Component.translatable("bolsavillager.panel.trade_prices"), x + 5, cy, MarketUi.TEXT_DIM, false);
 		// Para o jogador, trocas mais caras são ruins: vermelho quando sobe.

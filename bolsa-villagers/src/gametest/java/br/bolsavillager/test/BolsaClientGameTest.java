@@ -1,43 +1,50 @@
 package br.bolsavillager.test;
 
+import br.bolsavillager.BolsaConfig;
 import br.bolsavillager.BolsaMod;
+import br.bolsavillager.client.BolsaClient;
 import br.bolsavillager.client.ClientMarket;
-import br.bolsavillager.client.screen.TerminalScreen;
+import br.bolsavillager.client.screen.BolsaScreen;
+import br.bolsavillager.market.ItemDemand;
 import br.bolsavillager.market.MarketData;
 import br.bolsavillager.market.MarketEngine;
 import br.bolsavillager.market.MarketRules;
-import br.bolsavillager.BolsaConfig;
-import net.minecraft.client.gui.screens.ChatScreen;
-import java.nio.file.Files;
 import br.bolsavillager.market.StockDef;
+import br.bolsavillager.market.StockState;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
 import net.fabricmc.fabric.api.client.gametest.v1.world.TestWorldSave;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.MerchantScreen;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.npc.villager.Villager;
 import net.minecraft.world.entity.npc.villager.VillagerProfession;
+import net.minecraft.world.entity.raid.Raid;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.trading.MerchantOffer;
-import net.minecraft.world.level.block.HorizontalDirectionalBlock;
 import net.minecraft.world.level.entity.EntityTypeTest;
+import org.lwjgl.glfw.GLFW;
 
+import java.lang.reflect.Field;
+import java.nio.file.Files;
 import java.util.List;
 import java.util.UUID;
 
 /**
- * Abre o jogo de verdade, cria um mundo, coloca villagers e o terminal, simula um pregão,
- * compra ações pelo terminal e pela tela de trocas, e confere se tudo ficou salvo ao reabrir o mundo.
+ * Abre o jogo de verdade (em português), cria um mundo com villagers e testa: tecla B, abas da bolsa,
+ * compra/venda, ordens programadas, balcão de itens, carteira (depósito/saque), Herói da Vila,
+ * painel na tela de trocas, raid e persistência.
  * Rode com: ./gradlew runClientGameTest (screenshots em build/run/clientGameTest/screenshots).
  */
 public class BolsaClientGameTest implements FabricClientGameTest {
@@ -49,32 +56,40 @@ public class BolsaClientGameTest implements FabricClientGameTest {
 		double sell = rules.orderValue(10.0 * Math.exp(rules.impactPerShare() * 64), -64);
 		check(Math.abs(buy - sell) < 1e-6, "ida e volta deveria empatar antes da corretagem: " + buy + " vs " + sell);
 
+		// Jogo em português.
+		ctx.runOnClient(mc -> {
+			mc.options.languageCode = "pt_br";
+			mc.getLanguageManager().setSelected("pt_br");
+			mc.reloadResourcePacks();
+		});
+		ctx.waitTicks(40);
+
 		UUID[] playerId = new UUID[1];
+		int[] censusBefore = new int[1];
 		TestWorldSave save;
 		try (TestSingleplayerContext sp = ctx.worldBuilder().create()) {
 			ctx.waitTicks(40);
 			sp.getServer().runCommand("time set noon");
 			sp.getServer().runCommand("weather clear");
+			sp.getServer().runCommand("difficulty normal");
+			check(Files.exists(BolsaConfig.path()), "config/bolsavillager.json deveria ter sido criado");
 
 			sp.getServer().runOnServer(server -> {
 				ServerPlayer player = player(server);
 				playerId[0] = player.getUUID();
 				ServerLevel level = player.level();
-				Direction dir = player.getDirection();
-				BlockPos front = player.blockPosition().relative(dir, 3);
-				level.setBlockAndUpdate(front, BolsaMod.TERMINAL.defaultBlockState()
-						.setValue(HorizontalDirectionalBlock.FACING, dir.getOpposite()));
-
-				// Uma pequena vila: 3 fazendeiros, 2 bibliotecários, 1 armeiro.
-				spawn(level, front.relative(dir.getClockWise(), 2), VillagerProfession.FARMER);
-				spawn(level, front.relative(dir.getClockWise(), 3), VillagerProfession.FARMER);
-				spawn(level, front.relative(dir.getClockWise(), 4), VillagerProfession.FARMER);
-				spawn(level, front.relative(dir.getCounterClockWise(), 2), VillagerProfession.LIBRARIAN);
-				spawn(level, front.relative(dir.getCounterClockWise(), 3), VillagerProfession.LIBRARIAN);
-				spawn(level, front.relative(dir.getCounterClockWise(), 4), VillagerProfession.ARMORER);
-
+				BlockPos front = player.blockPosition().relative(player.getDirection(), 3);
+				spawn(level, front.relative(player.getDirection().getClockWise(), 2), VillagerProfession.FARMER);
+				spawn(level, front.relative(player.getDirection().getClockWise(), 3), VillagerProfession.FARMER);
+				spawn(level, front.relative(player.getDirection().getClockWise(), 4), VillagerProfession.FARMER);
+				spawn(level, front.relative(player.getDirection().getCounterClockWise(), 2), VillagerProfession.LIBRARIAN);
+				spawn(level, front.relative(player.getDirection().getCounterClockWise(), 3), VillagerProfession.LIBRARIAN);
+				spawn(level, front.relative(player.getDirection().getCounterClockWise(), 4), VillagerProfession.ARMORER);
 				player.getInventory().add(new ItemStack(Items.EMERALD, 64));
 				player.getInventory().add(new ItemStack(Items.EMERALD, 64));
+				player.getInventory().add(new ItemStack(Items.WHEAT, 64));
+				player.getInventory().add(new ItemStack(Items.PAPER, 48));
+				player.getInventory().add(new ItemStack(Items.COAL, 30));
 			});
 			ctx.waitTicks(10);
 
@@ -88,157 +103,209 @@ public class BolsaClientGameTest implements FabricClientGameTest {
 							farmer.notifyTrade(offer);
 						}
 					}
-					if (session == 25) {
-						villagers(server, VillagerProfession.ARMORER).forEach(Villager::restock);
-					}
 					MarketEngine.runSession(server);
 				}
 				MarketData data = MarketEngine.data(server);
-				check(data.stock(StockDef.FARMER).population == 3, "censo deveria ter 3 fazendeiros, tem " + data.stock(StockDef.FARMER).population);
+				check(data.stock(StockDef.FARMER).population == 3, "censo deveria ter 3 fazendeiros");
 				check(data.stock(StockDef.LIBRARIAN).population == 2, "censo deveria ter 2 bibliotecários");
-				check(data.stock(StockDef.FARMER).history.size() >= 40, "histórico deveria ter 40+ pontos");
-				// Os pregões zeram o volume ao virar o dia; o volume do dia só é testado se não virou.
-				BolsaMod.LOGGER.info("[teste] FAZD3 = {} (vol {} / trocas {})", data.stock(StockDef.FARMER).price,
-						data.stock(StockDef.FARMER).volumeDay, data.stock(StockDef.FARMER).tradesDay);
 			});
 
-			// Verifica que a troca real alimenta o volume do dia.
-			int tradesBefore = sp.getServer().computeOnServer(s -> MarketEngine.data(s).stock(StockDef.FARMER).tradesDay);
-			sp.getServer().runOnServer(server -> {
-				Villager farmer = villagers(server, VillagerProfession.FARMER).getFirst();
-				farmer.notifyTrade(farmer.getOffers().getFirst());
-			});
-			int tradesAfter = sp.getServer().computeOnServer(s -> MarketEngine.data(s).stock(StockDef.FARMER).tradesDay);
-			check(tradesAfter == tradesBefore + 1, "mixin de troca não registrou a troca (" + tradesBefore + " -> " + tradesAfter + ")");
-
-			// ---- O terminal no mundo ----
+			// ---- Tecla B abre a bolsa em qualquer lugar ----
 			clearToasts(ctx);
+			ctx.getInput().pressKey(BolsaClient.OPEN_KEY);
+			ctx.waitForScreen(BolsaScreen.class);
 			ctx.waitTicks(5);
-			ctx.takeScreenshot("bolsa_mundo");
+			ctx.takeScreenshot("bolsa_acoes");
 
-			// ---- Terminal da Bolsa ----
-			sp.getServer().runOnServer(server -> {
-				ServerPlayer player = player(server);
-				BlockPos front = player.blockPosition().relative(player.getDirection(), 3);
-				MarketEngine.onTerminalUsed(player, front);
-			});
-			ctx.waitForScreen(TerminalScreen.class);
-			clearToasts(ctx);
-			ctx.waitTicks(5);
-			ctx.takeScreenshot("bolsa_terminal");
-
-			ctx.clickScreenButton("Buy 10");
+			// Quantidade: "+" três vezes = 10 ações.
+			ctx.clickScreenButton("+");
+			ctx.clickScreenButton("+");
+			ctx.clickScreenButton("+");
+			ctx.clickScreenButton("Comprar 10");
 			ctx.waitTicks(10);
-			check(shares(sp, playerId[0]) == 10, "deveria ter 10 ações FAZD3 após comprar no terminal");
-			ctx.takeScreenshot("bolsa_terminal_comprou");
-			ctx.setScreen(() -> null);
-			ctx.waitTicks(5);
+			check(shares(sp, playerId[0]) == 10, "deveria ter 10 ações FAZD3 após comprar na tela");
+			ctx.takeScreenshot("bolsa_acoes_comprou");
 
-			// ---- Painel na tela de trocas, GUI escala 2 em 854x480: faixa em cima da tela ----
-			openMerchant(ctx, sp);
-			ctx.takeScreenshot("bolsa_villager_faixa");
-			ctx.clickScreenButton("+1");
+			// ---- Ordens programadas: vender se subir até +5% ----
+			ctx.clickScreenButton("Ordens");
+			ctx.waitTicks(2);
+			ctx.clickScreenButton("Tipo: Comprar se cair até");
+			ctx.clickScreenButton("Criar ordem");
 			ctx.waitTicks(10);
-			check(shares(sp, playerId[0]) == 11, "deveria ter 11 ações após comprar pela faixa da tela do villager");
-			closeMerchant(ctx);
-			ctx.waitTicks(5);
+			int orders = sp.getServer().computeOnServer(s -> MarketEngine.data(s).account(playerId[0]).orders.size());
+			check(orders == 1, "deveria ter 1 ordem programada, tem " + orders);
+			ctx.takeScreenshot("bolsa_ordens");
 
-			// ---- GUI escala 1: sobra espaço, painel lateral completo ----
-			ctx.runOnClient(mc -> {
-				mc.options.guiScale().set(1);
-				mc.resizeGui();
+			// O preço sobe 20% e o pregão executa a ordem sozinho.
+			sp.getServer().runOnServer(s -> {
+				StockState st = MarketEngine.data(s).stock(StockDef.FARMER);
+				st.price *= 1.2;
+				BolsaConfig.get().volatility = 0;
+				MarketEngine.runSession(s);
 			});
-			openMerchant(ctx, sp);
-			ctx.takeScreenshot("bolsa_villager_painel");
-			ctx.clickScreenButton("bolsavillager.button.sell_short");
 			ctx.waitTicks(10);
-			check(shares(sp, playerId[0]) == 10, "deveria ter 10 ações após vender pelo painel lateral");
-			closeMerchant(ctx);
-			ctx.runOnClient(mc -> {
-				mc.options.guiScale().set(0);
-				mc.resizeGui();
-			});
-			ctx.waitTicks(5);
+			check(shares(sp, playerId[0]) == 0, "a ordem de venda deveria ter vendido as 10 ações");
+			check(sp.getServer().computeOnServer(s -> MarketEngine.data(s).account(playerId[0]).orders.isEmpty()),
+					"a ordem executada deveria sair da lista");
+			ctx.takeScreenshot("bolsa_ordem_executada");
 
-			// ---- Comando /bolsa ----
-			check(Files.exists(BolsaConfig.path()), "config/bolsavillager.json deveria ter sido criado");
-			clearChat(ctx);
-			playerCommand(sp, "bolsa");
-			ctx.waitTicks(5);
-			ctx.setScreen(() -> new ChatScreen("", false));
-			ctx.waitTicks(5);
-			ctx.takeScreenshot("bolsa_chat_visao_geral");
-			ctx.setScreen(() -> null);
-
-			clearChat(ctx);
-			playerCommand(sp, "bolsa fazd3");
-			ctx.waitTicks(5);
-			ctx.setScreen(() -> new ChatScreen("", false));
-			ctx.waitTicks(5);
-			ctx.takeScreenshot("bolsa_chat_detalhes");
-			ctx.setScreen(() -> null);
-
-			// Negociar pelo chat (o jogador está a 3 blocos do terminal).
-			playerCommand(sp, "bolsa comprar FAZD3 2");
+			// ---- Vender itens no balcão: clica no trigo (primeiro item da lista) ----
+			ctx.clickScreenButton("Vender itens");
+			ctx.waitTicks(2);
+			clickInScreen(ctx, (screenW, screenH) -> new double[]{
+					(screenW - BolsaScreen.W) / 2.0 + 6 + 40, (screenH - BolsaScreen.H) / 2.0 + 38 + BolsaScreen.ITEM_ROW_H / 2.0});
 			ctx.waitTicks(3);
-			check(shares(sp, playerId[0]) == 12, "deveria ter 12 ações após /bolsa comprar FAZD3 2");
-			playerCommand(sp, "bolsa vender fazd3 2");
-			ctx.waitTicks(3);
-			check(shares(sp, playerId[0]) == 10, "deveria voltar a 10 ações após /bolsa vender fazd3 2");
-
-			// ---- Dividendos ----
-			double before = sp.getServer().computeOnServer(s -> MarketEngine.data(s).account(playerId[0]).balance);
+			ctx.takeScreenshot("bolsa_vender_itens");
+			double before = balance(sp, playerId[0]);
 			double expected = sp.getServer().computeOnServer(s -> {
-				var st = MarketEngine.data(s).stock(StockDef.FARMER);
-				return 10 * MarketRules.current().dividendPerShare(StockDef.FARMER, st.price, st.population, st.tradesDay);
+				MarketData data = MarketEngine.data(s);
+				StockState st = data.stock(StockDef.FARMER);
+				ItemDemand.Buyer buyer = ItemDemand.buyer(new ItemStack(Items.WHEAT), StockDef.FARMER);
+				return MarketRules.current().saleTotal(buyer, st.price, st.population,
+						data.soldToday().getOrDefault(buyer.saturationKey(), 0), 64, -1);
 			});
-			check(expected > 0, "fazendeiros com villagers e trocas deveriam pagar dividendo");
-			clearChat(ctx);
-			sp.getServer().runOnServer(s -> s.getCommands().performPrefixedCommand(s.createCommandSourceStack(), "bolsa admin dividendos"));
-			ctx.waitTicks(5);
-			double after = sp.getServer().computeOnServer(s -> MarketEngine.data(s).account(playerId[0]).balance);
-			check(Math.abs(after - before - expected) < 1e-6, "dividendo pago errado: " + (after - before) + " vs " + expected);
-			BolsaMod.LOGGER.info("[teste] Dividendo pago: {}", after - before);
-
-			clearChat(ctx);
-			playerCommand(sp, "bolsa carteira");
-			ctx.waitTicks(5);
-			ctx.setScreen(() -> new ChatScreen("", false));
-			ctx.waitTicks(5);
-			ctx.takeScreenshot("bolsa_chat_carteira");
-			ctx.setScreen(() -> null);
-
-			// Recarregar config pelo comando.
-			sp.getServer().runOnServer(s -> s.getCommands().performPrefixedCommand(s.createCommandSourceStack(), "bolsa admin recarregar"));
-
-			// Terminal com o layout novo (dividendos).
-			sp.getServer().runOnServer(server -> {
-				ServerPlayer player = player(server);
-				MarketEngine.onTerminalUsed(player, player.blockPosition().relative(player.getDirection(), 3));
+			check(expected > 0, "os fazendeiros deveriam oferecer algo pelo trigo");
+			ctx.clickScreenButton("Vender por " + MarketEngine.fmt(expected) + "◆");
+			ctx.waitTicks(10);
+			double got = balance(sp, playerId[0]) - before;
+			check(Math.abs(got - expected) < 1e-6, "venda do trigo pagou " + got + ", esperado " + expected);
+			int wheatLeft = sp.getServer().computeOnServer(s -> player(s).getInventory().countItem(Items.WHEAT));
+			check(wheatLeft == 0, "o trigo deveria ter saído da mochila");
+			// Segunda venda do mesmo item paga menos (a guilda já comprou hoje).
+			double second = sp.getServer().computeOnServer(s -> {
+				MarketData data = MarketEngine.data(s);
+				StockState st = data.stock(StockDef.FARMER);
+				ItemDemand.Buyer buyer = ItemDemand.buyer(new ItemStack(Items.WHEAT), StockDef.FARMER);
+				return MarketRules.current().saleTotal(buyer, st.price, st.population,
+						data.soldToday().getOrDefault(buyer.saturationKey(), 0), 64, -1);
 			});
-			ctx.waitForScreen(TerminalScreen.class);
-			clearToasts(ctx);
+			check(second < expected, "a guilda deveria pagar menos depois de já ter comprado trigo hoje");
+			BolsaMod.LOGGER.info("[teste] 64 trigos: {} (segunda leva valeria {})", expected, second);
+
+			// ---- Carteira: depositar e sacar ----
+			ctx.clickScreenButton("Carteira");
+			ctx.waitTicks(2);
+			ctx.clickScreenButton("Depositar ◆");
+			ctx.waitTicks(10);
+			check(sp.getServer().computeOnServer(s -> player(s).getInventory().countItem(Items.EMERALD)) == 0,
+					"o depósito deveria levar todas as esmeraldas");
+			ctx.takeScreenshot("bolsa_carteira");
+			ctx.clickScreenButton("Sacar ◆");
+			ctx.waitTicks(10);
+			check(balance(sp, playerId[0]) < 1.0, "o saque deveria esvaziar o saldo");
+
+			// ---- Herói da Vila: corretagem mais barata e sem pagar a alta da bolsa nas trocas ----
+			sp.getServer().runOnServer(s -> player(s).addEffect(new MobEffectInstance(MobEffects.HERO_OF_THE_VILLAGE, 20 * 600, 0)));
 			ctx.waitTicks(5);
-			ctx.takeScreenshot("bolsa_terminal_dividendos");
+			ctx.clickScreenButton("Ações");
+			ctx.waitTicks(3);
+			ctx.takeScreenshot("bolsa_heroi");
 			ctx.setScreen(() -> null);
 			ctx.waitTicks(3);
 
-			// Sacar pelo comando: o saldo vira esmeraldas.
-			playerCommand(sp, "bolsa sacar");
+			// ---- Painel na tela de trocas ----
+			openMerchant(ctx, sp);
+			ctx.takeScreenshot("bolsa_villager");
+			ctx.runOnClient(mc -> mc.player.closeContainer());
 			ctx.waitTicks(5);
-			double balance = sp.getServer().computeOnServer(s -> MarketEngine.data(s).account(playerId[0]).balance);
-			check(balance < 1.0, "saldo deveria ter sido sacado, sobrou " + balance);
 
+			// ---- Raid: começa e a bolsa da vila cai ----
+			// Um raid só acontece numa vila de verdade: gera uma vila ao redor do jogador.
+			sp.getServer().runCommand("execute at @p run place structure minecraft:village_plains ~ ~ ~");
+			ctx.waitTicks(40);
+			sp.getServer().runOnServer(MarketEngine::runSession); // zera a pressão e conta os villagers da vila nova
+			sp.getServer().runOnServer(s -> {
+				ServerPlayer p = player(s);
+				p.removeEffect(MobEffects.HERO_OF_THE_VILLAGE);
+				Raid raid = p.level().getRaids().createOrExtendRaid(p, p.blockPosition());
+				check(raid != null, "não conseguiu criar o raid");
+			});
+			ctx.waitFor(mc -> ClientMarket.raidOngoing(), 20 * 60);
+			double raidPressure = sp.getServer().computeOnServer(s -> MarketEngine.pendingPressure(StockDef.FARMER));
+			check(raidPressure <= -BolsaConfig.get().raidStartShock + 1e-9,
+					"o começo do raid deveria pressionar FAZD3 para baixo, pressão = " + raidPressure);
+			ctx.waitTicks(10);
+			ctx.getInput().pressKey(GLFW.GLFW_KEY_B);
+			ctx.waitForScreen(BolsaScreen.class);
+			clearToasts(ctx);
+			ctx.waitTicks(5);
+			ctx.takeScreenshot("bolsa_raid");
+			ctx.setScreen(() -> null);
+			sp.getServer().runOnServer(MarketEngine::runSession);
+
+			// Vitória: força o fim do raid como vitória e confere a alta.
+			sp.getServer().runOnServer(s -> {
+				for (Raid raid : ((br.bolsavillager.mixin.RaidsAccessor) s.overworld().getRaids()).bolsavillager$getRaidMap().values()) {
+					setRaidStatus(raid, "VICTORY");
+				}
+			});
+			ctx.waitFor(mc -> !ClientMarket.raidOngoing(), 20 * 10);
+			double victoryPressure = sp.getServer().computeOnServer(s -> MarketEngine.pendingPressure(StockDef.FARMER));
+			check(victoryPressure >= BolsaConfig.get().raidVictoryRally - 1e-9,
+					"a vitória no raid deveria puxar FAZD3 para cima, pressão = " + victoryPressure);
+			ctx.takeScreenshot("bolsa_raid_vitoria");
+			sp.getServer().runOnServer(MarketEngine::runSession);
+			sp.getServer().runCommand("kill @e[type=#minecraft:raiders]");
+
+			// ---- Dividendos: pagos com aviso no canto da tela ----
+			ctx.runOnClient(mc -> {
+				mc.gui.toastManager().clear();
+				mc.gui.hud.getChat().clearMessages(false);
+			});
+			sp.getServer().runOnServer(s -> {
+				ServerPlayer p = player(s);
+				p.getInventory().add(new ItemStack(Items.EMERALD, 64));
+				br.bolsavillager.market.MarketEngine.executeTrade(p, StockDef.LIBRARIAN, 3);
+				MarketEngine.payDividends(s, MarketEngine.data(s), MarketEngine.data(s).day);
+				MarketEngine.syncEveryone(s);
+			});
+			ctx.waitTicks(10);
+			check(sp.getServer().computeOnServer(s -> MarketEngine.data(s).account(playerId[0]).lastDividend) > 0,
+					"deveria ter recebido dividendos");
+			ctx.takeScreenshot("bolsa_dividendos");
+
+			censusBefore[0] = sp.getServer().computeOnServer(s -> MarketEngine.data(s).stock(StockDef.FARMER).population);
 			save = sp.getWorldSave();
 		}
 
 		// ---- Persistência: o mundo foi fechado; reabre e confere ----
 		try (TestSingleplayerContext again = save.open()) {
 			ctx.waitTicks(20);
-			check(shares(again, playerId[0]) == 10, "ações deveriam continuar salvas após reabrir o mundo");
+			int libr = again.getServer().computeOnServer(s -> MarketEngine.data(s).account(playerId[0]).sharesOf(StockDef.LIBRARIAN));
+			check(libr == 3, "ações deveriam continuar salvas após reabrir o mundo");
 			int farmers = again.getServer().computeOnServer(s -> MarketEngine.data(s).stock(StockDef.FARMER).population);
-			check(farmers == 3, "censo deveria continuar com 3 fazendeiros após reabrir");
-			BolsaMod.LOGGER.info("[teste] Tudo certo: terminal, painel do villager, saque e persistência OK");
+			check(farmers == censusBefore[0] && farmers >= 3,
+					"censo deveria continuar igual após reabrir: " + censusBefore[0] + " -> " + farmers);
+			BolsaMod.LOGGER.info("[teste] Tudo certo: tecla, abas, ordens, balcão, carteira, herói, raid, dividendos e persistência OK");
+		}
+	}
+
+	private interface CursorTarget {
+		double[] at(int screenW, int screenH);
+	}
+
+	/** Clica num ponto da tela em coordenadas da GUI (converte para pixels da janela). */
+	private static void clickInScreen(ClientGameTestContext ctx, CursorTarget target) {
+		double[] pos = ctx.computeOnClient(mc -> {
+			double[] p = target.at(mc.getWindow().getGuiScaledWidth(), mc.getWindow().getGuiScaledHeight());
+			double scale = (double) mc.getWindow().getScreenWidth() / mc.getWindow().getGuiScaledWidth();
+			return new double[]{p[0] * scale, p[1] * scale};
+		});
+		ctx.getInput().setCursorPos(pos[0], pos[1]);
+		ctx.getInput().pressMouse(GLFW.GLFW_MOUSE_BUTTON_LEFT);
+	}
+
+	private static void setRaidStatus(Raid raid, String status) {
+		try {
+			Field field = Raid.class.getDeclaredField("status");
+			field.setAccessible(true);
+			for (Object constant : field.getType().getEnumConstants()) {
+				if (((Enum<?>) constant).name().equals(status)) {
+					field.set(raid, constant);
+				}
+			}
+		} catch (ReflectiveOperationException e) {
+			throw new AssertionError(e);
 		}
 	}
 
@@ -247,29 +314,11 @@ public class BolsaClientGameTest implements FabricClientGameTest {
 		sp.getServer().runOnServer(server -> {
 			ServerPlayer player = player(server);
 			Villager farmer = villagers(server, VillagerProfession.FARMER).getFirst();
-			MarketEngine.onMerchantInteract(player, farmer);
 			farmer.mobInteract(player, InteractionHand.MAIN_HAND);
 		});
 		ctx.waitForScreen(MerchantScreen.class);
 		clearToasts(ctx);
 		ctx.waitTicks(5);
-	}
-
-	/** Fecha a tela de trocas avisando o servidor (como apertar ESC). */
-	private static void closeMerchant(ClientGameTestContext ctx) {
-		ctx.runOnClient(mc -> mc.player.closeContainer());
-		ctx.waitTicks(5);
-	}
-
-	private static void playerCommand(TestSingleplayerContext sp, String command) {
-		sp.getServer().runOnServer(server -> {
-			ServerPlayer player = player(server);
-			server.getCommands().performPrefixedCommand(player.createCommandSourceStack(), command);
-		});
-	}
-
-	private static void clearChat(ClientGameTestContext ctx) {
-		ctx.runOnClient(mc -> mc.gui.hud.getChat().clearMessages(false));
 	}
 
 	private static void clearToasts(ClientGameTestContext ctx) {
@@ -278,6 +327,10 @@ public class BolsaClientGameTest implements FabricClientGameTest {
 
 	private static int shares(TestSingleplayerContext sp, UUID player) {
 		return sp.getServer().computeOnServer(s -> MarketEngine.data(s).account(player).sharesOf(StockDef.FARMER));
+	}
+
+	private static double balance(TestSingleplayerContext sp, UUID player) {
+		return sp.getServer().computeOnServer(s -> MarketEngine.data(s).account(player).balance);
 	}
 
 	private static ServerPlayer player(MinecraftServer server) {
@@ -306,5 +359,10 @@ public class BolsaClientGameTest implements FabricClientGameTest {
 		if (!condition) {
 			throw new AssertionError(message);
 		}
+	}
+
+	@SuppressWarnings("unused")
+	private static Minecraft mc() {
+		return Minecraft.getInstance();
 	}
 }

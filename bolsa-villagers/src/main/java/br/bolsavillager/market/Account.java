@@ -3,7 +3,9 @@ package br.bolsavillager.market;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /** Conta de um jogador na corretora: saldo em esmeraldas (com centavos) e carteira de ações. */
@@ -14,7 +16,8 @@ public final class Account {
 			Codec.unboundedMap(Codec.STRING, Codec.DOUBLE).optionalFieldOf("cost_basis", Map.of()).forGetter(a -> a.costBasis),
 			Codec.DOUBLE.optionalFieldOf("last_dividend", 0.0).forGetter(a -> a.lastDividend),
 			Codec.LONG.optionalFieldOf("last_dividend_day", -1L).forGetter(a -> a.lastDividendDay),
-			Codec.DOUBLE.optionalFieldOf("total_dividends", 0.0).forGetter(a -> a.totalDividends)
+			Codec.DOUBLE.optionalFieldOf("total_dividends", 0.0).forGetter(a -> a.totalDividends),
+			LimitOrder.CODEC.listOf().optionalFieldOf("orders", List.of()).forGetter(a -> a.orders)
 	).apply(i, Account::new));
 
 	public double balance;
@@ -27,19 +30,22 @@ public final class Account {
 	public long lastDividendDay;
 	/** Soma de todos os dividendos já recebidos. */
 	public double totalDividends;
+	/** Ordens programadas ainda não executadas. */
+	public final List<LimitOrder> orders;
 
 	public Account(double balance, Map<String, Integer> shares, Map<String, Double> costBasis,
-			double lastDividend, long lastDividendDay, double totalDividends) {
+			double lastDividend, long lastDividendDay, double totalDividends, List<LimitOrder> orders) {
 		this.balance = balance;
 		this.shares = new HashMap<>(shares);
 		this.costBasis = new HashMap<>(costBasis);
 		this.lastDividend = lastDividend;
 		this.lastDividendDay = lastDividendDay;
 		this.totalDividends = totalDividends;
+		this.orders = new ArrayList<>(orders);
 	}
 
 	public Account() {
-		this(0.0, Map.of(), Map.of(), 0.0, -1L, 0.0);
+		this(0.0, Map.of(), Map.of(), 0.0, -1L, 0.0, List.of());
 	}
 
 	public int sharesOf(StockDef def) {

@@ -2,6 +2,7 @@ package br.bolsavillager.net;
 
 import br.bolsavillager.BolsaMod;
 import br.bolsavillager.market.Account;
+import br.bolsavillager.market.LimitOrder;
 import br.bolsavillager.market.MarketData;
 import br.bolsavillager.market.MarketRules;
 import br.bolsavillager.market.StockDef;
@@ -15,9 +16,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Servidor -> cliente: cotações de todas as ações + a conta do jogador. Pode pedir para abrir o terminal. */
-public record MarketSyncPayload(boolean openTerminal, List<StockView> stocks, AccountView account, MarketRules rules)
-		implements CustomPacketPayload {
+/**
+ * Servidor -> cliente: cotações de todas as ações, a conta do jogador, as regras do servidor,
+ * quanto as guildas já compraram hoje no balcão e se há um raid acontecendo.
+ */
+public record MarketSyncPayload(List<StockView> stocks, AccountView account, MarketRules rules,
+		Map<String, Integer> soldToday, boolean raidOngoing) implements CustomPacketPayload {
 	public static final Type<MarketSyncPayload> TYPE = new Type<>(BolsaMod.id("market_sync"));
 	public static final StreamCodec<RegistryFriendlyByteBuf, MarketSyncPayload> CODEC =
 			CustomPacketPayload.codec(MarketSyncPayload::write, MarketSyncPayload::read);
@@ -28,11 +32,11 @@ public record MarketSyncPayload(boolean openTerminal, List<StockView> stocks, Ac
 
 	/** Retrato da conta do jogador. */
 	public record AccountView(double balance, Map<String, Integer> shares, Map<String, Double> costBasis,
-			double lastDividend, double totalDividends) {
-		public static final AccountView EMPTY = new AccountView(0, Map.of(), Map.of(), 0, 0);
+			double lastDividend, double totalDividends, List<LimitOrder> orders) {
+		public static final AccountView EMPTY = new AccountView(0, Map.of(), Map.of(), 0, 0, List.of());
 	}
 
-	public static MarketSyncPayload of(MarketData data, Account account, MarketRules rules, boolean openTerminal) {
+	public static MarketSyncPayload of(MarketData data, Account account, MarketRules rules, boolean raidOngoing) {
 		List<StockView> stocks = new ArrayList<>();
 		for (StockDef def : StockDef.values()) {
 			StockState s = data.stock(def);
@@ -42,12 +46,25 @@ public record MarketSyncPayload(boolean openTerminal, List<StockView> stocks, Ac
 			}
 			stocks.add(new StockView(def.id, s.price, s.dayOpen, history, s.population, s.volumeDay, s.tradesDay));
 		}
-		return new MarketSyncPayload(openTerminal, stocks, new AccountView(account.balance, Map.copyOf(account.shares),
-				Map.copyOf(account.costBasis), account.lastDividend, account.totalDividends), rules);
+		return new MarketSyncPayload(stocks, new AccountView(account.balance, Map.copyOf(account.shares),
+				Map.copyOf(account.costBasis), account.lastDividend, account.totalDividends, List.copyOf(account.orders)),
+				rules, Map.copyOf(data.soldToday()), raidOngoing);
+	}
+
+	public static void writeOrder(RegistryFriendlyByteBuf buf, LimitOrder order) {
+		buf.writeVarInt(order.type().ordinal());
+		buf.writeUtf(order.stockId(), 64);
+		buf.writeVarInt(order.quantity());
+		buf.writeDouble(order.target());
+	}
+
+	public static LimitOrder readOrder(RegistryFriendlyByteBuf buf) {
+		LimitOrder.Type[] types = LimitOrder.Type.values();
+		int type = Math.floorMod(buf.readVarInt(), types.length);
+		return new LimitOrder(types[type], buf.readUtf(64), buf.readVarInt(), buf.readDouble());
 	}
 
 	private void write(RegistryFriendlyByteBuf buf) {
-		buf.writeBoolean(this.openTerminal);
 		buf.writeVarInt(this.stocks.size());
 		for (StockView s : this.stocks) {
 			buf.writeUtf(s.id());
@@ -70,11 +87,20 @@ public record MarketSyncPayload(boolean openTerminal, List<StockView> stocks, Ac
 		});
 		buf.writeDouble(this.account.lastDividend());
 		buf.writeDouble(this.account.totalDividends());
+		buf.writeVarInt(this.account.orders().size());
+		for (LimitOrder order : this.account.orders()) {
+			writeOrder(buf, order);
+		}
 		this.rules.write(buf);
+		buf.writeVarInt(this.soldToday.size());
+		this.soldToday.forEach((key, sold) -> {
+			buf.writeUtf(key);
+			buf.writeVarInt(sold);
+		});
+		buf.writeBoolean(this.raidOngoing);
 	}
 
 	private static MarketSyncPayload read(RegistryFriendlyByteBuf buf) {
-		boolean open = buf.readBoolean();
 		int count = buf.readVarInt();
 		List<StockView> stocks = new ArrayList<>(count);
 		for (int i = 0; i < count; i++) {
@@ -98,8 +124,20 @@ public record MarketSyncPayload(boolean openTerminal, List<StockView> stocks, Ac
 		}
 		double lastDividend = buf.readDouble();
 		double totalDividends = buf.readDouble();
+		int orderCount = Math.min(buf.readVarInt(), 64);
+		List<LimitOrder> orders = new ArrayList<>();
+		for (int i = 0; i < orderCount; i++) {
+			orders.add(readOrder(buf));
+		}
 		MarketRules rules = MarketRules.read(buf);
-		return new MarketSyncPayload(open, stocks, new AccountView(balance, shares, cost, lastDividend, totalDividends), rules);
+		int soldCount = buf.readVarInt();
+		Map<String, Integer> soldToday = new HashMap<>();
+		for (int i = 0; i < soldCount; i++) {
+			soldToday.put(buf.readUtf(), buf.readVarInt());
+		}
+		boolean raid = buf.readBoolean();
+		return new MarketSyncPayload(stocks,
+				new AccountView(balance, shares, cost, lastDividend, totalDividends, orders), rules, soldToday, raid);
 	}
 
 	@Override

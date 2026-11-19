@@ -50,10 +50,24 @@ public final class BolsaConfig {
 	public double brokerageFee = 0.01;
 	/** Quanto cada ação comprada/vendida move o preço (0.004 = 0,4% por ação). */
 	public double marketImpactPerShare = 0.004;
-	/** Permite /bolsa comprar e /bolsa vender longe de um Terminal da Bolsa. */
-	public boolean chatTradingAnywhere = false;
-	/** Distância máxima (em blocos) de um terminal para negociar pelo chat. */
-	public int terminalRange = 8;
+
+	// ---- Balcão de vendas (jogador vende itens para as guildas) ----
+	/** Quanto cada guilda absorve por dia, em "esmeraldas de referência" por villager (raiz da população). */
+	public double saleDemandPerVillager = 6.0;
+
+	// ---- Raids e Herói da Vila ----
+	/** Queda das ações das guildas da vila quando um raid começa (0.04 = −4%). */
+	public double raidStartShock = 0.04;
+	/** Queda extra a cada pregão enquanto o raid continua. */
+	public double raidOngoingPressure = 0.01;
+	/** Alta quando os jogadores vencem o raid. */
+	public double raidVictoryRally = 0.06;
+	/** Queda quando a vila perde o raid. */
+	public double raidLossCrash = 0.12;
+	/** Desconto na corretagem para quem tem o efeito Herói da Vila (0.5 = paga metade). */
+	public double heroFeeDiscount = 0.5;
+	/** Bônus no que as guildas pagam pelos itens de um Herói da Vila (0.1 = +10%, +5% por nível extra). */
+	public double heroSaleBonus = 0.10;
 
 	// ---- Dividendos ----
 	public boolean dividendsEnabled = true;
@@ -75,7 +89,6 @@ public final class BolsaConfig {
 	/** Lê o arquivo (criando com os padrões se não existir). Retorna mensagem de erro ou null se deu certo. */
 	public static String load() {
 		Path path = path();
-		String error = null;
 		BolsaConfig loaded = new BolsaConfig();
 		if (Files.exists(path)) {
 			try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
@@ -84,15 +97,14 @@ public final class BolsaConfig {
 					loaded = parsed;
 				}
 			} catch (IOException | JsonParseException e) {
-				error = e.getMessage();
 				BolsaMod.LOGGER.error("Não consegui ler {}, usando os valores atuais: {}", path, e.getMessage());
-				return error;
+				return String.valueOf(e.getMessage());
 			}
 		}
 		loaded.clamp();
 		instance = loaded;
 		save();
-		return error;
+		return null;
 	}
 
 	public static void save() {
@@ -117,7 +129,13 @@ public final class BolsaConfig {
 		this.tradePriceEffectMax = Mth.clamp(this.tradePriceEffectMax, 0.0, 0.9);
 		this.brokerageFee = Mth.clamp(this.brokerageFee, 0.0, 0.5);
 		this.marketImpactPerShare = Mth.clamp(this.marketImpactPerShare, 0.0001, 0.05);
-		this.terminalRange = Mth.clamp(this.terminalRange, 1, 64);
+		this.saleDemandPerVillager = Mth.clamp(this.saleDemandPerVillager, 0.1, 1000.0);
+		this.raidStartShock = Mth.clamp(this.raidStartShock, 0.0, 0.5);
+		this.raidOngoingPressure = Mth.clamp(this.raidOngoingPressure, 0.0, 0.2);
+		this.raidVictoryRally = Mth.clamp(this.raidVictoryRally, 0.0, 0.5);
+		this.raidLossCrash = Mth.clamp(this.raidLossCrash, 0.0, 0.9);
+		this.heroFeeDiscount = Mth.clamp(this.heroFeeDiscount, 0.0, 1.0);
+		this.heroSaleBonus = Mth.clamp(this.heroSaleBonus, 0.0, 2.0);
 		this.dividendBaseYield = Mth.clamp(this.dividendBaseYield, 0.0, 0.1);
 		this.dividendActivityYield = Mth.clamp(this.dividendActivityYield, 0.0, 0.1);
 		this.dividendTradesTarget = Mth.clamp(this.dividendTradesTarget, 1, 10000);

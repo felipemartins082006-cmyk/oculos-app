@@ -23,9 +23,12 @@ public abstract class VillagerMixin {
 	}
 
 	/**
-	 * Depois dos descontos de reputação/herói da vila, aplica a "inflação da guilda":
-	 * ação em alta encarece as trocas, ação em baixa deixa tudo em promoção.
-	 * O ajuste some sozinho quando a troca termina (o jogo zera os preços especiais).
+	 * Depois dos descontos normais do jogo (reputação e Herói da Vila), aplica o efeito da bolsa:
+	 * guilda valorizada cobra mais caro, guilda em baixa entra em promoção.
+	 *
+	 * <p>Os descontos continuam valendo, e quem tem o efeito Herói da Vila (ganho ao vencer um raid)
+	 * nunca paga a alta da bolsa: só aproveita as promoções. O ajuste some sozinho quando a troca termina
+	 * (o jogo zera os preços especiais).
 	 */
 	@Inject(method = "updateSpecialPrices", at = @At("TAIL"))
 	private void bolsavillager$applyMarketPrices(Player player, CallbackInfo ci) {
@@ -39,6 +42,9 @@ public abstract class VillagerMixin {
 		}
 		StockState state = MarketEngine.data(level.getServer()).stock(def);
 		double factor = MarketRules.current().tradePriceFactor(def, state.price, state.population);
+		if (factor > 0 && MarketEngine.heroLevel(player) >= 0) {
+			factor = 0;
+		}
 		if (factor == 0) {
 			return;
 		}
