@@ -149,7 +149,11 @@ def _pc(x) -> str:   # número de parâmetro (alvo, stop) com vírgula decimal
     return f"{x:g}".replace(".", ",")
 
 
+ROTULOS = {'ativo': 'Ativo', 'val_sharpe_liquido': 'Sharpe líquido (validação)', 'val_sharpe_bruto': 'Sharpe bruto (validação)', 'val_auc': 'AUC (validação)', 'val_trades': 'Operações (validação)', 'meses': 'Meses de dados', 'agressao': 'Saldo de agressão', 'alvo': 'Alvo %', 'stop': 'Stop %', 'horizonte': 'Horizonte (min)', 'modelo': 'Modelo', 'taxa_y': 'Taxa de acerto do alvo'}
+
+
 def _tabela(df: pd.DataFrame) -> str:
+    df = df.rename(columns=ROTULOS).replace({True: "sim", False: "não"})
     cab = "".join(f"<th>{html.escape(str(c))}</th>" for c in df.columns)
     lin = "".join("<tr>" + "".join(f"<td>{html.escape(str(v))}</td>" for v in row) + "</tr>" for row in df.itertuples(index=False))
     return f'<div class="tabela"><table><thead><tr>{cab}</tr></thead><tbody>{lin}</tbody></table></div>'
