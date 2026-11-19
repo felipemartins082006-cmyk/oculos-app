@@ -6,16 +6,23 @@ import net.minecraft.util.StringRepresentable;
 
 /**
  * Ordem programada: fica guardada e é executada sozinha num pregão quando o preço chega no alvo,
- * mesmo com o jogador offline. Compras usam só o saldo da corretora.
+ * mesmo com o jogador offline. O alvo é um número inteiro de esmeraldas.
+ *
+ * <p>Ordens de compra guardam as esmeraldas na hora em que são criadas ({@link #reserved}): assim a
+ * compra pode acontecer com o jogador offline. Se cancelar, as esmeraldas voltam; se a compra sair mais
+ * barata, o troco volta.
  */
-public record LimitOrder(Type type, String stockId, int quantity, double target) {
+public record LimitOrder(Type type, String stockId, int quantity, int target, int reserved) {
 	public static final int MAX_PER_PLAYER = 6;
 
 	public static final Codec<LimitOrder> CODEC = RecordCodecBuilder.create(i -> i.group(
 			Type.CODEC.fieldOf("type").forGetter(LimitOrder::type),
 			Codec.STRING.fieldOf("stock").forGetter(LimitOrder::stockId),
 			Codec.INT.fieldOf("quantity").forGetter(LimitOrder::quantity),
-			Codec.DOUBLE.fieldOf("target").forGetter(LimitOrder::target)
+			// versões antigas guardavam o alvo com decimais
+			Codec.DOUBLE.fieldOf("target").xmap(d -> Math.max(1, (int) Math.round(d)), Integer::doubleValue)
+					.forGetter(LimitOrder::target),
+			Codec.INT.optionalFieldOf("reserved", 0).forGetter(LimitOrder::reserved)
 	).apply(i, LimitOrder::new));
 
 	public enum Type implements StringRepresentable {
@@ -46,15 +53,26 @@ public record LimitOrder(Type type, String stockId, int quantity, double target)
 			return this == BUY_BELOW;
 		}
 
-		public boolean triggered(double price, double target) {
+		/** Compara com a cotação mostrada (inteira), que é o que o jogador vê. */
+		public boolean triggered(double price, int target) {
+			int shown = MarketRules.shownPrice(price);
 			return switch (this) {
-				case BUY_BELOW, STOP_LOSS -> price <= target;
-				case SELL_ABOVE -> price >= target;
+				case BUY_BELOW, STOP_LOSS -> shown <= target;
+				case SELL_ABOVE -> shown >= target;
 			};
 		}
 
 		public Type next() {
 			return values()[(this.ordinal() + 1) % values().length];
+		}
+
+		/** Alvo inicial sugerido a partir da cotação atual. */
+		public int defaultTarget(int shownPrice) {
+			return switch (this) {
+				case BUY_BELOW -> Math.max(1, shownPrice - 1);
+				case SELL_ABOVE -> shownPrice + 1;
+				case STOP_LOSS -> Math.max(1, shownPrice - 2);
+			};
 		}
 	}
 

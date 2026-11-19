@@ -37,7 +37,6 @@ import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -57,7 +56,8 @@ import java.util.WeakHashMap;
  */
 public final class MarketEngine {
 	public static final long DAY_LENGTH = 24000L;
-	public static final double MIN_PRICE = 0.25;
+	/** A cotação nunca fica abaixo de 1 esmeralda. */
+	public static final double MIN_PRICE = 1.0;
 	public static final int MAX_ORDER = 64;
 	/** Distância do centro do raid em que os villagers contam como "da vila atacada". */
 	private static final double RAID_RADIUS = 96;
@@ -127,8 +127,8 @@ public final class MarketEngine {
 		// Jogador comprando da guilda = demanda pelos produtos dela (alta forte).
 		// Jogador vendendo matéria-prima para a guilda = a guilda gasta caixa, mas produz (alta leve).
 		double impulse = paidByPlayer > 0 ? 0.004 * paidByPlayer : 0.0015 * Math.max(1, paidByVillager);
-		if (offer.isOutOfStock()) {
-			impulse += 0.01; // escassez: a oferta esgotou
+		if (offer.getUses() >= offer.getMaxUses()) {
+			impulse += 0.01; // escassez: já passou do estoque normal (paga ágio)
 		}
 		addPressure(def, Math.min(impulse, 0.05));
 
@@ -374,22 +374,21 @@ public final class MarketEngine {
 				StockDef def = order.stock();
 				if (def == null) {
 					it.remove();
+					deliver(account, player, order.reserved());
 					continue;
 				}
 				StockState state = data.stock(def);
 				if (!order.type().triggered(state.price, order.target())) {
 					continue;
 				}
-				double price = state.price;
 				if (order.type().isBuy()) {
-					double cost = rules.buyCost(price, order.quantity(), hero);
-					if (account.balance + 1e-9 < cost) {
-						continue; // sem saldo: a ordem espera
-					}
-					buy(account, state, def, order.quantity(), cost, rules);
+					// Paga no máximo o que ficou guardado; se saiu mais barato, o troco volta.
+					int cost = Math.min(order.reserved(), rules.buyCost(state.price, order.quantity(), hero));
 					it.remove();
+					buy(account, state, def, order.quantity(), cost, rules);
+					deliver(account, player, order.reserved() - cost);
 					notify(player, NotifyPayload.ORDER, Component.translatable("bolsavillager.order.done.title"),
-							Component.translatable("bolsavillager.order.done.buy", order.quantity(), def.ticker, fmt(cost)));
+							Component.translatable("bolsavillager.order.done.buy", order.quantity(), def.ticker, cost));
 				} else {
 					int qty = Math.min(order.quantity(), account.sharesOf(def));
 					it.remove();
@@ -398,19 +397,20 @@ public final class MarketEngine {
 								Component.translatable("bolsavillager.order.cancelled.no_shares", def.ticker));
 						continue;
 					}
-					double proceeds = sell(account, state, def, qty, rules, hero);
+					int proceeds = sell(account, state, def, qty, rules, hero);
+					deliver(account, player, proceeds);
 					notify(player, NotifyPayload.ORDER, Component.translatable("bolsavillager.order.done.title"),
-							Component.translatable("bolsavillager.order.done.sell", qty, def.ticker, fmt(proceeds)));
+							Component.translatable("bolsavillager.order.done.sell", qty, def.ticker, proceeds));
 				}
 			}
 		}
 	}
 
 	/**
-	 * Paga os dividendos do dia {@code day} a todos os acionistas (online ou não) e avisa quem está online
-	 * com uma notificação. Retorna o total distribuído.
+	 * Paga os dividendos do dia {@code day} a todos os acionistas (online ou não), sempre em esmeraldas
+	 * inteiras. A fração que não fecha 1 esmeralda fica guardada para o dia seguinte. Retorna o total pago.
 	 */
-	public static double payDividends(MinecraftServer server, MarketData data, long day) {
+	public static int payDividends(MinecraftServer server, MarketData data, long day) {
 		MarketRules rules = MarketRules.current();
 		if (!rules.dividendsEnabled()) {
 			return 0;
@@ -421,7 +421,7 @@ public final class MarketEngine {
 			perShare.put(def, rules.dividendPerShare(def, s.price, s.population, s.tradesDay));
 		}
 
-		double distributed = 0;
+		int distributed = 0;
 		for (Map.Entry<UUID, Account> entry : data.accounts().entrySet()) {
 			Account account = entry.getValue();
 			double total = 0;
@@ -438,15 +438,21 @@ public final class MarketEngine {
 			if (total <= 0) {
 				continue;
 			}
-			account.balance += total;
-			account.lastDividend = total;
+			account.dividendCarry += total;
+			int pay = (int) Math.floor(account.dividendCarry + 1e-9);
+			account.dividendCarry -= pay;
+			if (pay <= 0) {
+				continue;
+			}
+			account.lastDividend = pay;
 			account.lastDividendDay = day;
-			account.totalDividends += total;
-			distributed += total;
+			account.totalDividends += pay;
+			distributed += pay;
 
-			notify(server.getPlayerList().getPlayer(entry.getKey()), NotifyPayload.DIVIDENDS,
-					Component.translatable("bolsavillager.dividends.title", fmt(total)),
-					Component.translatable("bolsavillager.dividends.message", best.ticker, fmt(bestAmount)));
+			ServerPlayer player = server.getPlayerList().getPlayer(entry.getKey());
+			deliver(account, player, pay);
+			notify(player, NotifyPayload.DIVIDENDS, Component.translatable("bolsavillager.dividends.title", pay),
+					Component.translatable("bolsavillager.dividends.message", best.ticker));
 		}
 		data.setDirty();
 		return distributed;
@@ -470,6 +476,33 @@ public final class MarketEngine {
 		}
 	}
 
+	/** Ao entrar no mundo: entrega as esmeraldas que chegaram enquanto o jogador estava fora. */
+	public static void onJoin(ServerPlayer player) {
+		MarketData data = data(player.level().getServer());
+		Account account = data.account(player.getUUID());
+		if (account.pending > 0) {
+			int amount = account.pending;
+			account.pending = 0;
+			giveEmeralds(player, amount);
+			data.setDirty();
+			notify(player, NotifyPayload.MARKET, Component.translatable("bolsavillager.pending.title", amount),
+					Component.translatable("bolsavillager.pending.message"));
+		}
+		sync(player);
+	}
+
+	/** Entrega esmeraldas: na mochila se o jogador estiver online, senão guarda para quando ele entrar. */
+	private static void deliver(Account account, @Nullable ServerPlayer player, int amount) {
+		if (amount <= 0) {
+			return;
+		}
+		if (player != null) {
+			giveEmeralds(player, amount);
+		} else {
+			account.pending += amount;
+		}
+	}
+
 	private static void notify(@Nullable ServerPlayer player, int kind, Component title, Component message) {
 		if (player != null && ServerPlayNetworking.canSend(player, NotifyPayload.TYPE)) {
 			ServerPlayNetworking.send(player, new NotifyPayload(kind, title, message));
@@ -487,19 +520,18 @@ public final class MarketEngine {
 		player.sendSystemMessage(message, true);
 	}
 
-	private static void buy(Account account, StockState state, StockDef def, int qty, double cost, MarketRules rules) {
-		account.balance -= cost;
+	private static void buy(Account account, StockState state, StockDef def, int qty, int cost, MarketRules rules) {
 		account.shares.merge(def.id, qty, Integer::sum);
-		account.costBasis.merge(def.id, cost, Double::sum);
+		account.costBasis.merge(def.id, cost, Integer::sum);
 		state.price *= Math.exp(rules.impactPerShare() * qty);
 	}
 
-	private static double sell(Account account, StockState state, StockDef def, int qty, MarketRules rules, int hero) {
+	/** Tira as ações da carteira e devolve quantas esmeraldas a venda rende (quem chama entrega). */
+	private static int sell(Account account, StockState state, StockDef def, int qty, MarketRules rules, int hero) {
 		int owned = account.sharesOf(def);
-		double proceeds = rules.sellProceeds(state.price, qty, hero);
-		double basis = account.costBasis.getOrDefault(def.id, 0.0);
-		double basisSold = basis * qty / owned;
-		account.balance += proceeds;
+		int proceeds = rules.sellProceeds(state.price, qty, hero);
+		int basis = account.costBasis.getOrDefault(def.id, 0);
+		int basisSold = (int) Math.round((double) basis * qty / owned);
 		if (owned == qty) {
 			account.shares.remove(def.id);
 			account.costBasis.remove(def.id);
@@ -513,7 +545,7 @@ public final class MarketEngine {
 
 	/**
 	 * Compra/venda imediata de ações: quantity > 0 compra, quantity < 0 vende.
-	 * Na compra, se o saldo não bastar, as esmeraldas saem da mochila. Retorna se executou.
+	 * Paga com as esmeraldas da mochila e recebe esmeraldas na mochila. Retorna se executou.
 	 */
 	public static boolean executeTrade(ServerPlayer player, StockDef def, int quantity) {
 		if (quantity == 0 || Math.abs(quantity) > MAX_ORDER) {
@@ -528,19 +560,15 @@ public final class MarketEngine {
 		int qty = Math.abs(quantity);
 
 		if (quantity > 0) {
-			double cost = rules.buyCost(state.price, qty, hero);
-			if (account.balance < cost) {
-				int needed = (int) Math.ceil(cost - account.balance - 1e-9);
-				if (countEmeralds(player) < needed) {
-					feedback(player, Component.translatable("bolsavillager.msg.no_funds", fmt(cost), def.ticker)
-							.withStyle(ChatFormatting.RED));
-					return false;
-				}
-				removeEmeralds(player, needed);
-				account.balance += needed;
+			int cost = rules.buyCost(state.price, qty, hero);
+			if (countEmeralds(player) < cost) {
+				feedback(player, Component.translatable("bolsavillager.msg.no_funds", cost, qty, def.ticker)
+						.withStyle(ChatFormatting.RED));
+				return false;
 			}
+			removeEmeralds(player, cost);
 			buy(account, state, def, qty, cost, rules);
-			feedback(player, Component.translatable("bolsavillager.msg.bought", qty, def.ticker, fmt(cost))
+			feedback(player, Component.translatable("bolsavillager.msg.bought", qty, def.ticker, cost)
 					.withStyle(ChatFormatting.GREEN));
 		} else {
 			int owned = account.sharesOf(def);
@@ -548,21 +576,21 @@ public final class MarketEngine {
 				feedback(player, Component.translatable("bolsavillager.msg.no_shares", def.ticker).withStyle(ChatFormatting.RED));
 				return false;
 			}
-			double basisSold = account.costBasis.getOrDefault(def.id, 0.0) * qty / owned;
-			double proceeds = sell(account, state, def, qty, rules, hero);
-			double profit = proceeds - basisSold;
-			feedback(player, Component.translatable("bolsavillager.msg.sold", qty, def.ticker, fmt(proceeds),
-					(profit >= 0 ? "+" : "") + fmt(profit)).withStyle(profit >= 0 ? ChatFormatting.GREEN : ChatFormatting.GOLD));
+			int basisSold = (int) Math.round((double) account.costBasis.getOrDefault(def.id, 0) * qty / owned);
+			int proceeds = sell(account, state, def, qty, rules, hero);
+			giveEmeralds(player, proceeds);
+			int profit = proceeds - basisSold;
+			feedback(player, Component.translatable("bolsavillager.msg.sold", qty, def.ticker, proceeds,
+					(profit >= 0 ? "+" : "") + profit).withStyle(profit >= 0 ? ChatFormatting.GREEN : ChatFormatting.GOLD));
 		}
 		data.setDirty();
 		syncEveryone(server);
 		return true;
 	}
 
-	public static void placeOrder(ServerPlayer player, LimitOrder order) {
-		StockDef def = order.stock();
-		if (def == null || order.quantity() < 1 || order.quantity() > MAX_ORDER
-				|| !Double.isFinite(order.target()) || order.target() <= 0 || order.target() > 1e6) {
+	/** Cria uma ordem programada. Ordens de compra guardam as esmeraldas na hora. */
+	public static void placeOrder(ServerPlayer player, LimitOrder.Type type, StockDef def, int quantity, int target) {
+		if (quantity < 1 || quantity > MAX_ORDER || target < 1 || target > 100000) {
 			return;
 		}
 		MarketData data = data(player.level().getServer());
@@ -572,10 +600,20 @@ public final class MarketEngine {
 					.withStyle(ChatFormatting.RED));
 			return;
 		}
-		account.orders.add(order);
+		int reserved = 0;
+		if (type.isBuy()) {
+			// Guarda o que a compra custaria no preço-alvo; se sair mais barato, devolve o troco.
+			reserved = MarketRules.current().buyCost(target, quantity, heroLevel(player));
+			if (countEmeralds(player) < reserved) {
+				feedback(player, Component.translatable("bolsavillager.order.no_funds", reserved).withStyle(ChatFormatting.RED));
+				return;
+			}
+			removeEmeralds(player, reserved);
+		}
+		account.orders.add(new LimitOrder(type, def.id, quantity, target, reserved));
 		data.setDirty();
 		feedback(player, Component.translatable("bolsavillager.order.created",
-				Component.translatable(order.type().translationKey()), order.quantity(), def.ticker, fmt(order.target()))
+				Component.translatable(type.translationKey()), quantity, def.ticker, target)
 				.withStyle(ChatFormatting.AQUA));
 		sync(player);
 	}
@@ -584,58 +622,19 @@ public final class MarketEngine {
 		MarketData data = data(player.level().getServer());
 		Account account = data.account(player.getUUID());
 		if (index >= 0 && index < account.orders.size()) {
-			account.orders.remove(index);
+			LimitOrder order = account.orders.remove(index);
+			giveEmeralds(player, order.reserved());
 			data.setDirty();
 			sync(player);
 		}
 	}
 
-	/** Deposita esmeraldas da mochila no saldo (0 = todas). */
-	public static int deposit(ServerPlayer player, int amount) {
-		int available = countEmeralds(player);
-		int n = amount <= 0 ? available : Math.min(amount, available);
-		if (n <= 0) {
-			return 0;
-		}
-		removeEmeralds(player, n);
-		MarketData data = data(player.level().getServer());
-		data.account(player.getUUID()).balance += n;
-		data.setDirty();
-		feedback(player, Component.translatable("bolsavillager.msg.deposited", n).withStyle(ChatFormatting.GREEN));
-		sync(player);
-		return n;
-	}
-
-	/** Saca o saldo inteiro da corretora como esmeraldas. Retorna quantas esmeraldas saíram. */
-	public static int withdraw(ServerPlayer player) {
-		MarketData data = data(player.level().getServer());
-		Account account = data.account(player.getUUID());
-		int amount = (int) Math.floor(account.balance + 1e-9);
-		if (amount <= 0) {
-			return 0;
-		}
-		account.balance -= amount;
-		data.setDirty();
-		int left = amount;
-		while (left > 0) {
-			int n = Math.min(left, Items.EMERALD.getDefaultMaxStackSize());
-			ItemStack stack = new ItemStack(Items.EMERALD, n);
-			if (!player.getInventory().add(stack)) {
-				player.drop(stack, false);
-			}
-			left -= n;
-		}
-		player.containerMenu.broadcastChanges();
-		feedback(player, Component.translatable("bolsavillager.msg.withdrew", amount).withStyle(ChatFormatting.GREEN));
-		sync(player);
-		return amount;
-	}
-
 	/**
 	 * Balcão: o jogador vende itens da mochila para uma guilda, que decide quanto paga
-	 * (prosperidade, tamanho da guilda, saturação do dia e Herói da Vila). Retorna o valor recebido.
+	 * (prosperidade, tamanho da guilda, saturação do dia e Herói da Vila). O pagamento é em esmeraldas
+	 * inteiras, e só sai da mochila a quantidade de itens que esse pagamento cobre. Retorna as esmeraldas pagas.
 	 */
-	public static double sellItems(ServerPlayer player, Identifier itemId, StockDef guild, int quantity) {
+	public static int sellItems(ServerPlayer player, Identifier itemId, StockDef guild, int quantity) {
 		Item item = BuiltInRegistries.ITEM.getValue(itemId);
 		if (item == null || item == Items.AIR || quantity <= 0) {
 			return 0;
@@ -651,21 +650,27 @@ public final class MarketEngine {
 				owned += stack.getCount();
 			}
 		}
-		int qty = Math.min(quantity, owned);
-		if (qty <= 0) {
+		int asked = Math.min(quantity, owned);
+		if (asked <= 0) {
 			return 0;
 		}
 		MinecraftServer server = player.level().getServer();
 		MarketData data = data(server);
 		StockState state = data.stock(guild);
 		MarketRules rules = MarketRules.current();
+		int hero = heroLevel(player);
 		int sold = data.soldToday().getOrDefault(buyer.saturationKey(), 0);
-		double total = rules.saleTotal(buyer, state.price, state.population, sold, qty, heroLevel(player));
-		if (total <= 0) {
+		if (state.population <= 0) {
 			feedback(player, Component.translatable("bolsavillager.sale.no_villagers",
 					Component.translatable(guild.translationKey())).withStyle(ChatFormatting.RED));
 			return 0;
 		}
+		int payout = rules.salePayout(buyer, state.price, state.population, sold, asked, hero);
+		if (payout <= 0) {
+			feedback(player, Component.translatable("bolsavillager.sale.too_few").withStyle(ChatFormatting.RED));
+			return 0;
+		}
+		int qty = rules.saleQuantityFor(buyer, state.price, state.population, sold, asked, hero);
 
 		int left = qty;
 		for (int i = 0; i < player.getInventory().getContainerSize() && left > 0; i++) {
@@ -676,20 +681,18 @@ public final class MarketEngine {
 				left -= take;
 			}
 		}
-		player.containerMenu.broadcastChanges();
+		giveEmeralds(player, payout);
 
-		Account account = data.account(player.getUUID());
-		account.balance += total;
 		data.soldToday().merge(buyer.saturationKey(), qty, Integer::sum);
-		state.volumeDay += Math.max(1, (int) Math.round(total));
+		state.volumeDay += payout;
 		state.tradesDay++;
-		addPressure(guild, Math.min(0.0015 * Math.max(1, total), 0.05));
+		addPressure(guild, Math.min(0.0015 * payout, 0.05));
 		data.setDirty();
 
 		feedback(player, Component.translatable("bolsavillager.sale.done", qty, new ItemStack(item).getHoverName(),
-				Component.translatable(guild.translationKey()), fmt(total)).withStyle(ChatFormatting.GREEN));
+				Component.translatable(guild.translationKey()), payout).withStyle(ChatFormatting.GREEN));
 		syncEveryone(server);
-		return total;
+		return payout;
 	}
 
 	// ---------------------------------------------------------------------------------------------
@@ -724,8 +727,17 @@ public final class MarketEngine {
 		player.containerMenu.broadcastChanges();
 	}
 
-	/** Número no formato brasileiro: vírgula como separador decimal. */
-	public static String fmt(double value) {
-		return String.format(Locale.ROOT, "%.2f", value).replace('.', ',');
+	/** Entrega esmeraldas na mochila (o que não couber cai no chão, perto do jogador). */
+	public static void giveEmeralds(ServerPlayer player, int amount) {
+		int left = amount;
+		while (left > 0) {
+			int n = Math.min(left, Items.EMERALD.getDefaultMaxStackSize());
+			ItemStack stack = new ItemStack(Items.EMERALD, n);
+			if (!player.getInventory().add(stack)) {
+				player.drop(stack, false);
+			}
+			left -= n;
+		}
+		player.containerMenu.broadcastChanges();
 	}
 }

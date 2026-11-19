@@ -39,6 +39,12 @@ public final class BolsaConfig {
 	/** Villagers comemoram/reclamam com partículas quando a ação da guilda mexe forte. */
 	public boolean villagerParticles = true;
 
+	// ---- Trocas com villagers ----
+	/** Trocas nunca ficam bloqueadas (some o X vermelho de esgotado). */
+	public boolean unlimitedTrades = true;
+	/** Ágio por troca além do estoque normal, em fração do preço base (0.25 = +25% a cada troca extra). */
+	public double scarcitySurchargePerExtraTrade = 0.25;
+
 	// ---- Efeito da bolsa nas trocas ----
 	/** Quanto o desvio da ação em relação ao valor justo vira ajuste de preço nas trocas. 0 = desliga. */
 	public double tradePriceEffect = 0.3;
@@ -103,6 +109,8 @@ public final class BolsaConfig {
 		}
 		loaded.clamp();
 		instance = loaded;
+		br.bolsavillager.market.TradeLimits.unlimited = loaded.unlimitedTrades;
+		br.bolsavillager.market.TradeLimits.surchargePerExtraTrade = loaded.scarcitySurchargePerExtraTrade;
 		save();
 		return null;
 	}
@@ -129,6 +137,7 @@ public final class BolsaConfig {
 		this.tradePriceEffectMax = Mth.clamp(this.tradePriceEffectMax, 0.0, 0.9);
 		this.brokerageFee = Mth.clamp(this.brokerageFee, 0.0, 0.5);
 		this.marketImpactPerShare = Mth.clamp(this.marketImpactPerShare, 0.0001, 0.05);
+		this.scarcitySurchargePerExtraTrade = Mth.clamp(this.scarcitySurchargePerExtraTrade, 0.0, 5.0);
 		this.saleDemandPerVillager = Mth.clamp(this.saleDemandPerVillager, 0.1, 1000.0);
 		this.raidStartShock = Mth.clamp(this.raidStartShock, 0.0, 0.5);
 		this.raidOngoingPressure = Mth.clamp(this.raidOngoingPressure, 0.0, 0.2);

@@ -5,7 +5,8 @@ Cada profissão é uma empresa listada. As trocas, as reposições de estoque, o
 mudanças de profissão e as invasões (raids) mexem nas cotações. Você investe suas esmeraldas e lucra (ou
 perde) com isso, e também pode vender itens para as guildas, que decidem quanto pagam.
 
-Tudo em português, sem chat e sem blocos: aperte **B** em qualquer lugar.
+Tudo em português, sem chat e sem blocos: aperte **B** em qualquer lugar. Todo pagamento é em
+**esmeraldas inteiras**, direto da mochila e para a mochila.
 
 ![A bolsa](docs/acoes.png)
 
@@ -15,10 +16,10 @@ Aperte **B** (dá para trocar em *Opções → Controles → Bolsa dos Villagers
 
 | Aba | O que faz |
 |---|---|
-| **Ações** | Lista de empresas, gráfico da última hora, sua posição e o dividendo previsto. Escolha a quantidade (1, 2, 5, 10, 16, 32, 64 ou **Máx**) e compre ou venda na hora. **Vender tudo** zera a posição. |
-| **Ordens** | Ordens programadas, executadas sozinhas num pregão quando o preço chega no alvo, mesmo com você offline: **comprar se cair até**, **vender se subir até** (realizar lucro) e **stop: vender se cair até** (limitar prejuízo). O alvo é ajustado em ±1% e ±5%. Até 6 ordens. |
+| **Ações** | Lista de empresas, gráfico da última hora, quanto custa e quanto rende 1 ação, sua posição e o dividendo previsto. Escolha a quantidade (1, 2, 5, 10, 16, 32, 64 ou **Máx**) e compre ou venda na hora. **Vender tudo** zera a posição. |
+| **Ordens** | Ordens programadas, executadas sozinhas num pregão quando a cotação chega no alvo, mesmo com você offline: **comprar se cair até**, **vender se subir até** (realizar lucro) e **stop: vender se cair até** (limitar prejuízo). O alvo é ajustado de 1 em 1 ou de 5 em 5 esmeraldas. Até 6 ordens. |
 | **Vender itens** | O balcão: escolha um item da mochila e veja quais guildas compram e quanto cada uma oferece. O preço quem decide é a guilda (veja abaixo). |
-| **Carteira** | Saldo, valor em ações, patrimônio, lucro/prejuízo, dividendos e os botões **Depositar** e **Sacar** esmeraldas. |
+| **Carteira** | Esmeraldas na mochila, quanto suas ações rendem se vender agora, o que está guardado em ordens, patrimônio, lucro/prejuízo e dividendos. |
 
 | Ordens | Vender itens | Carteira |
 |---|---|---|
@@ -32,15 +33,17 @@ bolsa no preço das trocas e botões para comprar e vender ali mesmo.
 **Avisos** (dividendos, ordem executada, invasão) aparecem como notificação no canto da tela. Confirmações de
 compra e venda aparecem em cima da barra de itens. Nada vai para o chat.
 
-### Dinheiro
+### Dinheiro: só esmeraldas inteiras
 
-- Os preços são em esmeraldas (◆), com centavos.
-- Ao comprar, o valor sai do **saldo da corretora**. Se o saldo não bastar, as esmeraldas saem direto da mochila
-  e o troco fica no saldo.
-- Vendas de ações, vendas de itens e dividendos caem no saldo. **Sacar** transforma o saldo em esmeraldas.
-- **Ordens de compra programadas** usam só o saldo (você pode estar offline), então deposite antes.
-- A corretagem é de 1% por ordem. Cada ordem também move o preço (impacto de mercado), e você paga o preço
-  médio desse movimento, então comprar e vender em seguida nunca dá lucro.
+- Não existe saldo virtual nem centavos. **Comprar** tira esmeraldas da mochila; **vender**, ordens executadas,
+  vendas no balcão e dividendos **põem esmeraldas na mochila** (se estiver cheia, elas caem no chão perto de você).
+- A cotação aparece arredondada (ex.: 8◆). O preço real de 1 ação também aparece em inteiros, como
+  "compra 9◆ · venda 8◆": a corretagem e o arredondamento já estão incluídos. Compras arredondam para
+  cima e vendas para baixo, então comprar e vender em seguida nunca dá lucro.
+- **Ordens de compra programadas guardam as esmeraldas na hora em que são criadas**, para poderem rodar com
+  você offline. Cancelar devolve tudo; se a compra sair mais barata que o alvo, o troco volta.
+- O que chegar enquanto você estiver offline (ordem executada, dividendo) é entregue assim que você entrar no
+  mundo, com uma notificação.
 
 ## Balcão: vender itens para as guildas
 
@@ -52,9 +55,14 @@ paga melhor.
 Quem decide o preço é a guilda:
 
 ```
-preço da 1ª unidade = (1 ÷ unidades por esmeralda nas trocas) × prosperidade × bônus do Herói
+valor da 1ª unidade = (1 ÷ unidades por esmeralda nas trocas) × prosperidade × bônus do Herói
 prosperidade        = √(cotação ÷ valor justo), entre 0,6 e 1,5
 ```
+
+A guilda paga em **esmeraldas inteiras** (arredondando para baixo), e a tela mostra a oferta como
+"18 por 1◆". Para você não entregar item de graça por causa do arredondamento, só sai da mochila a menor
+quantidade que rende aquele pagamento. Por exemplo, com 64 trigos a guilda paga 3◆ por 61 e os outros 3 ficam
+na mochila.
 
 - **Guilda valorizada paga mais**, guilda em crise paga menos.
 - **Guilda sem nenhum villager não compra nada.**
@@ -63,6 +71,23 @@ prosperidade        = √(cotação ÷ valor justo), entre 0,6 e 1,5
 - Itens danificados ou encantados não entram no balcão.
 - Cada venda conta como movimento da guilda: sobe um pouco a ação, entra no volume e nas trocas do dia
   (que aumentam os dividendos).
+
+## Trocas nunca travam (adeus, X vermelho)
+
+No jogo normal, depois de algumas trocas o villager "esgota" a oferta: aparece um X vermelho e você não
+consegue mais comprar até ele repor o estoque no posto de trabalho. Com o mod, **a troca nunca trava**. No lugar
+do bloqueio entra um **ágio de escassez**:
+
+- Enquanto há estoque normal, o preço é o de sempre.
+- Cada troca além do estoque normal custa **+25% do preço base a mais**, sempre arredondado para cima e com no
+  mínimo +1 item. A 1ª troca extra custa +25%, a 2ª +50% e assim por diante, até o limite de uma pilha.
+- A tela de trocas mostra o preço normal riscado e o novo preço ao lado.
+- Quando o villager repõe o estoque, o preço volta ao normal (o jogo ainda pode subir um pouco o preço pela
+  procura, como no Minecraft normal).
+- Passar do estoque também conta como escassez na bolsa: a ação da guilda sobe um pouco.
+
+Dá para ajustar o ágio (`scarcitySurchargePerExtraTrade`) ou voltar ao bloqueio normal
+(`unlimitedTrades: false`) na configuração.
 
 ## Raids e descontos
 
@@ -90,14 +115,16 @@ nível extra). A tela mostra uma linha dourada quando o efeito está ativo.
 
 ## Dividendos
 
-Toda vez que vira o dia no Minecraft, cada empresa paga dividendos a quem tem ações dela. O valor cai direto
-no saldo, inclusive para quem está offline:
+Toda vez que vira o dia no Minecraft, cada empresa paga dividendos a quem tem ações dela, em esmeraldas
+inteiras direto na mochila (quem está offline recebe ao entrar):
 
 ```
 dividendo por ação = preço × (0,2% + 0,8% × min(1, trocas do dia ÷ 12))
 ```
 
 - Toda guilda com pelo menos um villager paga o mínimo; quanto mais trocas e vendas no dia, mais ela paga.
+- A tela mostra o previsto como "1◆ a cada 12 ações". Com poucas ações, a fração de cada dia vai se
+  acumulando até fechar 1 esmeralda, e você não perde nada.
 - O mercador ambulante só paga se teve alguma troca no dia.
 - Com os valores padrão, comprar antes da virada e vender logo depois não compensa: a corretagem de ida e
   volta (2%) é maior que o dividendo máximo (1%).
@@ -160,6 +187,8 @@ do servidor, que manda as regras para os clientes.
 | `maxMovePerSession` | 0.15 | Variação máxima de um pregão. |
 | `eventStrength` | 1.0 | Multiplica o efeito de todos os eventos dos villagers. |
 | `villagerParticles` | true | Villagers comemoram/reclamam com partículas. |
+| `unlimitedTrades` | true | Trocas nunca ficam bloqueadas (sem X vermelho). |
+| `scarcitySurchargePerExtraTrade` | 0.25 | Ágio por troca além do estoque normal (+25% do preço base a cada troca extra). |
 | `tradePriceEffect` | 0.3 | Quanto a cotação muda o preço das trocas. Use 0 para desligar. |
 | `tradePriceEffectMax` | 0.3 | Limite do efeito nas trocas (±30%). |
 | `brokerageFee` | 0.01 | Corretagem por ordem. |
@@ -203,14 +232,16 @@ O jar sai em `build/libs/bolsa-villagers-<versão>.jar`. Para abrir o jogo de de
 
 Este teste abre o jogo de verdade, em português, e faz o seguinte:
 
-- abre a bolsa pela tecla B, compra e vende;
-- cria uma ordem programada e confere se ela executa quando o preço sobe;
-- vende trigo no balcão, confere o valor pago e se a segunda leva vale menos;
-- deposita e saca;
+- abre a bolsa pela tecla B, compra e confere as esmeraldas que saíram da mochila;
+- cria uma ordem de venda programada e confere se ela executa quando o preço sobe;
+- cria uma ordem de compra, confere a reserva das esmeraldas e se cancelar devolve tudo;
+- vende trigo no balcão e confere o pagamento inteiro e os itens que sobram;
+- passa uma troca do estoque e confere que não aparece o X e que o preço sobe;
+- entrega esmeraldas pendentes ao entrar;
 - liga o Herói da Vila;
 - abre a tela de trocas;
 - gera uma vila, começa um raid e confere a queda e a alta na vitória;
-- paga dividendos;
+- paga dividendos ao longo de vários dias e confere que chegam inteiros na mochila;
 - reabre o mundo para conferir se tudo foi salvo.
 
 ```bash
@@ -232,8 +263,9 @@ src/main/java/br/bolsavillager/
   market/MarketRules.java    regras compartilhadas com o cliente (custos, trocas, balcão, dividendos, Herói)
   market/ItemDemand.java     o que cada guilda compra no balcão
   market/LimitOrder.java     ordens programadas
+  market/TradeLimits.java    trocas sem bloqueio e ágio de escassez
   market/MarketData.java     dados salvos (cotações, contas, censo, compras do dia)
-  mixin/                     ganchos em trocas, reposição, preços dos villagers e raids
+  mixin/                     ganchos em trocas, reposição, preços dos villagers, estoque e raids
   net/                       pacotes cliente <-> servidor
 src/client/java/br/bolsavillager/client/
   BolsaClient.java           tecla B e notificações

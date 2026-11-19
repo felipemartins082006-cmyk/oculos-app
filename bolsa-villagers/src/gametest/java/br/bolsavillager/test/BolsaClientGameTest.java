@@ -87,6 +87,7 @@ public class BolsaClientGameTest implements FabricClientGameTest {
 				spawn(level, front.relative(player.getDirection().getCounterClockWise(), 4), VillagerProfession.ARMORER);
 				player.getInventory().add(new ItemStack(Items.EMERALD, 64));
 				player.getInventory().add(new ItemStack(Items.EMERALD, 64));
+				player.getInventory().add(new ItemStack(Items.EMERALD, 64));
 				player.getInventory().add(new ItemStack(Items.WHEAT, 64));
 				player.getInventory().add(new ItemStack(Items.PAPER, 48));
 				player.getInventory().add(new ItemStack(Items.COAL, 30));
@@ -121,9 +122,14 @@ public class BolsaClientGameTest implements FabricClientGameTest {
 			ctx.clickScreenButton("+");
 			ctx.clickScreenButton("+");
 			ctx.clickScreenButton("+");
+			int emeraldsBefore = emeralds(sp);
+			int expectedCost = sp.getServer().computeOnServer(s ->
+					MarketRules.current().buyCost(MarketEngine.data(s).stock(StockDef.FARMER).price, 10, -1));
 			ctx.clickScreenButton("Comprar 10");
 			ctx.waitTicks(10);
 			check(shares(sp, playerId[0]) == 10, "deveria ter 10 ações FAZD3 após comprar na tela");
+			check(emeraldsBefore - emeralds(sp) == expectedCost,
+					"a compra deveria tirar " + expectedCost + " esmeraldas da mochila, tirou " + (emeraldsBefore - emeralds(sp)));
 			ctx.takeScreenshot("bolsa_acoes_comprou");
 
 			// ---- Ordens programadas: vender se subir até +5% ----
@@ -137,6 +143,7 @@ public class BolsaClientGameTest implements FabricClientGameTest {
 			ctx.takeScreenshot("bolsa_ordens");
 
 			// O preço sobe 20% e o pregão executa a ordem sozinho.
+			int beforeOrder = emeralds(sp);
 			sp.getServer().runOnServer(s -> {
 				StockState st = MarketEngine.data(s).stock(StockDef.FARMER);
 				st.price *= 1.2;
@@ -147,7 +154,24 @@ public class BolsaClientGameTest implements FabricClientGameTest {
 			check(shares(sp, playerId[0]) == 0, "a ordem de venda deveria ter vendido as 10 ações");
 			check(sp.getServer().computeOnServer(s -> MarketEngine.data(s).account(playerId[0]).orders.isEmpty()),
 					"a ordem executada deveria sair da lista");
+			check(emeralds(sp) > beforeOrder, "a venda programada deveria pôr esmeraldas na mochila");
 			ctx.takeScreenshot("bolsa_ordem_executada");
+
+			// Ordem de COMPRA guarda as esmeraldas na hora; cancelar devolve tudo.
+			int beforeBuyOrder = emeralds(sp);
+			int reserve = sp.getServer().computeOnServer(s -> {
+				ServerPlayer p = player(s);
+				int target = br.bolsavillager.market.MarketRules.shownPrice(MarketEngine.data(s).stock(StockDef.FARMER).price) - 1;
+				MarketEngine.placeOrder(p, br.bolsavillager.market.LimitOrder.Type.BUY_BELOW, StockDef.FARMER, 5, target);
+				return MarketEngine.data(s).account(p.getUUID()).reserved();
+			});
+			ctx.waitTicks(3);
+			check(reserve > 0 && beforeBuyOrder - emeralds(sp) == reserve,
+					"a ordem de compra deveria guardar " + reserve + " esmeraldas");
+			ctx.takeScreenshot("bolsa_ordem_compra");
+			sp.getServer().runOnServer(s -> MarketEngine.cancelOrder(player(s), 0));
+			ctx.waitTicks(3);
+			check(emeralds(sp) == beforeBuyOrder, "cancelar a ordem deveria devolver as esmeraldas");
 
 			// ---- Vender itens no balcão: clica no trigo (primeiro item da lista) ----
 			ctx.clickScreenButton("Vender itens");
@@ -156,43 +180,52 @@ public class BolsaClientGameTest implements FabricClientGameTest {
 					(screenW - BolsaScreen.W) / 2.0 + 6 + 40, (screenH - BolsaScreen.H) / 2.0 + 38 + BolsaScreen.ITEM_ROW_H / 2.0});
 			ctx.waitTicks(3);
 			ctx.takeScreenshot("bolsa_vender_itens");
-			double before = balance(sp, playerId[0]);
-			double expected = sp.getServer().computeOnServer(s -> {
+			int before = emeralds(sp);
+			int[] offer = sp.getServer().computeOnServer(s -> {
 				MarketData data = MarketEngine.data(s);
 				StockState st = data.stock(StockDef.FARMER);
 				ItemDemand.Buyer buyer = ItemDemand.buyer(new ItemStack(Items.WHEAT), StockDef.FARMER);
-				return MarketRules.current().saleTotal(buyer, st.price, st.population,
-						data.soldToday().getOrDefault(buyer.saturationKey(), 0), 64, -1);
+				int sold = data.soldToday().getOrDefault(buyer.saturationKey(), 0);
+				MarketRules r = MarketRules.current();
+				return new int[]{r.salePayout(buyer, st.price, st.population, sold, 64, -1),
+						r.saleQuantityFor(buyer, st.price, st.population, sold, 64, -1)};
 			});
-			check(expected > 0, "os fazendeiros deveriam oferecer algo pelo trigo");
-			ctx.clickScreenButton("Vender por " + MarketEngine.fmt(expected) + "◆");
+			check(offer[0] > 0, "os fazendeiros deveriam oferecer algo pelo trigo");
+			ctx.clickScreenButton("Vender " + offer[1] + " por " + offer[0] + "◆");
 			ctx.waitTicks(10);
-			double got = balance(sp, playerId[0]) - before;
-			check(Math.abs(got - expected) < 1e-6, "venda do trigo pagou " + got + ", esperado " + expected);
+			check(emeralds(sp) - before == offer[0], "venda do trigo pagou " + (emeralds(sp) - before) + ", esperado " + offer[0]);
 			int wheatLeft = sp.getServer().computeOnServer(s -> player(s).getInventory().countItem(Items.WHEAT));
-			check(wheatLeft == 0, "o trigo deveria ter saído da mochila");
-			// Segunda venda do mesmo item paga menos (a guilda já comprou hoje).
-			double second = sp.getServer().computeOnServer(s -> {
-				MarketData data = MarketEngine.data(s);
-				StockState st = data.stock(StockDef.FARMER);
-				ItemDemand.Buyer buyer = ItemDemand.buyer(new ItemStack(Items.WHEAT), StockDef.FARMER);
-				return MarketRules.current().saleTotal(buyer, st.price, st.population,
-						data.soldToday().getOrDefault(buyer.saturationKey(), 0), 64, -1);
-			});
-			check(second < expected, "a guilda deveria pagar menos depois de já ter comprado trigo hoje");
-			BolsaMod.LOGGER.info("[teste] 64 trigos: {} (segunda leva valeria {})", expected, second);
+			check(wheatLeft == 64 - offer[1], "deveriam sobrar " + (64 - offer[1]) + " trigos, sobraram " + wheatLeft);
+			BolsaMod.LOGGER.info("[teste] Balcão: {} trigos por {} esmeraldas (sobraram {})", offer[1], offer[0], wheatLeft);
 
-			// ---- Carteira: depositar e sacar ----
+			// ---- Carteira ----
 			ctx.clickScreenButton("Carteira");
-			ctx.waitTicks(2);
-			ctx.clickScreenButton("Depositar ◆");
-			ctx.waitTicks(10);
-			check(sp.getServer().computeOnServer(s -> player(s).getInventory().countItem(Items.EMERALD)) == 0,
-					"o depósito deveria levar todas as esmeraldas");
+			ctx.waitTicks(3);
 			ctx.takeScreenshot("bolsa_carteira");
-			ctx.clickScreenButton("Sacar ◆");
-			ctx.waitTicks(10);
-			check(balance(sp, playerId[0]) < 1.0, "o saque deveria esvaziar o saldo");
+
+			// ---- Troca além do estoque: sem X vermelho, com ágio de escassez ----
+			int[] scarcity = sp.getServer().computeOnServer(s -> {
+				Villager farmer = villagers(s, VillagerProfession.FARMER).getFirst();
+				MerchantOffer o = farmer.getOffers().getFirst();
+				int normal = o.getBaseCostA().getCount();
+				while (o.getUses() < o.getMaxUses() + 2) {
+					farmer.notifyTrade(o);
+				}
+				return new int[]{o.isOutOfStock() ? 1 : 0, normal, o.getCostA().getCount(), o.getUses(), o.getMaxUses()};
+			});
+			check(scarcity[0] == 0, "a troca não deveria ficar esgotada (X vermelho)");
+			check(scarcity[2] > scarcity[1], "depois do estoque normal a troca deveria ficar mais cara: "
+					+ scarcity[1] + " -> " + scarcity[2]);
+			BolsaMod.LOGGER.info("[teste] Troca além do estoque: usos {}/{}, custo {} -> {}", scarcity[3], scarcity[4], scarcity[1], scarcity[2]);
+
+			// ---- Esmeraldas que chegaram com o jogador fora são entregues ao entrar ----
+			int beforePending = emeralds(sp);
+			sp.getServer().runOnServer(s -> {
+				MarketEngine.data(s).account(playerId[0]).pending = 7;
+				MarketEngine.onJoin(player(s));
+			});
+			ctx.waitTicks(3);
+			check(emeralds(sp) - beforePending == 7, "as 7 esmeraldas pendentes deveriam ter sido entregues");
 
 			// ---- Herói da Vila: corretagem mais barata e sem pagar a alta da bolsa nas trocas ----
 			sp.getServer().runOnServer(s -> player(s).addEffect(new MobEffectInstance(MobEffects.HERO_OF_THE_VILLAGE, 20 * 600, 0)));
@@ -255,13 +288,21 @@ public class BolsaClientGameTest implements FabricClientGameTest {
 			sp.getServer().runOnServer(s -> {
 				ServerPlayer p = player(s);
 				p.getInventory().add(new ItemStack(Items.EMERALD, 64));
-				br.bolsavillager.market.MarketEngine.executeTrade(p, StockDef.LIBRARIAN, 3);
-				MarketEngine.payDividends(s, MarketEngine.data(s), MarketEngine.data(s).day);
+				MarketEngine.executeTrade(p, StockDef.LIBRARIAN, 3);
+			});
+			int beforeDiv = emeralds(sp);
+			sp.getServer().runOnServer(s -> {
+				// 30 dias: a fração de cada dia vai acumulando até virar esmeralda inteira.
+				for (int i = 0; i < 30; i++) {
+					MarketEngine.payDividends(s, MarketEngine.data(s), MarketEngine.data(s).day);
+				}
 				MarketEngine.syncEveryone(s);
 			});
 			ctx.waitTicks(10);
-			check(sp.getServer().computeOnServer(s -> MarketEngine.data(s).account(playerId[0]).lastDividend) > 0,
-					"deveria ter recebido dividendos");
+			int paid = sp.getServer().computeOnServer(s -> MarketEngine.data(s).account(playerId[0]).totalDividends);
+			check(paid > 0, "deveria ter recebido dividendos (em esmeraldas inteiras)");
+			check(emeralds(sp) - beforeDiv == paid, "os dividendos deveriam ir direto para a mochila");
+			BolsaMod.LOGGER.info("[teste] Dividendos pagos em esmeraldas inteiras: {}", paid);
 			ctx.takeScreenshot("bolsa_dividendos");
 
 			censusBefore[0] = sp.getServer().computeOnServer(s -> MarketEngine.data(s).stock(StockDef.FARMER).population);
@@ -329,8 +370,8 @@ public class BolsaClientGameTest implements FabricClientGameTest {
 		return sp.getServer().computeOnServer(s -> MarketEngine.data(s).account(player).sharesOf(StockDef.FARMER));
 	}
 
-	private static double balance(TestSingleplayerContext sp, UUID player) {
-		return sp.getServer().computeOnServer(s -> MarketEngine.data(s).account(player).balance);
+	private static int emeralds(TestSingleplayerContext sp) {
+		return sp.getServer().computeOnServer(s -> player(s).getInventory().countItem(Items.EMERALD));
 	}
 
 	private static ServerPlayer player(MinecraftServer server) {

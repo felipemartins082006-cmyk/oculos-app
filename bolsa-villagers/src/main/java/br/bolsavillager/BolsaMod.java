@@ -3,13 +3,11 @@ package br.bolsavillager;
 import br.bolsavillager.market.MarketEngine;
 import br.bolsavillager.market.StockDef;
 import br.bolsavillager.net.CancelOrderPayload;
-import br.bolsavillager.net.DepositPayload;
 import br.bolsavillager.net.MarketSyncPayload;
 import br.bolsavillager.net.NotifyPayload;
 import br.bolsavillager.net.PlaceOrderPayload;
 import br.bolsavillager.net.SellItemsPayload;
 import br.bolsavillager.net.TradeSharesPayload;
-import br.bolsavillager.net.WithdrawPayload;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
@@ -36,8 +34,6 @@ public class BolsaMod implements ModInitializer {
 		PayloadTypeRegistry.clientboundPlay().register(MarketSyncPayload.TYPE, MarketSyncPayload.CODEC);
 		PayloadTypeRegistry.clientboundPlay().register(NotifyPayload.TYPE, NotifyPayload.CODEC);
 		PayloadTypeRegistry.serverboundPlay().register(TradeSharesPayload.TYPE, TradeSharesPayload.CODEC);
-		PayloadTypeRegistry.serverboundPlay().register(WithdrawPayload.TYPE, WithdrawPayload.CODEC);
-		PayloadTypeRegistry.serverboundPlay().register(DepositPayload.TYPE, DepositPayload.CODEC);
 		PayloadTypeRegistry.serverboundPlay().register(SellItemsPayload.TYPE, SellItemsPayload.CODEC);
 		PayloadTypeRegistry.serverboundPlay().register(PlaceOrderPayload.TYPE, PlaceOrderPayload.CODEC);
 		PayloadTypeRegistry.serverboundPlay().register(CancelOrderPayload.TYPE, CancelOrderPayload.CODEC);
@@ -48,18 +44,18 @@ public class BolsaMod implements ModInitializer {
 				MarketEngine.executeTrade(context.player(), def, payload.quantity());
 			}
 		});
-		ServerPlayNetworking.registerGlobalReceiver(WithdrawPayload.TYPE,
-				(payload, context) -> MarketEngine.withdraw(context.player()));
-		ServerPlayNetworking.registerGlobalReceiver(DepositPayload.TYPE,
-				(payload, context) -> MarketEngine.deposit(context.player(), payload.amount()));
 		ServerPlayNetworking.registerGlobalReceiver(SellItemsPayload.TYPE, (payload, context) -> {
 			StockDef guild = StockDef.byId(payload.guildId());
 			if (guild != null) {
 				MarketEngine.sellItems(context.player(), payload.item(), guild, payload.quantity());
 			}
 		});
-		ServerPlayNetworking.registerGlobalReceiver(PlaceOrderPayload.TYPE,
-				(payload, context) -> MarketEngine.placeOrder(context.player(), payload.order()));
+		ServerPlayNetworking.registerGlobalReceiver(PlaceOrderPayload.TYPE, (payload, context) -> {
+			StockDef def = StockDef.byId(payload.stockId());
+			if (def != null) {
+				MarketEngine.placeOrder(context.player(), payload.orderType(), def, payload.quantity(), payload.target());
+			}
+		});
 		ServerPlayNetworking.registerGlobalReceiver(CancelOrderPayload.TYPE,
 				(payload, context) -> MarketEngine.cancelOrder(context.player(), payload.index()));
 
@@ -68,7 +64,7 @@ public class BolsaMod implements ModInitializer {
 		ServerLivingEntityEvents.AFTER_DEATH.register(MarketEngine::onDeath);
 		ServerEntityEvents.ENTITY_LOAD.register(MarketEngine::onEntityLoad);
 		ServerEntityEvents.ENTITY_UNLOAD.register(MarketEngine::onEntityUnload);
-		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> MarketEngine.sync(handler.player));
+		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> MarketEngine.onJoin(handler.player));
 		ServerLifecycleEvents.SERVER_STOPPED.register(server -> MarketEngine.reset());
 
 		LOGGER.info("Bolsa dos Villagers aberta para negociação!");

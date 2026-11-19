@@ -7,12 +7,10 @@ import br.bolsavillager.market.MarketEngine;
 import br.bolsavillager.market.MarketRules;
 import br.bolsavillager.market.StockDef;
 import br.bolsavillager.net.CancelOrderPayload;
-import br.bolsavillager.net.DepositPayload;
 import br.bolsavillager.net.MarketSyncPayload;
 import br.bolsavillager.net.PlaceOrderPayload;
 import br.bolsavillager.net.SellItemsPayload;
 import br.bolsavillager.net.TradeSharesPayload;
-import br.bolsavillager.net.WithdrawPayload;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -39,6 +37,7 @@ import java.util.Map;
 /**
  * A tela da bolsa, aberta pela tecla (padrão B) em qualquer lugar. Quatro abas:
  * Ações (comprar/vender na hora), Ordens (programadas), Vender itens (balcão das guildas) e Carteira.
+ * Todo valor é em esmeraldas inteiras, pagas e recebidas direto na mochila.
  */
 public class BolsaScreen extends Screen {
 	public static final int W = 330;
@@ -68,7 +67,9 @@ public class BolsaScreen extends Screen {
 	private static StockDef selected = StockDef.FARMER;
 	private static int qtyIndex = 0;
 	private static LimitOrder.Type orderType = LimitOrder.Type.BUY_BELOW;
-	private static double orderOffset = -0.05;
+	/** Alvo da ordem em esmeraldas; -1 = usar o sugerido para a ação/tipo atuais. */
+	private static int orderTarget = -1;
+	private static @Nullable StockDef orderTargetStock;
 	private static @Nullable Item saleItem;
 	private static @Nullable StockDef saleGuild;
 	private static int saleQtyIndex = 2;
@@ -80,16 +81,24 @@ public class BolsaScreen extends Screen {
 	private int rx;
 	private int rw;
 	private int saleScroll;
-	private int seenVersion = -1;
 	private int seenOrders = -1;
 	private final List<Runnable> updaters = new ArrayList<>();
 
 	public BolsaScreen() {
 		super(Component.translatable("bolsavillager.screen.title"));
+		orderTarget = -1; // a cada abertura, sugere um alvo perto da cotação atual
 	}
 
 	public static void openTab(Tab t) {
 		tab = t;
+	}
+
+	private static int hero() {
+		return ClientMarket.heroLevel();
+	}
+
+	private static MarketRules rules() {
+		return ClientMarket.rules();
 	}
 
 	// ---------------------------------------------------------------------------------------------
@@ -119,7 +128,8 @@ public class BolsaScreen extends Screen {
 			case STOCKS -> this.initStocks();
 			case ORDERS -> this.initOrders();
 			case SELL -> this.initSell();
-			case WALLET -> this.initWallet();
+			case WALLET -> {
+			}
 		}
 		this.seenOrders = ClientMarket.account().orders().size();
 		this.updateWidgets();
@@ -154,8 +164,7 @@ public class BolsaScreen extends Screen {
 			if (v == null) {
 				return;
 			}
-			double funds = ClientMarket.account().balance() + ClientMarket.emeraldsInInventory();
-			int n = ClientMarket.rules().maxAffordable(v.price(), funds, ClientMarket.heroLevel(), MarketEngine.MAX_ORDER);
+			int n = rules().maxAffordable(v.price(), ClientMarket.emeraldsInInventory(), hero(), MarketEngine.MAX_ORDER);
 			int best = 0;
 			for (int i = 0; i < QTY.length; i++) {
 				if (QTY[i] <= Math.max(1, n)) {
@@ -166,7 +175,6 @@ public class BolsaScreen extends Screen {
 			this.updateWidgets();
 		});
 		max.setTooltip(Tooltip.create(Component.translatable("bolsavillager.button.max.tooltip")));
-
 		Button sellAll = this.button(Component.translatable("bolsavillager.button.sell_all"), after + 32, y,
 				this.rx + this.rw - (after + 32), 16, b -> {
 			int owned = ClientMarket.account().shares().getOrDefault(selected.id, 0);
@@ -184,53 +192,61 @@ public class BolsaScreen extends Screen {
 		this.updaters.add(() -> {
 			MarketSyncPayload.StockView v = ClientMarket.get(selected);
 			int owned = ClientMarket.account().shares().getOrDefault(selected.id, 0);
-			double funds = ClientMarket.account().balance() + ClientMarket.emeraldsInInventory();
-			double cost = v == null ? Double.MAX_VALUE : ClientMarket.rules().buyCost(v.price(), this.qty(), ClientMarket.heroLevel());
+			int cost = v == null ? Integer.MAX_VALUE : rules().buyCost(v.price(), this.qty(), hero());
 			buy.setMessage(Component.translatable("bolsavillager.button.buy", this.qty()));
 			sell.setMessage(Component.translatable("bolsavillager.button.sell", this.qty()));
-			buy.active = funds >= cost;
+			buy.active = ClientMarket.emeraldsInInventory() >= cost;
 			sell.active = owned >= this.qty();
 			sellAll.active = owned > 0;
 			if (v != null) {
-				buy.setTooltip(Tooltip.create(Component.translatable("bolsavillager.button.cost", MarketUi.money(cost))));
+				buy.setTooltip(Tooltip.create(Component.translatable("bolsavillager.button.cost", cost)));
 				sell.setTooltip(Tooltip.create(Component.translatable("bolsavillager.button.proceeds",
-						MarketUi.money(ClientMarket.rules().sellProceeds(v.price(), this.qty(), ClientMarket.heroLevel())))));
+						rules().sellProceeds(v.price(), this.qty(), hero()))));
+				sellAll.setTooltip(Tooltip.create(Component.translatable("bolsavillager.button.proceeds",
+						ClientMarket.liquidationValue(selected))));
 			}
 		});
+	}
+
+	/** Alvo atual da ordem: o escolhido pelo jogador, ou o sugerido se mudou de ação. */
+	private int orderTarget() {
+		MarketSyncPayload.StockView v = ClientMarket.get(selected);
+		if (orderTarget < 1 || orderTargetStock != selected) {
+			orderTarget = orderType.defaultTarget(v == null ? 1 : MarketRules.shownPrice(v.price()));
+			orderTargetStock = selected;
+		}
+		return orderTarget;
+	}
+
+	private int orderReserve() {
+		return orderType.isBuy() ? rules().buyCost(this.orderTarget(), this.qty(), hero()) : 0;
 	}
 
 	private void initOrders() {
 		Button type = this.button(Component.empty(), this.rx, this.ct + 12, this.rw, 16, b -> {
 			orderType = orderType.next();
-			orderOffset = switch (orderType) {
-				case BUY_BELOW -> -0.05;
-				case SELL_ABOVE -> 0.05;
-				case STOP_LOSS -> -0.10;
-			};
+			orderTarget = -1;
 			this.updateWidgets();
 		});
 		this.updaters.add(() -> type.setMessage(Component.translatable("bolsavillager.order.type",
 				Component.translatable(orderType.translationKey()))));
 
 		int y = this.ct + 31;
-		this.button(Component.literal("-5%"), this.rx, y, 24, 16, b -> this.offset(-0.05));
-		this.button(Component.literal("-1%"), this.rx + 26, y, 24, 16, b -> this.offset(-0.01));
-		this.button(Component.literal("+1%"), this.rx + this.rw - 50, y, 24, 16, b -> this.offset(0.01));
-		this.button(Component.literal("+5%"), this.rx + this.rw - 24, y, 24, 16, b -> this.offset(0.05));
+		this.button(Component.literal("-5"), this.rx, y, 24, 16, b -> this.moveTarget(-5));
+		this.button(Component.literal("-1"), this.rx + 26, y, 24, 16, b -> this.moveTarget(-1));
+		this.button(Component.literal("+1"), this.rx + this.rw - 50, y, 24, 16, b -> this.moveTarget(1));
+		this.button(Component.literal("+5"), this.rx + this.rw - 24, y, 24, 16, b -> this.moveTarget(5));
 
 		int y2 = this.ct + 50;
 		this.qtySelector(this.rx, y2);
-		Button create = this.button(Component.translatable("bolsavillager.order.create"), this.rx + this.rw - 76, y2, 76, 16, b -> {
-			MarketSyncPayload.StockView v = ClientMarket.get(selected);
-			if (v != null) {
-				double target = Math.max(MarketEngine.MIN_PRICE, v.price() * (1 + orderOffset));
-				ClientPlayNetworking.send(new PlaceOrderPayload(new LimitOrder(orderType, selected.id, this.qty(), target)));
-			}
-		});
+		Button create = this.button(Component.translatable("bolsavillager.order.create"), this.rx + this.rw - 76, y2, 76, 16,
+				b -> ClientPlayNetworking.send(new PlaceOrderPayload(orderType, selected.id, this.qty(), this.orderTarget())));
 		this.updaters.add(() -> {
-			create.active = ClientMarket.account().orders().size() < LimitOrder.MAX_PER_PLAYER;
-			create.setTooltip(Tooltip.create(Component.translatable(orderType.isBuy()
-					? "bolsavillager.order.create.tooltip_buy" : "bolsavillager.order.create.tooltip_sell")));
+			boolean room = ClientMarket.account().orders().size() < LimitOrder.MAX_PER_PLAYER;
+			create.active = room && ClientMarket.emeraldsInInventory() >= this.orderReserve();
+			create.setTooltip(Tooltip.create(orderType.isBuy()
+					? Component.translatable("bolsavillager.order.create.tooltip_buy", this.orderReserve())
+					: Component.translatable("bolsavillager.order.create.tooltip_sell")));
 		});
 
 		List<LimitOrder> orders = ClientMarket.account().orders();
@@ -238,12 +254,13 @@ public class BolsaScreen extends Screen {
 			int index = i;
 			Button cancel = this.button(Component.literal("✕"), this.rx + this.rw - 12, this.ct + 86 + i * 14, 12, 12,
 					b -> ClientPlayNetworking.send(new CancelOrderPayload(index)));
-			cancel.setTooltip(Tooltip.create(Component.translatable("bolsavillager.order.cancel")));
+			cancel.setTooltip(Tooltip.create(Component.translatable(orders.get(i).reserved() > 0
+					? "bolsavillager.order.cancel_refund" : "bolsavillager.order.cancel", orders.get(i).reserved())));
 		}
 	}
 
-	private void offset(double delta) {
-		orderOffset = Math.max(-0.9, Math.min(3.0, Math.round((orderOffset + delta) * 100) / 100.0));
+	private void moveTarget(int delta) {
+		orderTarget = Math.max(1, Math.min(100000, this.orderTarget() + delta));
 		this.updateWidgets();
 	}
 
@@ -280,27 +297,13 @@ public class BolsaScreen extends Screen {
 		});
 		this.updaters.add(() -> {
 			all.active = !saleAll;
-			ItemDemand.Buyer buyer = this.saleBuyer();
-			double total = this.saleOffer(this.saleQuantity());
-			sell.active = buyer != null && this.saleQuantity() > 0 && total > 0;
+			int payout = this.salePayout(this.saleQuantity());
+			sell.active = this.saleBuyer() != null && payout > 0;
 			sell.setMessage(saleGuild == null
 					? Component.translatable("bolsavillager.sale.choose")
-					: Component.translatable("bolsavillager.sale.sell_to", MarketUi.money(total)));
-		});
-	}
-
-	private void initWallet() {
-		int y = this.ct + 132;
-		int bw = (this.rw - 2) / 2;
-		Button deposit = this.button(Component.translatable("bolsavillager.button.deposit"), this.rx, y, bw, 18,
-				b -> ClientPlayNetworking.send(new DepositPayload(0)));
-		deposit.setTooltip(Tooltip.create(Component.translatable("bolsavillager.button.deposit.tooltip")));
-		Button withdraw = this.button(Component.translatable("bolsavillager.button.withdraw"), this.rx + bw + 2, y, bw, 18,
-				b -> ClientPlayNetworking.send(WithdrawPayload.INSTANCE));
-		withdraw.setTooltip(Tooltip.create(Component.translatable("bolsavillager.button.withdraw.tooltip")));
-		this.updaters.add(() -> {
-			deposit.active = ClientMarket.emeraldsInInventory() > 0;
-			withdraw.active = ClientMarket.account().balance() >= 1.0;
+					: payout > 0
+					? Component.translatable("bolsavillager.sale.sell_to", this.saleUsed(), payout)
+					: Component.translatable("bolsavillager.sale.too_few_short"));
 		});
 	}
 
@@ -319,9 +322,6 @@ public class BolsaScreen extends Screen {
 		// Ordens novas/canceladas mudam os botões de cancelar: reconstrói a aba.
 		if (tab == Tab.ORDERS && ClientMarket.account().orders().size() != this.seenOrders) {
 			this.rebuildWidgets();
-		}
-		if (ClientMarket.version() != this.seenVersion) {
-			this.seenVersion = ClientMarket.version();
 		}
 		this.updateWidgets();
 	}
@@ -364,6 +364,7 @@ public class BolsaScreen extends Screen {
 		return 0;
 	}
 
+	/** Quantidade escolhida para vender (antes do ajuste ao arredondamento). */
 	private int saleQuantity() {
 		int owned = this.ownedOf(saleItem);
 		return saleAll ? owned : Math.min(SALE_QTY[saleQtyIndex], owned);
@@ -373,33 +374,46 @@ public class BolsaScreen extends Screen {
 		return saleItem == null || saleGuild == null ? null : ItemDemand.buyer(new ItemStack(saleItem), saleGuild);
 	}
 
-	private double saleOffer(ItemDemand.Buyer buyer, int quantity) {
+	private int salePayout(ItemDemand.Buyer buyer, int quantity) {
 		MarketSyncPayload.StockView v = ClientMarket.get(buyer.guild());
-		if (v == null) {
-			return 0;
-		}
-		return ClientMarket.rules().saleTotal(buyer, v.price(), v.population(), ClientMarket.soldToday(buyer), quantity,
-				ClientMarket.heroLevel());
+		return v == null ? 0 : rules().salePayout(buyer, v.price(), v.population(), ClientMarket.soldToday(buyer), quantity, hero());
 	}
 
-	private double saleOffer(int quantity) {
+	private int salePayout(int quantity) {
 		ItemDemand.Buyer buyer = this.saleBuyer();
-		return buyer == null ? 0 : this.saleOffer(buyer, quantity);
+		return buyer == null ? 0 : this.salePayout(buyer, quantity);
 	}
 
-	/** Escolhe a guilda que paga melhor pelo item. */
+	/** Quantos itens realmente saem da mochila (o mínimo que rende o mesmo pagamento). */
+	private int saleUsed() {
+		ItemDemand.Buyer buyer = this.saleBuyer();
+		MarketSyncPayload.StockView v = buyer == null ? null : ClientMarket.get(buyer.guild());
+		return v == null ? 0 : rules().saleQuantityFor(buyer, v.price(), v.population(), ClientMarket.soldToday(buyer),
+				this.saleQuantity(), hero());
+	}
+
+	private int unitsPerEmerald(ItemDemand.Buyer buyer) {
+		MarketSyncPayload.StockView v = ClientMarket.get(buyer.guild());
+		return v == null ? 0 : rules().unitsPerEmeraldNow(buyer, v.price(), v.population(), ClientMarket.soldToday(buyer), hero());
+	}
+
+	/** Escolhe a guilda que paga melhor pelo item (a que pede menos itens por esmeralda). */
 	private void pickBestGuild() {
 		saleGuild = null;
 		if (saleItem == null) {
 			return;
 		}
-		double best = -1;
+		int best = Integer.MAX_VALUE;
 		for (ItemDemand.Buyer b : ItemDemand.buyersOf(new ItemStack(saleItem))) {
-			double offer = this.saleOffer(b, 1);
-			if (offer > best) {
-				best = offer;
+			int units = this.unitsPerEmerald(b);
+			if (units > 0 && units < best) {
+				best = units;
 				saleGuild = b.guild();
 			}
+		}
+		if (saleGuild == null) {
+			List<ItemDemand.Buyer> buyers = ItemDemand.buyersOf(new ItemStack(saleItem));
+			saleGuild = buyers.isEmpty() ? null : buyers.getFirst().guild();
 		}
 	}
 
@@ -520,7 +534,7 @@ public class BolsaScreen extends Screen {
 			MarketSyncPayload.StockView view = ClientMarket.get(def);
 			if (view != null) {
 				double change = ClientMarket.changePercent(view);
-				MarketUi.textRight(g, this.font, MarketUi.money(view.price()), x + 76, y + 2, MarketUi.TEXT);
+				MarketUi.textRight(g, this.font, MarketUi.price(view.price()) + MarketUi.EMERALD, x + 82, y + 2, MarketUi.TEXT);
 				MarketUi.textRight(g, this.font, MarketUi.percent(change), x + LIST_W - 2, y + 2, MarketUi.changeColor(change));
 			}
 			if (hover) {
@@ -538,7 +552,6 @@ public class BolsaScreen extends Screen {
 		if (view == null) {
 			return;
 		}
-		MarketRules rules = ClientMarket.rules();
 		double change = ClientMarket.changePercent(view);
 
 		g.fill(x, y + 1, x + 3, y + 8, selected.color);
@@ -549,57 +562,60 @@ public class BolsaScreen extends Screen {
 		g.pose().pushMatrix();
 		g.pose().translate(x, y);
 		g.pose().scale(1.5F, 1.5F);
-		g.text(this.font, MarketUi.money(view.price()) + MarketUi.EMERALD, 0, 0, MarketUi.TEXT, false);
+		g.text(this.font, MarketUi.price(view.price()) + MarketUi.EMERALD, 0, 0, MarketUi.TEXT, false);
 		g.pose().popMatrix();
 		MarketUi.textRight(g, this.font, MarketUi.arrow(change) + " " + MarketUi.percent(change) + " " +
 				Component.translatable("bolsavillager.screen.today").getString(), x + w, y + 3, MarketUi.changeColor(change));
 
+		// Preço real de 1 ação (com corretagem e arredondamento): o que sai e o que entra na mochila.
 		y += 16;
-		MarketUi.chart(g, view.history(), x, y, w, 44, true);
-		g.text(this.font, Component.translatable("bolsavillager.screen.last_hour"), x + 2, y + 2, MarketUi.TEXT_DIM, false);
+		g.text(this.font, Component.translatable("bolsavillager.screen.ask_bid",
+				rules().buyCost(view.price(), 1, hero()), rules().sellProceeds(view.price(), 1, hero())), x, y, MarketUi.TEXT_DIM, false);
 
-		y += 47;
+		y += 11;
+		MarketUi.chart(g, view.history(), x, y, w, 33, true);
+
+		y += 36;
 		g.text(this.font, Component.translatable(selected == StockDef.WANDERING_TRADER
 						? "bolsavillager.screen.stats_wandering" : "bolsavillager.screen.stats",
 				view.population(), view.volumeDay(), view.tradesDay()), x, y, MarketUi.TEXT_DIM, false);
 
 		y += 11;
-		if (rules.dividendsEnabled()) {
-			double dps = rules.dividendPerShare(selected, view.price(), view.population(), view.tradesDay());
-			g.text(this.font, Component.translatable("bolsavillager.screen.dividend_forecast", MarketUi.money(dps)),
+		if (rules().dividendsEnabled()) {
+			int per = MarketRules.sharesPerDividendEmerald(
+					rules().dividendPerShare(selected, view.price(), view.population(), view.tradesDay()));
+			g.text(this.font, per > 0
+							? Component.translatable("bolsavillager.screen.dividend_forecast", per)
+							: Component.translatable("bolsavillager.screen.dividend_none"),
 					x, y, MarketUi.GOLD, false);
 		}
 
 		y += 11;
 		int owned = ClientMarket.account().shares().getOrDefault(selected.id, 0);
 		if (owned > 0) {
-			double basis = ClientMarket.account().costBasis().getOrDefault(selected.id, 0.0);
-			double pl = view.price() * owned - basis;
-			g.text(this.font, Component.translatable("bolsavillager.screen.position", owned, MarketUi.money(basis / owned)),
-					x, y, MarketUi.TEXT, false);
-			MarketUi.textRight(g, this.font, (pl >= 0 ? "+" : "") + MarketUi.money(pl) + MarketUi.EMERALD, x + w, y, MarketUi.changeColor(pl));
+			int basis = ClientMarket.account().costBasis().getOrDefault(selected.id, 0);
+			int pl = ClientMarket.liquidationValue(selected) - basis;
+			g.text(this.font, Component.translatable("bolsavillager.screen.position", owned, basis), x, y, MarketUi.TEXT, false);
+			MarketUi.textRight(g, this.font, (pl >= 0 ? "+" : "") + pl + MarketUi.EMERALD, x + w, y, MarketUi.changeColor(pl));
 		} else {
 			g.text(this.font, Component.translatable("bolsavillager.screen.no_position"), x, y, MarketUi.TEXT_DIM, false);
 		}
 
 		// Quantidade escolhida (entre os botões - e +)
 		g.centeredText(this.font, Component.literal(String.valueOf(this.qty())), x + 37, this.ct + 112, MarketUi.TEXT);
-
 		this.extractMoneyFooter(g, this.ct + 152);
 	}
 
 	private void extractMoneyFooter(GuiGraphicsExtractor g, int y) {
 		int x = this.rx;
 		g.horizontalLine(x, x + this.rw, y - 3, 0x40FFFFFF);
-		g.text(this.font, Component.translatable("bolsavillager.screen.balance_line",
-						MarketUi.money(ClientMarket.account().balance()), ClientMarket.emeraldsInInventory()),
+		g.text(this.font, Component.translatable("bolsavillager.screen.inventory_line", ClientMarket.emeraldsInInventory()),
 				x, y + 1, MarketUi.TEXT, false);
-		int hero = ClientMarket.heroLevel();
-		if (hero >= 0) {
-			MarketRules rules = ClientMarket.rules();
+		int h = hero();
+		if (h >= 0) {
 			g.text(this.font, Component.translatable("bolsavillager.screen.hero",
-							String.format(Locale.ROOT, "%.0f", rules.heroFeeDiscount() * 100),
-							String.format(Locale.ROOT, "%.0f", (rules.heroSaleMultiplier(hero) - 1) * 100)),
+							String.format(Locale.ROOT, "%.0f", rules().heroFeeDiscount() * 100),
+							String.format(Locale.ROOT, "%.0f", (rules().heroSaleMultiplier(h) - 1) * 100)),
 					x, y + 12, MarketUi.GOLD, false);
 		}
 	}
@@ -612,10 +628,10 @@ public class BolsaScreen extends Screen {
 			return;
 		}
 		g.text(this.font, Component.translatable("bolsavillager.order.new", selected.ticker), x, this.ct + 1, MarketUi.TEXT, false);
-		MarketUi.textRight(g, this.font, MarketUi.money(view.price()) + MarketUi.EMERALD, x + w, this.ct + 1, MarketUi.TEXT_DIM);
+		MarketUi.textRight(g, this.font, Component.translatable("bolsavillager.order.now",
+				MarketUi.price(view.price())).getString(), x + w, this.ct + 1, MarketUi.TEXT_DIM);
 
-		double target = Math.max(MarketEngine.MIN_PRICE, view.price() * (1 + orderOffset));
-		g.centeredText(this.font, Component.literal(MarketUi.money(target) + MarketUi.EMERALD + " (" + MarketUi.percent0(orderOffset * 100) + ")"),
+		g.centeredText(this.font, Component.translatable("bolsavillager.order.target", this.orderTarget()),
 				x + w / 2, this.ct + 35, MarketUi.GOLD);
 		g.centeredText(this.font, Component.literal(String.valueOf(this.qty())), x + 37, this.ct + 54, MarketUi.TEXT);
 
@@ -633,9 +649,13 @@ public class BolsaScreen extends Screen {
 			String symbol = o.type() == LimitOrder.Type.SELL_ABOVE ? "≥" : "≤";
 			String verb = Component.translatable(o.type().isBuy() ? "bolsavillager.order.short.buy" : "bolsavillager.order.short.sell").getString();
 			String line = verb + " " + o.quantity() + " " + (o.stock() == null ? "?" : o.stock().ticker) + " " + symbol + " "
-					+ MarketUi.money(o.target()) + MarketUi.EMERALD;
+					+ o.target() + MarketUi.EMERALD;
 			g.fill(x, y - 2, x + 3, y + 8, color);
 			g.text(this.font, line, x + 6, y, MarketUi.TEXT, false);
+			if (o.reserved() > 0) {
+				MarketUi.textRight(g, this.font, Component.translatable("bolsavillager.order.reserved_short", o.reserved()).getString(),
+						x + w - 16, y, MarketUi.TEXT_DIM);
+			}
 		}
 	}
 
@@ -694,15 +714,14 @@ public class BolsaScreen extends Screen {
 			} else if (hover) {
 				g.fill(rx, y - 1, rx + w, y + 11, 0x20FFFFFF);
 			}
-			MarketSyncPayload.StockView v = ClientMarket.get(b.guild());
-			int pop = v == null ? 0 : v.population();
-			double unit = this.saleOffer(b, 1);
+			int units = this.unitsPerEmerald(b);
 			g.fill(rx + 2, y + 3, rx + 6, y + 7, b.guild().color);
 			String name = this.font.plainSubstrByWidth(MarketUi.name(b.guild()).getString(), w - 70);
-			g.text(this.font, name, rx + 9, y + 1, pop > 0 ? MarketUi.TEXT : MarketUi.TEXT_DIM, false);
-			String price = pop > 0 ? MarketUi.money(unit) + MarketUi.EMERALD + "/un"
+			g.text(this.font, name, rx + 9, y + 1, units > 0 ? MarketUi.TEXT : MarketUi.TEXT_DIM, false);
+			String rate = units > 0
+					? Component.translatable("bolsavillager.sale.rate", units).getString()
 					: Component.translatable("bolsavillager.sale.no_villagers_short").getString();
-			MarketUi.textRight(g, this.font, price, rx + w - 2, y + 1, pop > 0 ? MarketUi.GOLD : MarketUi.DOWN);
+			MarketUi.textRight(g, this.font, rate, rx + w - 2, y + 1, units > 0 ? MarketUi.GOLD : MarketUi.DOWN);
 		}
 
 		// Quantidade e oferta
@@ -712,7 +731,7 @@ public class BolsaScreen extends Screen {
 		if (buyer != null) {
 			MarketSyncPayload.StockView v = ClientMarket.get(buyer.guild());
 			int pop = v == null ? 0 : v.population();
-			double interest = ClientMarket.rules().saleInterest(buyer, pop, ClientMarket.soldToday(buyer));
+			double interest = rules().saleInterest(buyer, pop, ClientMarket.soldToday(buyer));
 			int barX = rx + 116;
 			int barW = w - 116;
 			g.fill(barX, this.ct + 109, barX + barW, this.ct + 115, 0x60000000);
@@ -720,12 +739,17 @@ public class BolsaScreen extends Screen {
 			g.fill(barX, this.ct + 109, barX + (int) Math.round(barW * interest), this.ct + 115, fillColor);
 			g.text(this.font, Component.translatable("bolsavillager.sale.interest"), barX, this.ct + 99, MarketUi.TEXT_DIM, false);
 
-			double total = this.saleOffer(qty);
-			g.text(this.font, Component.translatable("bolsavillager.sale.offer", MarketUi.name(buyer.guild()), MarketUi.money(total)),
-					rx, this.ct + 121, MarketUi.TEXT, false);
-			if (qty > 0) {
-				g.text(this.font, Component.translatable("bolsavillager.sale.each", MarketUi.money(total / qty)),
-						rx, this.ct + 132, MarketUi.TEXT_DIM, false);
+			int payout = this.salePayout(qty);
+			int used = this.saleUsed();
+			if (payout > 0) {
+				g.text(this.font, Component.translatable("bolsavillager.sale.offer", MarketUi.name(buyer.guild()), payout),
+						rx, this.ct + 121, MarketUi.TEXT, false);
+				if (used < qty) {
+					g.text(this.font, Component.translatable("bolsavillager.sale.leftover", used, qty - used),
+							rx, this.ct + 132, MarketUi.TEXT_DIM, false);
+				}
+			} else {
+				g.text(this.font, Component.translatable("bolsavillager.sale.too_few"), rx, this.ct + 121, MarketUi.DOWN, false);
 			}
 		}
 		this.extractMoneyFooter(g, this.ct + 167);
@@ -736,23 +760,22 @@ public class BolsaScreen extends Screen {
 		int y = this.ct;
 		MarketSyncPayload.AccountView acc = ClientMarket.account();
 		g.fill(x - 1, y - 1, x + LIST_W + 1, y + ROW_H * StockDef.values().length + 1, 0x40000000);
-		double value = 0, invested = 0;
+		int value = 0, invested = 0;
 		int rows = 0;
 		for (StockDef def : StockDef.values()) {
 			int owned = acc.shares().getOrDefault(def.id, 0);
-			MarketSyncPayload.StockView v = ClientMarket.get(def);
-			if (owned <= 0 || v == null) {
+			if (owned <= 0 || ClientMarket.get(def) == null) {
 				continue;
 			}
-			double basis = acc.costBasis().getOrDefault(def.id, 0.0);
-			double val = v.price() * owned;
+			int basis = acc.costBasis().getOrDefault(def.id, 0);
+			int val = ClientMarket.liquidationValue(def);
 			value += val;
 			invested += basis;
 			int ry = y + rows * ROW_H;
 			g.fill(x + 2, ry + 4, x + 6, ry + 8, def.color);
 			g.text(this.font, def.ticker + " ×" + owned, x + 9, ry + 2, MarketUi.TEXT, false);
-			double pl = val - basis;
-			MarketUi.textRight(g, this.font, (pl >= 0 ? "+" : "") + MarketUi.money(pl), x + LIST_W - 2, ry + 2, MarketUi.changeColor(pl));
+			int pl = val - basis;
+			MarketUi.textRight(g, this.font, (pl >= 0 ? "+" : "") + pl + MarketUi.EMERALD, x + LIST_W - 2, ry + 2, MarketUi.changeColor(pl));
 			rows++;
 		}
 		if (rows == 0) {
@@ -761,26 +784,28 @@ public class BolsaScreen extends Screen {
 
 		int rx = this.rx;
 		int ry = this.ct;
+		int inventory = ClientMarket.emeraldsInInventory();
+		int reserved = acc.reserved();
 		g.text(this.font, Component.translatable("bolsavillager.wallet.title").withStyle(ChatFormatting.BOLD), rx, ry, MarketUi.ACCENT, false);
 		ry += 14;
-		ry = this.walletLine(g, rx, ry, "bolsavillager.wallet.balance", MarketUi.money(acc.balance()) + MarketUi.EMERALD, MarketUi.TEXT);
-		ry = this.walletLine(g, rx, ry, "bolsavillager.wallet.shares", MarketUi.money(value) + MarketUi.EMERALD, MarketUi.TEXT);
-		ry = this.walletLine(g, rx, ry, "bolsavillager.wallet.total", MarketUi.money(acc.balance() + value) + MarketUi.EMERALD, MarketUi.ACCENT);
-		double pl = value - invested;
-		ry = this.walletLine(g, rx, ry, "bolsavillager.wallet.pl", (pl >= 0 ? "+" : "") + MarketUi.money(pl) + MarketUi.EMERALD, MarketUi.changeColor(pl));
+		ry = this.walletLine(g, rx, ry, "bolsavillager.wallet.inventory", inventory + MarketUi.EMERALD, MarketUi.TEXT);
+		ry = this.walletLine(g, rx, ry, "bolsavillager.wallet.shares", value + MarketUi.EMERALD, MarketUi.TEXT);
+		ry = this.walletLine(g, rx, ry, "bolsavillager.wallet.reserved", reserved + MarketUi.EMERALD, MarketUi.TEXT);
+		ry = this.walletLine(g, rx, ry, "bolsavillager.wallet.total", (inventory + value + reserved) + MarketUi.EMERALD, MarketUi.ACCENT);
+		int pl = value - invested;
+		ry = this.walletLine(g, rx, ry, "bolsavillager.wallet.pl", (pl >= 0 ? "+" : "") + pl + MarketUi.EMERALD, MarketUi.changeColor(pl));
 		ry += 6;
-		ry = this.walletLine(g, rx, ry, "bolsavillager.wallet.last_dividend", "+" + MarketUi.money(acc.lastDividend()) + MarketUi.EMERALD, MarketUi.GOLD);
-		ry = this.walletLine(g, rx, ry, "bolsavillager.wallet.total_dividends", "+" + MarketUi.money(acc.totalDividends()) + MarketUi.EMERALD, MarketUi.GOLD);
+		ry = this.walletLine(g, rx, ry, "bolsavillager.wallet.last_dividend", "+" + acc.lastDividend() + MarketUi.EMERALD, MarketUi.GOLD);
+		ry = this.walletLine(g, rx, ry, "bolsavillager.wallet.total_dividends", "+" + acc.totalDividends() + MarketUi.EMERALD, MarketUi.GOLD);
 		ry = this.walletLine(g, rx, ry, "bolsavillager.wallet.orders", String.valueOf(acc.orders().size()), MarketUi.TEXT);
 		ry += 6;
-		g.text(this.font, Component.translatable("bolsavillager.wallet.inventory", ClientMarket.emeraldsInInventory()), rx, ry, MarketUi.TEXT_DIM, false);
+		g.textWithWordWrap(this.font, Component.translatable("bolsavillager.wallet.note"), rx, ry, this.rw, MarketUi.TEXT_DIM, false);
 
-		int hero = ClientMarket.heroLevel();
-		if (hero >= 0) {
-			MarketRules rules = ClientMarket.rules();
+		int h = hero();
+		if (h >= 0) {
 			g.text(this.font, Component.translatable("bolsavillager.screen.hero",
-							String.format(Locale.ROOT, "%.0f", rules.heroFeeDiscount() * 100),
-							String.format(Locale.ROOT, "%.0f", (rules.heroSaleMultiplier(hero) - 1) * 100)),
+							String.format(Locale.ROOT, "%.0f", rules().heroFeeDiscount() * 100),
+							String.format(Locale.ROOT, "%.0f", (rules().heroSaleMultiplier(h) - 1) * 100)),
 					rx, this.ct + 156, MarketUi.GOLD, false);
 		}
 		if (ClientMarket.raidOngoing()) {

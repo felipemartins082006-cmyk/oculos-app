@@ -98,15 +98,15 @@ public final class VillagerPanel {
 	private static void updateButtons(StockDef def, Button buy, Button sell) {
 		MarketSyncPayload.StockView view = ClientMarket.get(def);
 		int owned = ClientMarket.account().shares().getOrDefault(def.id, 0);
-		double funds = ClientMarket.account().balance() + ClientMarket.emeraldsInInventory();
-		double cost = view == null ? Double.MAX_VALUE : ClientMarket.rules().buyCost(view.price(), 1, ClientMarket.heroLevel());
+		int funds = ClientMarket.emeraldsInInventory();
+		int cost = view == null ? Integer.MAX_VALUE : ClientMarket.rules().buyCost(view.price(), 1, ClientMarket.heroLevel());
 		buy.active = funds >= cost;
 		sell.active = owned > 0;
 		if (view != null) {
 			buy.setTooltip(Tooltip.create(Component.translatable("bolsavillager.panel.buy_tooltip",
 					def.ticker, MarketUi.money(cost))));
 			sell.setTooltip(Tooltip.create(Component.translatable("bolsavillager.panel.sell_tooltip",
-					def.ticker, owned)));
+					def.ticker, ClientMarket.rules().sellProceeds(view.price(), 1, ClientMarket.heroLevel()), owned)));
 		}
 	}
 
@@ -130,7 +130,7 @@ public final class VillagerPanel {
 		int cy = y + 17;
 		g.text(font, font.plainSubstrByWidth(MarketUi.name(def).getString(), w - 10), x + 5, cy, MarketUi.TEXT_DIM, false);
 		cy += 11;
-		g.text(font, MarketUi.money(view.price()) + MarketUi.EMERALD, x + 5, cy, MarketUi.TEXT, false);
+		g.text(font, MarketUi.price(view.price()) + MarketUi.EMERALD, x + 5, cy, MarketUi.TEXT, false);
 		MarketUi.textRight(g, font, MarketUi.arrow(change) + " " + MarketUi.percent(change), x + w - 5, cy, MarketUi.changeColor(change));
 		cy += 11;
 		MarketUi.chart(g, view.history(), x + 5, cy, w - 10, 34, false);
@@ -140,7 +140,7 @@ public final class VillagerPanel {
 		if (effect > 0 && ClientMarket.heroLevel() >= 0) {
 			effect = 0; // Herói da Vila não paga a alta da bolsa
 		}
-		String effectText = (effect >= 0 ? "+" : "") + String.format(java.util.Locale.ROOT, "%.0f%%", effect);
+		String effectText = MarketUi.percent(effect);
 		g.text(font, Component.translatable("bolsavillager.panel.trade_prices"), x + 5, cy, MarketUi.TEXT_DIM, false);
 		// Para o jogador, trocas mais caras são ruins: vermelho quando sobe.
 		MarketUi.textRight(g, font, effectText, x + w - 5, cy, MarketUi.changeColor(-effect));
@@ -148,7 +148,7 @@ public final class VillagerPanel {
 		int owned = ClientMarket.account().shares().getOrDefault(def.id, 0);
 		g.text(font, Component.translatable("bolsavillager.panel.owned", owned), x + 5, cy, owned > 0 ? 0xFFFFE27A : MarketUi.TEXT_DIM, false);
 		cy += 11;
-		g.text(font, Component.translatable("bolsavillager.panel.balance", MarketUi.money(ClientMarket.account().balance())),
+		g.text(font, Component.translatable("bolsavillager.panel.balance", ClientMarket.emeraldsInInventory()),
 				x + 5, cy, MarketUi.TEXT_DIM, false);
 	}
 

@@ -27,25 +27,28 @@ public final class MarketUi {
 	private MarketUi() {
 	}
 
-	/** Número no formato brasileiro (vírgula decimal). */
+	/** Esmeraldas são sempre números inteiros na tela. */
 	public static String money(double value) {
-		return String.format(Locale.ROOT, "%.2f", value).replace('.', ',');
+		return String.valueOf(Math.round(value));
 	}
 
+	/** Cotação de uma ação como o jogador vê: inteira, no mínimo 1. */
+	public static String price(double value) {
+		return String.valueOf(br.bolsavillager.market.MarketRules.shownPrice(value));
+	}
+
+	/** Porcentagem inteira com sinal, ex.: "+3%". */
 	public static String percent(double value) {
-		return String.format(Locale.ROOT, "%+.2f%%", value).replace('.', ',');
-	}
-
-	public static String percent0(double value) {
-		return String.format(Locale.ROOT, "%+.0f%%", value);
+		long rounded = Math.round(value);
+		return (rounded > 0 ? "+" : rounded < 0 ? "" : "±") + rounded + "%";
 	}
 
 	public static int changeColor(double change) {
-		return change > 0.005 ? UP : change < -0.005 ? DOWN : FLAT;
+		return change >= 0.5 ? UP : change <= -0.5 ? DOWN : FLAT;
 	}
 
 	public static String arrow(double change) {
-		return change > 0.005 ? "▲" : change < -0.005 ? "▼" : "■";
+		return change >= 0.5 ? "▲" : change <= -0.5 ? "▼" : "■";
 	}
 
 	public static Component name(StockDef def) {
@@ -120,7 +123,7 @@ public final class MarketUi {
 			return font.width(def.ticker + " …");
 		}
 		double change = ClientMarket.changePercent(view);
-		String price = " " + money(view.price()) + EMERALD + " ";
+		String price = " " + price(view.price()) + EMERALD + " ";
 		String delta = arrow(change) + " " + percent(change);
 		int cx = x;
 		g.text(font, def.ticker, cx, y, ACCENT, false);

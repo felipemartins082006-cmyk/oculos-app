@@ -5,7 +5,8 @@
 	"mixins": [
 		"AbstractVillagerMixin",
 		"VillagerMixin",
-		"RaidsAccessor"
+		"RaidsAccessor",
+		"MerchantOfferMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

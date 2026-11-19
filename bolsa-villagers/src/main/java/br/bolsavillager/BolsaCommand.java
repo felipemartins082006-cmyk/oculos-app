@@ -42,9 +42,9 @@ public final class BolsaCommand {
 	private static int forceDividends(CommandSourceStack source) {
 		MinecraftServer server = source.getServer();
 		MarketData data = MarketEngine.data(server);
-		double total = MarketEngine.payDividends(server, data, data.day);
+		int total = MarketEngine.payDividends(server, data, data.day);
 		MarketEngine.syncEveryone(server);
-		source.sendSuccess(() -> Component.translatable("bolsavillager.cmd.dividends_done", MarketEngine.fmt(total)), true);
+		source.sendSuccess(() -> Component.translatable("bolsavillager.cmd.dividends_done", total), true);
 		return 1;
 	}
 

@@ -31,9 +31,17 @@ public record MarketSyncPayload(List<StockView> stocks, AccountView account, Mar
 	}
 
 	/** Retrato da conta do jogador. */
-	public record AccountView(double balance, Map<String, Integer> shares, Map<String, Double> costBasis,
-			double lastDividend, double totalDividends, List<LimitOrder> orders) {
-		public static final AccountView EMPTY = new AccountView(0, Map.of(), Map.of(), 0, 0, List.of());
+	public record AccountView(Map<String, Integer> shares, Map<String, Integer> costBasis,
+			int lastDividend, int totalDividends, List<LimitOrder> orders) {
+		public static final AccountView EMPTY = new AccountView(Map.of(), Map.of(), 0, 0, List.of());
+
+		public int reserved() {
+			int total = 0;
+			for (LimitOrder o : this.orders) {
+				total += o.reserved();
+			}
+			return total;
+		}
 	}
 
 	public static MarketSyncPayload of(MarketData data, Account account, MarketRules rules, boolean raidOngoing) {
@@ -46,7 +54,7 @@ public record MarketSyncPayload(List<StockView> stocks, AccountView account, Mar
 			}
 			stocks.add(new StockView(def.id, s.price, s.dayOpen, history, s.population, s.volumeDay, s.tradesDay));
 		}
-		return new MarketSyncPayload(stocks, new AccountView(account.balance, Map.copyOf(account.shares),
+		return new MarketSyncPayload(stocks, new AccountView(Map.copyOf(account.shares),
 				Map.copyOf(account.costBasis), account.lastDividend, account.totalDividends, List.copyOf(account.orders)),
 				rules, Map.copyOf(data.soldToday()), raidOngoing);
 	}
@@ -55,13 +63,14 @@ public record MarketSyncPayload(List<StockView> stocks, AccountView account, Mar
 		buf.writeVarInt(order.type().ordinal());
 		buf.writeUtf(order.stockId(), 64);
 		buf.writeVarInt(order.quantity());
-		buf.writeDouble(order.target());
+		buf.writeVarInt(order.target());
+		buf.writeVarInt(order.reserved());
 	}
 
 	public static LimitOrder readOrder(RegistryFriendlyByteBuf buf) {
 		LimitOrder.Type[] types = LimitOrder.Type.values();
 		int type = Math.floorMod(buf.readVarInt(), types.length);
-		return new LimitOrder(types[type], buf.readUtf(64), buf.readVarInt(), buf.readDouble());
+		return new LimitOrder(types[type], buf.readUtf(64), buf.readVarInt(), buf.readVarInt(), buf.readVarInt());
 	}
 
 	private void write(RegistryFriendlyByteBuf buf) {
@@ -78,15 +87,14 @@ public record MarketSyncPayload(List<StockView> stocks, AccountView account, Mar
 			buf.writeVarInt(s.volumeDay());
 			buf.writeVarInt(s.tradesDay());
 		}
-		buf.writeDouble(this.account.balance());
 		buf.writeVarInt(this.account.shares().size());
 		this.account.shares().forEach((id, qty) -> {
 			buf.writeUtf(id);
 			buf.writeVarInt(qty);
-			buf.writeDouble(this.account.costBasis().getOrDefault(id, 0.0));
+			buf.writeVarInt(this.account.costBasis().getOrDefault(id, 0));
 		});
-		buf.writeDouble(this.account.lastDividend());
-		buf.writeDouble(this.account.totalDividends());
+		buf.writeVarInt(this.account.lastDividend());
+		buf.writeVarInt(this.account.totalDividends());
 		buf.writeVarInt(this.account.orders().size());
 		for (LimitOrder order : this.account.orders()) {
 			writeOrder(buf, order);
@@ -113,17 +121,16 @@ public record MarketSyncPayload(List<StockView> stocks, AccountView account, Mar
 			}
 			stocks.add(new StockView(id, price, dayOpen, history, buf.readVarInt(), buf.readVarInt(), buf.readVarInt()));
 		}
-		double balance = buf.readDouble();
 		int held = buf.readVarInt();
 		Map<String, Integer> shares = new HashMap<>();
-		Map<String, Double> cost = new HashMap<>();
+		Map<String, Integer> cost = new HashMap<>();
 		for (int i = 0; i < held; i++) {
 			String id = buf.readUtf();
 			shares.put(id, buf.readVarInt());
-			cost.put(id, buf.readDouble());
+			cost.put(id, buf.readVarInt());
 		}
-		double lastDividend = buf.readDouble();
-		double totalDividends = buf.readDouble();
+		int lastDividend = buf.readVarInt();
+		int totalDividends = buf.readVarInt();
 		int orderCount = Math.min(buf.readVarInt(), 64);
 		List<LimitOrder> orders = new ArrayList<>();
 		for (int i = 0; i < orderCount; i++) {
@@ -137,7 +144,7 @@ public record MarketSyncPayload(List<StockView> stocks, AccountView account, Mar
 		}
 		boolean raid = buf.readBoolean();
 		return new MarketSyncPayload(stocks,
-				new AccountView(balance, shares, cost, lastDividend, totalDividends, orders), rules, soldToday, raid);
+				new AccountView(shares, cost, lastDividend, totalDividends, orders), rules, soldToday, raid);
 	}
 
 	@Override

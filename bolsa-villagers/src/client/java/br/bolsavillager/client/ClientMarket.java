@@ -4,6 +4,7 @@ import br.bolsavillager.market.ItemDemand;
 import br.bolsavillager.market.MarketEngine;
 import br.bolsavillager.market.MarketRules;
 import br.bolsavillager.market.StockDef;
+import br.bolsavillager.market.TradeLimits;
 import br.bolsavillager.net.MarketSyncPayload;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.entity.player.Player;
@@ -41,6 +42,9 @@ public final class ClientMarket {
 		rules = payload.rules();
 		soldToday = payload.soldToday();
 		raidOngoing = payload.raidOngoing();
+		// Regras das trocas (sem bloqueio + ágio de escassez) vêm do servidor.
+		TradeLimits.unlimited = rules.unlimitedTrades();
+		TradeLimits.surchargePerExtraTrade = rules.scarcitySurcharge();
 		version++;
 	}
 
@@ -120,15 +124,18 @@ public final class ClientMarket {
 		return open > 0 ? (now / open - 1.0) * 100.0 : 0.0;
 	}
 
-	/** Valor de mercado da carteira do jogador. */
-	public static double portfolioValue() {
-		double total = 0;
-		for (Map.Entry<String, Integer> e : account.shares().entrySet()) {
-			StockDef def = StockDef.byId(e.getKey());
-			MarketSyncPayload.StockView view = def == null ? null : stocks.get(def);
-			if (view != null) {
-				total += view.price() * e.getValue();
-			}
+	/** Quantas esmeraldas o jogador receberia vendendo agora todas as ações dessa empresa. */
+	public static int liquidationValue(StockDef def) {
+		int owned = account.shares().getOrDefault(def.id, 0);
+		MarketSyncPayload.StockView view = stocks.get(def);
+		return owned <= 0 || view == null ? 0 : rules.sellProceeds(view.price(), owned, heroLevel());
+	}
+
+	/** Quanto a carteira inteira renderia vendida agora, em esmeraldas. */
+	public static int portfolioValue() {
+		int total = 0;
+		for (StockDef def : StockDef.values()) {
+			total += liquidationValue(def);
 		}
 		return total;
 	}
