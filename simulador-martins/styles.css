@@ -326,3 +326,10 @@ td.best { font-weight: 600; }
 #tbl-cmp td:first-child { white-space: normal; min-width: 150px; }
 #seg-ver, #seg-an, #seg-ot-cart { flex-wrap: wrap; }
 #seg-ver button, #seg-an button, #seg-ot-cart button { border-top: 1px solid var(--rule-2); margin-top: -1px; }
+
+/* campo livre com botão "Máximo" (janelas, universo) */
+.livre { display: flex; gap: 8px; align-items: stretch; }
+.livre .inp { flex: 1; min-width: 0; }
+.livre .btn { min-height: 38px; flex: none; }
+.livre .btn.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.row-ctl .livre { min-width: 190px; }

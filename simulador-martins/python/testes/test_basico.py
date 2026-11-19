@@ -71,6 +71,20 @@ def test_ativo_encerrado_nao_corta_janela():
     assert np.isfinite(r.resumo().loc["X", "P50"])
 
 
+def test_restricoes_retorno_e_queda():
+    from simulador.otimizacao import otimizar, anual, estimar
+    rng = np.random.default_rng(1)
+    R = rng.normal(0.01, 0.05, (120, 6)) + np.linspace(-0.004, 0.01, 6)
+    mu, C = estimar(R)
+    w = otimizar(R, "min_variancia", ret_min=0.20)
+    assert anual(w @ mu, w @ C @ w) >= 0.199
+    w = otimizar(R, "max_sharpe", rf_m=0.008, queda_max=0.06)
+    niv = np.cumsum(np.log1p(R @ w))
+    assert -np.expm1(np.min(niv - np.maximum.accumulate(np.r_[0, niv])[1:])) <= 0.061
+    w = otimizar(R, "max_sharpe", rf_m=0.008, ret_min=0.9)   # impossível: o mais perto (maior retorno possível)
+    assert anual(w @ mu, w @ C @ w) >= max(anual(mu[i], C[i, i]) for i in range(6)) - 0.01
+
+
 def test_aposentadoria():
     r = simular(BASE, CART, Plano(inicial=100000, aporte=0, anos=30, saque_ano=0, saque=5000), Config(cenarios=2000), progresso=False)
     assert "prob. dinheiro acabar" in r.resumo().columns

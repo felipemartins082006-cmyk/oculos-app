@@ -37,6 +37,12 @@ def otimizar_bloco(base, op: dict, plano: Plano, cfg: Config):
     X = R.to_numpy()
     kw = dict(rf_m=rf, minimo=op.get("minimo", 0.0), maximo=op.get("maximo", 1.0), vol_alvo=op.get("vol_alvo"),
               media=op.get("media", "encolhida"), cov=op.get("cov", "ledoit_wolf"), max_ativos=op.get("max_ativos"))
+    # limites opcionais: retorno ao ano (ret_min / ret_max; iguais = "igual a"), queda máxima histórica (fração)
+    for k in ("ret_min", "ret_max", "ret_base"):
+        if op.get(k) is not None:
+            kw[k] = op[k]
+    if op.get("queda_max_historica") is not None:
+        kw["queda_max"] = op["queda_max_historica"]
     obj = op.get("objetivo", "max_sharpe")
     fr = None
     if obj == "por_meta":

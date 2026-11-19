@@ -26,9 +26,10 @@ except ImportError:
 
 INICIO = "1995-01"
 UA = {"User-Agent": "Mozilla/5.0", "Content-Type": "application/json"}
-LIQ_MIN_BR = 100_000      # R$ negociados por dia (média de 30 dias)
-N_ACOES_US = 600          # maiores empresas americanas por valor de mercado
-N_ETFS_US = 220
+LIQ_MIN_BR = 1            # qualquer ativo da B3 com negociação nos últimos 30 dias
+N_ACOES_US = 2700         # empresas americanas por valor de mercado (todas acima de ~US$ 1 bilhão)
+N_ETFS_US = 900
+N_CRIPTO = 320            # maiores criptoativos por valor de mercado (índice agregado CRYPTO: do TradingView)
 
 SETOR = {
     "Finance": "Financeiro", "Utilities": "Utilidade pública", "Energy Minerals": "Petróleo e gás",
@@ -52,23 +53,81 @@ EXTRAS = [  # (símbolo TradingView, código, nome, tipo, setor, mercado, moeda)
     ("BMFBOVESPA:IFIX", "IFIX", "IFIX (fundos imobiliários)", "indice", "Índice B3", "BR", "BRL"),
     ("BMFBOVESPA:SMLL", "SMLL", "Small Caps (SMLL)", "indice", "Índice B3", "BR", "BRL"),
     ("BMFBOVESPA:IDIV", "IDIV", "Índice Dividendos (IDIV)", "indice", "Índice B3", "BR", "BRL"),
+    ("BMFBOVESPA:IBXX", "IBXX", "IBrX 100 (100 ações mais negociadas)", "indice", "Índice B3", "BR", "BRL"),
+    ("BMFBOVESPA:IBXL", "IBXL", "IBrX 50 (50 ações mais negociadas)", "indice", "Índice B3", "BR", "BRL"),
+    ("BMFBOVESPA:IMOB", "IMOB", "Índice Imobiliário (IMOB)", "indice", "Índice B3", "BR", "BRL"),
+    ("BMFBOVESPA:IFNC", "IFNC", "Índice Financeiro (IFNC)", "indice", "Índice B3", "BR", "BRL"),
+    ("BMFBOVESPA:UTIL", "UTIL", "Índice Utilidade Pública (UTIL)", "indice", "Índice B3", "BR", "BRL"),
+    ("BMFBOVESPA:IMAT", "IMAT", "Índice Materiais Básicos (IMAT)", "indice", "Índice B3", "BR", "BRL"),
+    ("BMFBOVESPA:ICON", "ICON", "Índice de Consumo (ICON)", "indice", "Índice B3", "BR", "BRL"),
+    ("BMFBOVESPA:IEEX", "IEEX", "Índice de Energia Elétrica (IEE)", "indice", "Índice B3", "BR", "BRL"),
+    ("BMFBOVESPA:INDX", "INDX", "Índice do Setor Industrial (INDX)", "indice", "Índice B3", "BR", "BRL"),
+    ("BMFBOVESPA:IGCX", "IGCX", "Governança Corporativa (IGC)", "indice", "Índice B3", "BR", "BRL"),
+    ("BMFBOVESPA:ITAG", "ITAG", "Tag Along Diferenciado (ITAG)", "indice", "Índice B3", "BR", "BRL"),
+    ("BMFBOVESPA:IGNM", "IGNM", "Governança Novo Mercado (IGNM)", "indice", "Índice B3", "BR", "BRL"),
+    ("BMFBOVESPA:ISEE", "ISEE", "Sustentabilidade Empresarial (ISE)", "indice", "Índice B3", "BR", "BRL"),
+    ("BMFBOVESPA:ICO2", "ICO2", "Carbono Eficiente (ICO2)", "indice", "Índice B3", "BR", "BRL"),
+    ("BMFBOVESPA:MLCX", "MLCX", "MidLarge Cap (MLCX)", "indice", "Índice B3", "BR", "BRL"),
+    ("BMFBOVESPA:IVBX", "IVBX", "Índice Valor (IVBX 2)", "indice", "Índice B3", "BR", "BRL"),
+    ("BMFBOVESPA:BDRX", "BDRX", "Índice de BDRs (BDRX)", "indice", "Índice B3", "BR", "BRL"),
+    ("BMFBOVESPA:IFIL", "IFIL", "IFIX de alta liquidez (IFIL)", "indice", "Índice B3", "BR", "BRL"),
+    ("BMFBOVESPA:IAGRO", "IAGRO", "Índice Agronegócio (IAGRO)", "indice", "Índice B3", "BR", "BRL"),
+    ("BMFBOVESPA:IBSD", "IBSD", "Ibovespa Smart Dividendos (IBSD)", "indice", "Índice B3", "BR", "BRL"),
+    ("BMFBOVESPA:IBLV", "IBLV", "Ibovespa Smart Baixa Volatilidade (IBLV)", "indice", "Índice B3", "BR", "BRL"),
     ("SP:SPX", "SPX", "S&P 500 (índice, sem dividendos)", "indice", "Índice EUA", "US", "USD"),
     ("NASDAQ:NDX", "NDX", "Nasdaq-100 (índice, sem dividendos)", "indice", "Índice EUA", "US", "USD"),
+    ("NASDAQ:IXIC", "IXIC", "Nasdaq Composite (índice, sem dividendos)", "indice", "Índice EUA", "US", "USD"),
     ("DJ:DJI", "DJI", "Dow Jones (índice, sem dividendos)", "indice", "Índice EUA", "US", "USD"),
+    ("TVC:RUT", "RUT", "Russell 2000 (small caps EUA, sem dividendos)", "indice", "Índice EUA", "US", "USD"),
+    ("SP:MID", "SPMID", "S&P 400 MidCap (sem dividendos)", "indice", "Índice EUA", "US", "USD"),
+    ("SP:SP600", "SP600", "S&P 600 SmallCap (sem dividendos)", "indice", "Índice EUA", "US", "USD"),
+    ("CRYPTOCAP:TOTAL", "CRIPTOTOTAL", "Mercado cripto total (capitalização)", "indice", "Índice cripto", "Global", "USD"),
     ("TVC:GOLD", "OURO", "Ouro (onça, em dólar)", "commodity", "Metais", "Global", "USD"),
     ("TVC:SILVER", "PRATA", "Prata (onça, em dólar)", "commodity", "Metais", "Global", "USD"),
+    ("TVC:PLATINUM", "PLATINA", "Platina (onça, em dólar)", "commodity", "Metais", "Global", "USD"),
+    ("TVC:PALLADIUM", "PALADIO", "Paládio (onça, em dólar)", "commodity", "Metais", "Global", "USD"),
+    ("COMEX:HG1!", "COBRE", "Cobre (futuro contínuo, em dólar)", "commodity", "Metais", "Global", "USD"),
     ("TVC:USOIL", "PETROLEO", "Petróleo WTI (em dólar)", "commodity", "Energia", "Global", "USD"),
+    ("TVC:UKOIL", "BRENT", "Petróleo Brent (em dólar)", "commodity", "Energia", "Global", "USD"),
+    ("NYMEX:NG1!", "GASNAT", "Gás natural (futuro contínuo, em dólar)", "commodity", "Energia", "Global", "USD"),
+    ("CBOT:ZS1!", "SOJA", "Soja (futuro contínuo Chicago, em dólar)", "commodity", "Agrícola", "Global", "USD"),
+    ("CBOT:ZC1!", "MILHO", "Milho (futuro contínuo Chicago, em dólar)", "commodity", "Agrícola", "Global", "USD"),
+    ("CBOT:ZW1!", "TRIGO", "Trigo (futuro contínuo Chicago, em dólar)", "commodity", "Agrícola", "Global", "USD"),
+    ("ICEUS:KC1!", "CAFE", "Café arábica (futuro contínuo NY, em dólar)", "commodity", "Agrícola", "Global", "USD"),
+    ("ICEUS:SB1!", "ACUCAR", "Açúcar (futuro contínuo NY, em dólar)", "commodity", "Agrícola", "Global", "USD"),
+    ("ICEUS:CT1!", "ALGODAO", "Algodão (futuro contínuo NY, em dólar)", "commodity", "Agrícola", "Global", "USD"),
+    ("BMFBOVESPA:BGI1!", "BOI", "Boi gordo (futuro contínuo B3, em reais)", "commodity", "Agrícola", "BR", "BRL"),
     ("FX_IDC:USDBRL", "USDBRL", "Dólar (USD/BRL)", "moeda", "Câmbio", "Global", "BRL"),
     ("FX_IDC:EURBRL", "EURBRL", "Euro (EUR/BRL)", "moeda", "Câmbio", "Global", "BRL"),
-    ("BITSTAMP:BTCUSD", "BTC", "Bitcoin", "cripto", "Criptoativo", "Global", "USD"),
-    ("BITSTAMP:ETHUSD", "ETH", "Ethereum", "cripto", "Criptoativo", "Global", "USD"),
-    ("BITSTAMP:XRPUSD", "XRP", "XRP", "cripto", "Criptoativo", "Global", "USD"),
-    ("BITSTAMP:LTCUSD", "LTC", "Litecoin", "cripto", "Criptoativo", "Global", "USD"),
-    ("COINBASE:SOLUSD", "SOL", "Solana", "cripto", "Criptoativo", "Global", "USD"),
-    ("BINANCE:BNBUSDT", "BNB", "BNB", "cripto", "Criptoativo", "Global", "USD"),
-    ("COINBASE:ADAUSD", "ADA", "Cardano", "cripto", "Criptoativo", "Global", "USD"),
-    ("COINBASE:DOGEUSD", "DOGE", "Dogecoin", "cripto", "Criptoativo", "Global", "USD"),
+    ("FX_IDC:GBPBRL", "GBPBRL", "Libra (GBP/BRL)", "moeda", "Câmbio", "Global", "BRL"),
+    ("FX_IDC:JPYBRL", "JPYBRL", "Iene (JPY/BRL)", "moeda", "Câmbio", "Global", "BRL"),
+    ("FX_IDC:CHFBRL", "CHFBRL", "Franco suíço (CHF/BRL)", "moeda", "Câmbio", "Global", "BRL"),
+    ("FX_IDC:CNYBRL", "CNYBRL", "Yuan (CNY/BRL)", "moeda", "Câmbio", "Global", "BRL"),
+    ("FX_IDC:CADBRL", "CADBRL", "Dólar canadense (CAD/BRL)", "moeda", "Câmbio", "Global", "BRL"),
+    ("FX_IDC:AUDBRL", "AUDBRL", "Dólar australiano (AUD/BRL)", "moeda", "Câmbio", "Global", "BRL"),
 ]
+# Índices de outras bolsas: cotados na moeda local e convertidos para dólar aqui (o app converte dólar → real)
+# (símbolo, código, nome, moeda local, símbolo do câmbio local por dólar, inverter?)
+INDICES_MUNDO = [
+    ("TVC:NI225", "NIKKEI", "Nikkei 225 (Japão)", "FX_IDC:USDJPY", False),
+    ("XETR:DAX", "DAX", "DAX (Alemanha, com dividendos)", "FX_IDC:EURUSD", True),
+    ("TVC:UKX", "FTSE100", "FTSE 100 (Reino Unido)", "FX_IDC:GBPUSD", True),
+    ("TVC:SX5E", "EUROSTOXX", "Euro Stoxx 50 (zona do euro)", "FX_IDC:EURUSD", True),
+    ("TVC:CAC40", "CAC40", "CAC 40 (França)", "FX_IDC:EURUSD", True),
+    ("TVC:IBEX35", "IBEX35", "IBEX 35 (Espanha)", "FX_IDC:EURUSD", True),
+    ("TVC:FTMIB", "FTSEMIB", "FTSE MIB (Itália)", "FX_IDC:EURUSD", True),
+    ("SIX:SMI", "SMI", "SMI (Suíça)", "FX_IDC:USDCHF", False),
+    ("TVC:HSI", "HANGSENG", "Hang Seng (Hong Kong)", "FX_IDC:USDHKD", False),
+    ("SSE:000001", "XANGAI", "Xangai Composto (China)", "FX_IDC:USDCNY", False),
+    ("NSE:NIFTY", "NIFTY50", "Nifty 50 (Índia)", "FX_IDC:USDINR", False),
+    ("TVC:KOSPI", "KOSPI", "KOSPI (Coreia do Sul)", "FX_IDC:USDKRW", False),
+    ("TSX:TSX", "TSX", "S&P/TSX (Canadá)", "FX_IDC:USDCAD", False),
+    ("BMV:ME", "IPCMEX", "S&P/BMV IPC (México)", "FX_IDC:USDMXN", False),
+    ("TVC:AXJO", "ASX200", "S&P/ASX 200 (Austrália)", "FX_IDC:AUDUSD", True),
+    ("TVC:TWII", "TAIEX", "TAIEX (Taiwan)", "FX_IDC:USDTWD", False),
+    ("BCBA:IMV", "MERVAL", "Merval (Argentina)", "FX_IDC:USDARS", False),
+]
+CRIPTO_FORA = re.compile(r"(^|\b)(usd|tether|dollar|stable|euro|eur[a-z]?\b|gold|paxg|xaut|dai|wrapped|bridged|staked|lido|restaked|liquid staking|binance-peg|steth|wbtc|weth|cbbtc|cbeth|reth|jitosol|msol|wsteth|tokenized|buidl|treasury)", re.I)
 
 
 # ------------------------------------------------------------------ utilidades
@@ -115,6 +174,8 @@ def tipo_b3(x):
         return "fiagro"
     if x["name"].endswith("11") and re.search(r"imobili|receb[ií]veis|valora re", desc, re.I):
         return "fii"
+    if re.search(r"fundo de [ií]ndice|\bETF\b|index fund", desc, re.I):
+        return "etf"
     if re.search(r"\bunits?\b|dep[oó]sito de a[cç][oõ]es", desc, re.I):
         return "acao"
     if x["type"] == "stock":
@@ -171,7 +232,7 @@ def universo():
     # EUA: ETFs (sem alavancados/inversos)
     etf = scan("america", [{"left": "type", "operation": "equal", "right": "fund"},
                            {"left": "typespecs", "operation": "has", "right": ["etf"]}],
-               "average_volume_30d_calc", 1500, cols)
+               "average_volume_30d_calc", 5000, cols)
     ruim = re.compile(r"\b(2x|3x|-1x|-2x|-3x|ultra|ultrapro|short|inverse|bear|bull|leveraged|daily|yieldmax|volatility|vix)\b", re.I)
     etf = [x for x in etf if not ruim.search(x["description"] or "")]
     etf.sort(key=lambda x: -(x["close"] or 0) * (x["average_volume_30d_calc"] or 0))
@@ -183,12 +244,39 @@ def universo():
             ativos.append({"sym": x["s"], "t": x["name"], "n": limpa_nome(x["description"]), "tipo": "etf_us",
                            "setor": "ETF nos EUA", "mercado": "US", "moeda": "USD",
                            "liq": round((x["close"] or 0) * (x["average_volume_30d_calc"] or 0))})
-    for sym, t, n, tipo, setor, mercado, moeda in EXTRAS:
-        ativos.append({"sym": sym, "t": t, "n": n, "tipo": tipo, "setor": setor, "mercado": mercado, "moeda": moeda, "liq": 0})
-    unicos, seen = [], set()
-    for a in ativos:
-        if a["t"] in seen:
+    # índices, commodities, moedas e criptoativos têm prioridade no código (ex.: SOL é Solana; a ação
+    # americana de mesmo ticker vira SOL-US)
+    prio = [{"sym": sym, "t": t, "n": n, "tipo": tipo, "setor": setor, "mercado": mercado, "moeda": moeda, "liq": 0}
+            for sym, t, n, tipo, setor, mercado, moeda in EXTRAS]
+    for sym, t, n, fx, inv in INDICES_MUNDO:
+        prio.append({"sym": sym, "t": t, "n": n + ", em dólar, sem dividendos" if "dividendos" not in n else n + ", em dólar",
+                     "tipo": "indice", "setor": "Índice mundial", "mercado": "Global", "moeda": "USD", "liq": 0, "fx": (fx, inv)})
+    # criptoativos: índice agregado do TradingView (média de várias corretoras), sem stablecoins nem tokens
+    # "embrulhados"/de staking, e só os com volume relevante (US$ 2 milhões/dia)
+    cripto = []
+    co = scan("coin", [], "market_cap_calc", 2500, ["name", "description", "base_currency", "market_cap_calc", "24h_vol_cmc"])
+    for x in co:
+        nome, cod = x["description"] or "", (x["base_currency"] or "").upper()
+        if not (x["name"] or "").endswith("USD") or CRIPTO_FORA.search(nome) or CRIPTO_FORA.search(cod) or re.search(r"usd|usx|usat|^gho$|^sbtc$", cod, re.I):
             continue
+        if not re.fullmatch(r"[A-Z0-9]{1,10}", cod) or (x["24h_vol_cmc"] or 0) < 2e6:
+            continue
+        cripto.append({"sym": x["s"], "t": cod, "n": nome[:60], "tipo": "cripto", "setor": "Criptoativo", "mercado": "Global",
+                       "moeda": "USD", "liq": round(x["market_cap_calc"] or 0)})
+        if len(cripto) >= N_CRIPTO:
+            break
+    antigas = {"BTC", "ETH", "XRP", "LTC", "SOL", "BNB", "ADA", "DOGE"}  # códigos já usados em carteiras salvas
+    unicos, seen = [], set()
+    for a in prio + [c for c in cripto if c["t"] in antigas] + ativos + [c for c in cripto if c["t"] not in antigas]:
+        if a["t"] in seen:
+            if a["mercado"] == "US":
+                a["t"] += "-US"
+            elif a["tipo"] == "cripto":
+                a["t"] += "-USD"
+            else:
+                continue
+            if a["t"] in seen:
+                continue
         seen.add(a["t"]); unicos.append(a)
     return unicos
 
@@ -323,18 +411,38 @@ def main():
     series, meta, falhas = {}, [], []
     lock = threading.Lock()
 
+    fx_cache = {}
+
+    def fx_mensal(sym):
+        with lock:
+            if sym in fx_cache:
+                return fx_cache[sym]
+        v = tv_mensal(sym) or {}
+        with lock:
+            fx_cache[sym] = v
+        return v
+
     def um(a):
         p = tv_mensal(a["sym"])
-        return a, (retornos(p, a["tipo"]) if p else None)
+        if p and a.get("fx"):  # índice em moeda local -> dólar
+            fx, inv = a["fx"]
+            c = fx_mensal(fx)
+            p = {k: (v * c[k] if inv else v / c[k]) for k, v in p.items() if c.get(k)}
+        r = retornos(p, a["tipo"]) if p else None
+        if r and a["tipo"] == "cripto" and len(r) >= 3:  # stablecoin que escapou do filtro de nome: quase não varia
+            xs = sorted(abs(x) for x in r.values())
+            if xs[len(xs) // 2] < 0.02:
+                r = None
+        return a, r
 
     feitos = 0
-    with ThreadPoolExecutor(max_workers=6) as ex:
+    with ThreadPoolExecutor(max_workers=8) as ex:
         for f in as_completed([ex.submit(um, a) for a in ativos]):
             a, rets = f.result()
             feitos += 1
             if feitos % 100 == 0:
                 print(f"  {feitos}/{len(ativos)}", flush=True)
-            if not rets or len(rets) < 12:
+            if not rets or len(rets) < 3:  # ativos novos entram (o app os inclui quando começam)
                 falhas.append(a["t"]); continue
             with lock:
                 series[a["t"]] = compacta(rets, 10000)

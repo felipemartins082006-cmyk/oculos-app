@@ -77,7 +77,7 @@ def estat(w, mu, C, rf_m):
     return {"retorno": ret, "volatilidade": vol, "sharpe": (ret - ((1 + rf_m) ** ANO - 1)) / vol if vol > 0 else np.nan}
 
 
-def _resolver(f, K, minimo, maximo, w0=None, restr=()):
+def _resolver_base(f, K, minimo, maximo, w0=None, restr=()):
     lims = [(minimo, maximo)] * K
     w0 = np.full(K, 1 / K) if w0 is None else w0
     cons = [{"type": "eq", "fun": lambda w: w.sum() - 1}, *restr]
@@ -96,14 +96,49 @@ def _resolver(f, K, minimo, maximo, w0=None, restr=()):
 # ---------------------------------------------------------------- objetivos
 def otimizar(R: np.ndarray, objetivo: str = "max_sharpe", rf_m: float = 0.0, minimo: float = 0.0, maximo: float = 1.0,
              vol_alvo: float | None = None, aversao: float = 4.0, media: str = "encolhida", cov: str = "ledoit_wolf",
-             max_ativos: int | None = None, alfa_cvar: float = 0.05) -> np.ndarray:
+             max_ativos: int | None = None, alfa_cvar: float = 0.05, ret_min: float | None = None, ret_max: float | None = None,
+             queda_max: float | None = None, ret_base: str = "estimado") -> np.ndarray:
+    """ret_min/ret_max: retorno ao ano exigido (fração; ret_min == ret_max = "igual a", aceita ±0,25 p.p.);
+    ret_base: "estimado" (médias encolhidas) ou "historico" (retorno que a carteira teve na janela);
+    queda_max: maior queda histórica tolerada (fração positiva, ex.: 0.25). Se impossível, fica o mais perto."""
     L, K = R.shape
+    if ret_min is not None and ret_max is not None and abs(ret_min - ret_max) < 1e-9:
+        ret_min, ret_max = ret_min - 0.0025, ret_max + 0.0025
     maximo = max(maximo, 1 / K + 1e-9)
     mu, C = estimar(R, media, cov)
 
     def resolve(idx):
         k = len(idx); mu_, C_, R_ = mu[idx], C[np.ix_(idx, idx)], R[:, idx]
         mx = max(maximo, 1 / k + 1e-9)
+
+        def ret_w(w):
+            if ret_base == "historico":
+                return np.exp(np.log1p(np.maximum(R_ @ w, -0.999)).mean() * ANO) - 1
+            return anual(w @ mu_, w @ C_ @ w)
+
+        def queda_w(w):
+            nivel = np.cumsum(np.log1p(np.maximum(R_ @ w, -0.999)))
+            return -np.expm1(np.min(nivel - np.maximum.accumulate(np.r_[0.0, nivel])[1:]))
+
+        extra = []
+        if ret_min is not None:
+            extra.append({"type": "ineq", "fun": lambda w: (ret_w(w) - ret_min) * 100})
+        if ret_max is not None:
+            extra.append({"type": "ineq", "fun": lambda w: (ret_max - ret_w(w)) * 100})
+        if queda_max is not None:
+            extra.append({"type": "ineq", "fun": lambda w: (queda_max - queda_w(w)) * 100})
+
+        def _resolver(f, K_, mn, mx_, w0=None, restr=()):
+            w = _resolver_base(f, K_, mn, mx_, w0, (*restr, *extra))
+            falta = lambda x: sum(min(0.0, c["fun"](x)) ** 2 for c in extra)
+            if extra and falta(w) > 1e-4:   # limites impossíveis: o mais perto possível
+                livre = _resolver_base(f, K_, mn, mx_, w0, restr)
+                cands = [w, livre]
+                for rho in (1e2, 1e4, 1e6):
+                    cands.append(_resolver_base(lambda x, r=rho: f(x) + r * falta(x), K_, mn, mx_, cands[-1], restr))
+                w = min(cands, key=lambda x: (round(falta(x), 6), f(x)))
+            return w
+
         if objetivo == "min_variancia":
             return _resolver(lambda w: w @ C_ @ w * 1e4, k, minimo, mx)
         if objetivo == "max_sharpe":

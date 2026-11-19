@@ -32,23 +32,28 @@ Antes, aumente `versionCode` e `versionName` em `android/app/build.gradle.kts`.
 
 ## O que faz
 
-**Carteiras** — quantas carteiras quiser, comparadas lado a lado, montadas a partir de 1.942 ativos:
+**Carteiras** — quantas carteiras quiser, comparadas lado a lado, montadas a partir de 6.609 ativos:
 
 | Classe | Ativos |
 |---|---|
-| Ações da B3 (negociação média ≥ R$ 100 mil/dia) | 261 |
-| FIIs, Fiagro e FI-Infra | 234 |
-| ETFs da B3 (inclui Tesouro, IMA-B, S&P, cripto) | 131 |
-| Fundos de investimento da CVM (renda fixa, multimercado, ações, cambial) | 486 |
-| Ações dos EUA (600 maiores) | 590 |
-| ETFs dos EUA (sem alavancados) | 220 |
-| Cripto, índices, ouro, prata, petróleo, dólar e euro | 20 |
+| Ações da B3 (todas com negociação; ON, PN e units) | 378 |
+| FIIs, Fiagro e FI-Infra (todos com negociação) | 403 |
+| ETFs da B3 (ações, renda fixa, Tesouro, S&P, cripto, ouro) | 212 |
+| Fundos de investimento da CVM (549 renda fixa, 654 multimercado, 433 ações, 30 cambial) | 1.666 |
+| Ações dos EUA (todas acima de ~US$ 1 bilhão de valor de mercado) | 2.675 |
+| ETFs dos EUA (sem alavancados nem inversos) | 898 |
+| Criptoativos (índice agregado do TradingView, sem stablecoins) | 309 |
+| Índices (25 da B3, 7 dos EUA, 17 de outras bolsas em dólar, mercado cripto total) | 45 |
+| Commodities (metais, energia, agrícolas, boi gordo) e moedas | 23 |
+
+Ativos novos entram a partir de 3 meses de histórico: na simulação cada um passa a contar no mês
+em que começa (antes disso, o peso dele vai para os demais).
 
 Mais renda fixa por modelo: CDI × %, IPCA + taxa e prefixado. Há 11 modelos prontos (Ibovespa,
 S&P 500, Global 60/40, Permanente, Big Techs, FIIs, top multimercados etc.).
 
 **Simulação (Monte Carlo)**
-- 4 modelos de retorno: bootstrap mensal, bootstrap em blocos (3 a 24 meses), normal multivariada
+- 4 modelos de retorno: bootstrap mensal, bootstrap em blocos (qualquer tamanho, em meses), normal multivariada
   e t-Student (caudas gordas).
 - Mesmos sorteios para todas as carteiras (comparação justa) e para o CDI de referência.
 - Plano: aporte inicial e mensal, correção pelo IPCA, aumento real do aporte, meta.

@@ -129,15 +129,11 @@
             </div>
             <div class="field" id="f-bloco">
               <span class="lbl">Tamanho do bloco</span>
-              <div class="seg full" id="seg-bloco">
-                <button type="button" data-v="3">3 m</button><button type="button" data-v="6">6 m</button><button type="button" data-v="12">12 m</button><button type="button" data-v="24">24 m</button>
-              </div>
+              <div class="inp"><input id="in-bloco" inputmode="numeric" autocomplete="off" aria-label="Tamanho do bloco em meses"><span>meses</span></div>
             </div>
             <div class="field">
               <span class="lbl">Janela histórica (quantos anos de passado usar)</span>
-              <div class="seg full" id="seg-janela">
-                <button type="button" data-v="5">5 anos</button><button type="button" data-v="10">10</button><button type="button" data-v="20">20</button><button type="button" data-v="30">30</button><button type="button" data-v="40">40</button>
-              </div>
+              <div class="livre" id="nj-janela"><div class="inp"><input inputmode="numeric" autocomplete="off" aria-label="Anos de passado"><span>anos</span></div><button type="button" class="btn" data-max>Máximo</button></div>
               <p class="help" id="janela-help"></p>
             </div>
             <div class="field">
@@ -173,6 +169,7 @@
             <div class="field">
               <span class="lbl">Cenários (rodadas)</span>
               <div class="seg full wrap" id="seg-n"><button type="button" data-v="10000">10 mil</button><button type="button" data-v="100000">100 mil</button><button type="button" data-v="1000000">1 milhão</button><button type="button" data-v="10000000">10 milhões</button><button type="button" data-v="100000000">100 milhões</button></div>
+              <div class="inp" style="margin-top:8px"><input id="in-n" inputmode="numeric" autocomplete="off" aria-label="Número de cenários"><span>cenários</span></div>
               <p class="help" id="n-help"></p>
             </div>
             <label class="chk"><span>Valores reais<small>Resultados em reais de hoje, descontada a inflação (IPCA, índice oficial de inflação)</small></span><input type="checkbox" id="in-real"></label>
@@ -224,7 +221,7 @@
         <div class="pb row-ctl">
           <div class="field"><span class="lbl">Valores</span><div class="seg" id="seg-bt-modo"><button type="button" data-v="unit">R$ 10 mil investidos</button><button type="button" data-v="plano">Com o seu plano</button></div></div>
           <div class="field"><span class="lbl">Escala</span><div class="seg" id="seg-bt-escala"><button type="button" data-v="lin">Linear</button><button type="button" data-v="log">Log</button></div></div>
-          <div class="field"><span class="lbl">Janela (anos de passado)</span><div class="seg" id="seg-bt-janela"><button type="button" data-v="5">5</button><button type="button" data-v="10">10</button><button type="button" data-v="20">20</button><button type="button" data-v="30">30</button><button type="button" data-v="40">40</button></div></div>
+          <div class="field"><span class="lbl">Janela (anos de passado)</span><div class="livre" id="nj-bt-janela"><div class="inp"><input inputmode="numeric" autocomplete="off" aria-label="Anos de passado no histórico"><span>anos</span></div><button type="button" class="btn" data-max>Máximo</button></div></div>
           <div class="field"><span class="lbl">Comparar com</span><div class="checks" id="bt-bench"></div></div>
         </div>
         <p class="stale" id="bt-aviso" hidden style="margin:0 14px 10px"></p>
@@ -287,13 +284,13 @@
               <div class="seg full" id="seg-ot-fonte"><button type="button" data-v="filtro">Filtrar a base</button><button type="button" data-v="cart">Ativos de uma carteira</button></div></div>
             <div class="field" id="ot-filtro"><span class="lbl">Classes (toque para marcar várias)</span><div class="chips wrap" id="ot-classes"></div>
               <div class="form" style="margin-top:8px">
-                <div class="field"><label class="lbl" for="ot-min">Histórico mínimo</label><select id="ot-min" class="sel"><option value="3">3 anos</option><option value="5">5 anos</option><option value="8">8 anos</option><option value="10">10 anos</option></select></div>
-                <div class="field"><label class="lbl" for="ot-max">Maiores do universo</label><select id="ot-max" class="sel"><option value="30">30 ativos</option><option value="60">60 ativos</option><option value="120">120 ativos</option></select></div>
+                <div class="field"><label class="lbl" for="ot-min">Histórico mínimo</label><div class="inp"><input id="ot-min" inputmode="decimal" autocomplete="off"><span>anos</span></div></div>
+                <div class="field"><span class="lbl">Maiores do universo</span><div class="livre" id="nj-ot-max"><div class="inp"><input inputmode="numeric" autocomplete="off" aria-label="Quantos ativos no universo"><span>ativos</span></div><button type="button" class="btn" data-max>Todos</button></div></div>
               </div></div>
             <div class="field" id="ot-cart"><span class="lbl">Carteira</span><div class="seg full" id="seg-ot-cart"></div></div>
             <div class="field"><span class="lbl">Janela de otimização</span>
-              <div class="seg full" id="seg-ot-janela"><button type="button" data-v="3">3 anos</button><button type="button" data-v="6">6 anos</button><button type="button" data-v="10">10 anos</button><button type="button" data-v="99">Máx.</button></div>
-              <p class="help">Só entram ativos com dados em toda a janela.</p></div>
+              <div class="livre" id="nj-ot-janela"><div class="inp"><input inputmode="numeric" autocomplete="off" aria-label="Anos da janela de otimização"><span>anos</span></div><button type="button" class="btn" data-max>Máximo</button></div>
+              <p class="help" id="ot-janela-help">Só entram ativos com dados em toda a janela. Máximo: a janela começa no ativo mais novo do universo.</p></div>
             <label class="chk"><span>Estender históricos curtos<small>Modelo de fatores para os anos antes do início de cada ativo</small></span><input type="checkbox" id="ot-estender"></label>
           </div>
         </section>
@@ -307,7 +304,16 @@
               <div class="field" id="f-ot-vol"><label class="lbl" for="ot-vol">Volatilidade-alvo (oscilação ao ano)</label><div class="inp"><input id="ot-vol" inputmode="decimal"><span>% a.a.</span></div></div>
               <div class="field"><label class="lbl" for="ot-peso">Peso máximo</label><div class="inp"><input id="ot-peso" inputmode="decimal"><span>%</span></div></div>
               <div class="field"><label class="lbl" for="ot-nmax">Nº máximo de ativos</label><div class="inp"><input id="ot-nmax" inputmode="numeric"></div></div>
+              <div class="field"><label class="lbl" for="ot-dd">Queda máxima tolerada</label><div class="inp"><input id="ot-dd" inputmode="decimal" autocomplete="off" placeholder="sem limite"><span>%</span></div></div>
             </div>
+            <div class="field"><span class="lbl">Retorno ao ano (em R$)</span>
+              <div class="seg full" id="seg-ot-ret"><button type="button" data-v="livre">Livre</button><button type="button" data-v="min">Acima de</button><button type="button" data-v="igual">Igual a</button><button type="button" data-v="entre">Entre</button></div>
+              <div class="form" id="ot-ret-campos" style="margin-top:8px">
+                <div class="field"><label class="lbl" for="ot-ret-a" id="ot-ret-a-lbl">Mínimo</label><div class="inp"><input id="ot-ret-a" inputmode="decimal" autocomplete="off"><span>% a.a.</span></div></div>
+                <div class="field" id="f-ot-ret-b"><label class="lbl" for="ot-ret-b">Máximo</label><div class="inp"><input id="ot-ret-b" inputmode="decimal" autocomplete="off"><span>% a.a.</span></div></div>
+              </div>
+              <div class="seg full" id="seg-ot-retbase" style="margin-top:8px"><button type="button" data-v="est">Retorno estimado (encolhido)</button><button type="button" data-v="hist">Retorno histórico</button></div>
+              <p class="help" id="ot-ret-help"></p></div>
             <label class="chk"><span>Reamostragem (50×)<small>Repete a otimização em 50 versões sorteadas do histórico e tira a média: pesos mais estáveis e menos ajustados ao acaso</small></span><input type="checkbox" id="ot-reamostra"></label>
             <p class="err" id="ot-err" hidden></p>
             <button class="run" id="btn-ot" type="button"><svg class="ic" viewBox="0 0 24 24"><path d="M4 18l6-6 4 4 6-8"/><circle cx="20" cy="8" r="1.5"/></svg><span id="btn-ot-label">Otimizar</span></button>
@@ -334,7 +340,7 @@
         </section>
         <section class="panel">
           <div class="ph"><h2>Como funciona</h2></div>
-          <div class="pb"><p class="help">Médias encolhidas para a média geral (James-Stein) e covariância de Ledoit-Wolf reduzem o erro de estimação. Sem venda a descoberto; soma de 100%. Máximo Sharpe usa o CDI como taxa livre de risco. Paridade de risco iguala a contribuição de cada ativo para a volatilidade. Para escolher pela chance de atingir uma meta com restrição de queda, e para mais objetivos (mínimo CVaR, Sortino), use a versão Python.</p></div>
+          <div class="pb"><p class="help">Médias encolhidas para a média geral (James-Stein) e covariância de Ledoit-Wolf reduzem o erro de estimação. Sem venda a descoberto; soma de 100%. Máximo Sharpe usa o CDI como taxa livre de risco. Paridade de risco iguala a contribuição de cada ativo para a volatilidade. Restrições de retorno e de queda máxima: o otimizador procura a melhor carteira do objetivo escolhido que respeite os limites (penalidade crescente sobre o quanto falta); se o limite for impossível no universo, mostra o mais perto que dá para chegar. A queda máxima é medida no histórico da janela, mês a mês, em reais. Para escolher pela chance de atingir uma meta e para mais objetivos (mínimo CVaR, Sortino), use a versão Python.</p></div>
         </section>
       </div>
     </div>
@@ -391,7 +397,7 @@
               <li><b>Quatro modelos.</b> Bootstrap: sorteia meses do passado (o mesmo mês para todos os ativos). Blocos: sorteia trechos seguidos de 3 a 24 meses, preservando crises e tendências. Normal: sorteia da distribuição normal com a média e a covariância históricas. t-Student: igual à normal, com caudas gordas (5 graus de liberdade), gerando mais meses extremos.</li>
               <li><b>Mesmos sorteios para todas as carteiras</b> (números aleatórios comuns), para a diferença entre elas não ser sorte. Até 100 mil cenários, calculados em segundo plano.</li>
               <li><b>Históricos curtos</b> podem ser estendidos por um modelo de fatores (FIIs pelo IFIX e IPCA; ações pelo Ibovespa e small caps; ativos americanos pelo SPY), com variação sorteada dos erros reais do próprio ativo. Validado fora da amostra: erro mediano de ~4 p.p. no retorno anual e sem viés nos FIIs de papel.</li>
-              <li><b>Otimizador:</b> médias encolhidas (James-Stein), covariância Ledoit-Wolf, reamostragem de Michaud, limites de peso e de número de ativos, e teste fora da amostra.</li>
+              <li><b>Otimizador:</b> médias encolhidas (James-Stein), covariância Ledoit-Wolf, reamostragem de Michaud em todos os núcleos do processador, limites de peso, de número de ativos, de retorno ao ano (acima de, igual a, entre) e de queda máxima histórica, e teste fora da amostra. Universos acima de 300 ativos passam por uma pré-seleção (melhor retorno por risco e menor risco).</li>
               <li><b>Plano:</b> aporte no fim do mês (corrigido pelo IPCA e com aumento real, se escolhido), retiradas a partir do ano escolhido, custo extra mensal e rebalanceamento na frequência escolhida. Sem rebalanceamento, os pesos derivam e os aportes seguem os pesos-alvo.</li>
               <li><b>Leitura:</b> percentis do patrimônio, chance de perda, de bater o CDI, de atingir a meta e de esgotar o dinheiro. Retorno anual e queda máxima são da carteira, sem o efeito dos aportes.</li>
             </ol>
@@ -399,10 +405,10 @@
           <div>
             <h3>Fontes de dados</h3>
             <ul>
-              <li><b>TradingView:</b> lista de ativos (B3 com negociação média de R$ 100 mil por dia ou mais, 600 maiores empresas dos EUA, ETFs americanos sem alavancagem) e histórico mensal com ajuste de dividendos. É o mesmo protocolo de dados usado pelos projetos open source tvdatafeed e TradingView-API.</li>
-              <li><b>CVM (dados abertos):</b> cota diária dos fundos de investimento. Entram fundos abertos e não exclusivos, para público geral ou qualificado, fora de previdência, com 100+ cotistas e entre os maiores de cada classe. A cota já é líquida das taxas do fundo.</li>
+              <li><b>TradingView:</b> lista de ativos (todas as ações, FIIs, Fiagros, FI-Infras e ETFs da B3 com negociação; ações dos EUA acima de ~US$ 1 bilhão; ~900 ETFs americanos sem alavancagem; ~300 criptoativos pelo índice agregado do TradingView, sem stablecoins; índices da B3, dos EUA e de 17 outras bolsas convertidos para dólar; commodities e moedas) e histórico mensal com ajuste de dividendos. É o mesmo protocolo de dados usado pelos projetos open source tvdatafeed e TradingView-API.</li>
+              <li><b>CVM (dados abertos):</b> cota diária dos fundos de investimento. Entram fundos abertos e não exclusivos, para público geral ou qualificado, fora de previdência, com 50+ cotistas, patrimônio de R$ 10 milhões ou mais e entre os maiores de cada classe (cerca de 1.700 fundos). A cota já é líquida das taxas do fundo.</li>
               <li><b>CVM, informe mensal de FIIs:</b> mandato (papel, tijolo, híbrido), segmento, valor patrimonial (P/VP) e cotistas.</li>
-              <li><b>Yahoo Finance + Fundamentus:</b> completam o começo do histórico de 31 ativos em que o TradingView começa tarde, só quando as duas fontes batem no período em comum.</li>
+              <li><b>Yahoo Finance + Fundamentus:</b> completam o começo do histórico de 40 ativos em que o TradingView começa tarde, só quando as duas fontes batem no período em comum.</li>
               <li><b>Banco Central:</b> CDI (SGS 4391) e IPCA (SGS 433).</li>
               <li><b>Versão Python</b> (pasta python/): milhões de cenários, 7 modelos (inclui GARCH e mudança de regime), otimização por meta com restrição de queda, mínimo CVaR e relatório completo.</li>
               <li><b>Renda fixa por modelo:</b> CDI × %, IPCA + taxa e prefixado são calculados com o CDI e o IPCA históricos. Não têm marcação a mercado.</li>
@@ -411,7 +417,8 @@
             <ul>
               <li>O passado não garante o futuro, e a simulação só conhece o que já aconteceu.</li>
               <li>JCP e dividendos entram pelo valor bruto. IR, come-cotas e custos de corretagem são tratados de forma simplificada.</li>
-              <li>Ativos com histórico curto encurtam a janela de todas as carteiras comparadas.</li>
+              <li>Ativos com histórico curto não encurtam a janela: entram no mês em que começam. Quanto mais curto o histórico, mais a simulação depende de poucos anos daquele ativo.</li>
+              <li>Índices de bolsas e futuros de commodities são de preço (sem dividendos nem custo de rolagem); para investir de fato, compare com o ETF correspondente.</li>
               <li>Material educativo. Não é recomendação de investimento.</li>
             </ul>
           </div>

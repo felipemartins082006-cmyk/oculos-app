@@ -14,7 +14,7 @@ from pathlib import Path
 
 BASE = "https://dados.cvm.gov.br/dados/FI"
 INICIO = 2012
-QUANTOS = {"Renda Fixa": 160, "Multimercado": 160, "Ações": 160, "Cambial": 25}
+QUANTOS = {"Renda Fixa": 600, "Multimercado": 700, "Ações": 450, "Cambial": 60}
 csv.field_size_limit(10**8)
 
 
@@ -110,7 +110,7 @@ def main():
             a["cot"] += int(float(r["NR_COTST"] or 0))
     escolhidos = {}
     for cl, n in QUANTOS.items():
-        cand = [(a["pl"], c) for c, a in atual.items() if classes[c]["classe"] == cl and a["cot"] >= 100 and a["pl"] >= 2e7]
+        cand = [(a["pl"], c) for c, a in atual.items() if classes[c]["classe"] == cl and a["cot"] >= 50 and a["pl"] >= 1e7]
         for pl, c in sorted(cand, reverse=True)[:n]:
             escolhidos[c] = {**classes[c], "pl": pl, "cotistas": atual[c]["cot"]}
     print(f"escolhidos: {len(escolhidos)} fundos", flush=True)

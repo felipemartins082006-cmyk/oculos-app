@@ -262,7 +262,7 @@ const PADRAO = {
   saqueOn: false, saqueAno: 25, saque: 5000, saqueCorrige: true,
   metodo: 'boot', bloco: 12, janela: 40, curto: 'redistribuir', rebal: 1, cambio: 1, ajuste: 0, taxa: 0, ir: 0, n: 100000, real: true,
   btModo: 'unit', btEscala: 'log', btJanela: 40, btBench: ['CDI', 'IPCA', 'IBOV', 'SPY'],
-  ot: { fonte: 'filtro', classes: ['fii:papel'], minAnos: 5, maxUniv: 60, janela: 6, cart: 0, obj: 'sharpe', volAlvo: 8, pesoMax: 20, maxAtivos: 8, reamostra: true, estender: false },
+  ot: { fonte: 'filtro', classes: ['fii:papel'], minAnos: 5, maxUniv: 60, janela: 6, cart: 0, obj: 'sharpe', volAlvo: 8, pesoMax: 20, maxAtivos: 8, reamostra: true, estender: false, ddMax: 0, retModo: 'livre', retA: 12, retB: 18, retBase: 'est' },
 };
 let S = carregar();
 function carregar() {
@@ -768,7 +768,7 @@ function desenharCarteira() {
     : '<tbody><tr><td class="empty">Carteira vazia. Escolha um modelo pronto ou adicione ativos.</td></tr></tbody>';
   const novos = ativosNovos(c.itens, desdeDe(S.janela));
   $('cart-aviso').hidden = !novos.length;
-  $('cart-aviso').innerHTML = novos.length ? `<b>Atenção:</b> ${novos.length === 1 ? 'este ativo é mais novo' : 'estes ativos são mais novos'} que a janela de ${S.janela} anos (desde ${desdeDe(S.janela)}): ${novos.map((n) => `${esc(rotuloAtivo(n.t))} (desde ${rotulo(n.desde)})`).join(', ')}. ` +
+  $('cart-aviso').innerHTML = novos.length ? `<b>Atenção:</b> ${novos.length === 1 ? 'este ativo é mais novo' : 'estes ativos são mais novos'} que a janela de ${rotuloJanela(S.janela)} (desde ${desdeDe(S.janela)}): ${novos.map((n) => `${esc(rotuloAtivo(n.t))} (desde ${rotulo(n.desde)})`).join(', ')}. ` +
     ({ redistribuir: 'Na simulação e no histórico, a contagem começa no ativo mais antigo e eles entram quando passam a existir; antes disso, o peso deles é dividido entre os outros.', cortar: 'Com "Cortar a janela", a contagem começa no mais novo deles.', estimar: 'Com "Estimar por fatores", os anos que faltam são estimados (não são dados reais).' }[S.curto]) : '';
   desenharSoma();
   desenharPresets();
@@ -966,6 +966,27 @@ function ligarDecimal(id, chave, min, max) {
   el.value = String(S[chave]).replace('.', ',');
   el.addEventListener('input', () => { S[chave] = Math.max(min, Math.min(max, lerDec(el.value))); mudouParam(); });
 }
+// campo numérico livre com botão "Máximo"/"Todos": valor ≥ cheio = máximo
+function ligarLivre(id, { obter, definir, min = 1, max = 1e9, cheio, inteiro = true, aoMudar }) {
+  const box = $(id), el = box.querySelector('input'), bt = box.querySelector('[data-max]');
+  const mostra = () => {
+    const v = obter(), noMax = v >= cheio();
+    bt.classList.toggle('on', noMax); bt.setAttribute('aria-pressed', noMax);
+    if (document.activeElement !== el) el.value = noMax ? '' : String(v).replace('.', ',');
+    el.placeholder = noMax ? bt.textContent.toLowerCase() : '';
+  };
+  el.addEventListener('input', () => {
+    if (el.value.trim() === '') return;
+    let v = lerDec(el.value); if (inteiro) v = Math.round(v);
+    definir(Math.max(min, Math.min(max, v))); mostra(); aoMudar();
+  });
+  el.addEventListener('blur', mostra);
+  bt.addEventListener('click', () => { definir(bt.dataset.valor ? +bt.dataset.valor : max); el.value = ''; mostra(); aoMudar(); });
+  mostra();
+  return mostra;
+}
+const ANOS_BASE = () => Math.floor(FIM_DADOS / 12) - Math.floor(BASE / 12) + 1; // anos com dados (desde 1995)
+const rotuloJanela = (v) => (v >= ANOS_BASE() ? `toda a base (desde ${Math.floor(BASE / 12)})` : `${v} ${v === 1 ? 'ano' : 'anos'}`);
 function ligarSeg(id, chave, aoMudar) {
   const seg = $(id);
   const marca = () => [...seg.children].forEach((b) => {
@@ -989,8 +1010,16 @@ ligarDinheiro('in-inicial', 'inicial'); ligarDinheiro('in-aporte', 'aporte'); li
 ligarDecimal('in-reaj', 'reaj', -10, 20); ligarDecimal('in-taxa', 'taxa', 0, 10); ligarDecimal('in-ir', 'ir', 0, 50);
 ligarDecimal('in-saque-ano', 'saqueAno', 0, 50);
 ligarCheck('in-corrige', 'corrige'); ligarCheck('in-real', 'real'); ligarCheck('in-saque-corrige', 'saqueCorrige'); ligarCheck('in-saque-on', 'saqueOn');
-ligarSeg('seg-metodo', 'metodo'); ligarSeg('seg-bloco', 'bloco'); ligarSeg('seg-janela', 'janela', () => { mudouParam(); desenharCarteira(); }); ligarSeg('seg-curto', 'curto', () => { mudouParam(); desenharCarteira(); agendarResumo(); }); ligarSeg('seg-rebal', 'rebal');
-ligarSeg('seg-cambio', 'cambio'); ligarSeg('seg-n', 'n');
+ligarSeg('seg-metodo', 'metodo'); ligarSeg('seg-curto', 'curto', () => { mudouParam(); desenharCarteira(); agendarResumo(); }); ligarSeg('seg-rebal', 'rebal');
+ligarSeg('seg-cambio', 'cambio');
+$('in-bloco').value = S.bloco;
+$('in-bloco').addEventListener('input', () => { const v = Math.round(lerDec($('in-bloco').value)); if (v >= 1) { S.bloco = Math.min(v, 240); mudouParam(); } });
+ligarLivre('nj-janela', { obter: () => S.janela, definir: (v) => { S.janela = v; }, max: 99, cheio: ANOS_BASE, aoMudar: () => { mudouParam(); desenharCarteira(); } });
+// cenários: atalhos ou qualquer número (até 1 bilhão)
+const mostraN = () => { if (document.activeElement !== $('in-n')) $('in-n').value = S.n.toLocaleString('pt-BR'); [...$('seg-n').children].forEach((b) => { const on = +b.dataset.v === S.n; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); }); };
+ligarSeg('seg-n', 'n', () => { mostraN(); mudouParam(); });
+$('in-n').addEventListener('input', () => { const v = parseInt($('in-n').value.replace(/\D/g, ''), 10); if (v >= 100) { S.n = Math.min(v, 1e9); mostraN(); mudouParam(); } });
+$('in-n').addEventListener('blur', mostraN); mostraN();
 $('in-anos').value = S.anos; $('in-ajuste').value = S.ajuste;
 // janela em anos -> ano inicial (os dados começam em 1995; a contagem nunca vai antes do ativo mais antigo)
 const desdeDe = (anos) => Math.max(Math.floor(BASE / 12), Math.floor(FIM_DADOS / 12) - anos + 1);
@@ -1267,7 +1296,7 @@ function graficoLinhas(box, series, meses, op) {
 const BENCH = [['CDI', 'CDI (renda fixa)', 'var(--bm1)'], ['IPCA', 'IPCA (inflação)', 'var(--bm2)'], ['IBOV', 'Ibovespa (bolsa BR)', 'var(--bm3)'], ['SPY', 'S&P 500 em R$ (bolsa EUA)', 'var(--bm4)']];
 $('bt-bench').innerHTML = BENCH.map(([k, n, c]) => `<label><input type="checkbox" value="${k}" ${S.btBench.includes(k) ? 'checked' : ''}><span class="swl" style="background:${c}"></span>${n}</label>`).join('');
 $('bt-bench').addEventListener('change', () => { S.btBench = [...$('bt-bench').querySelectorAll('input:checked')].map((i) => i.value); salvar(); desenharHistorico(); });
-ligarSeg('seg-bt-modo', 'btModo', desenharHistorico); ligarSeg('seg-bt-escala', 'btEscala', desenharHistorico); ligarSeg('seg-bt-janela', 'btJanela', desenharHistorico);
+ligarSeg('seg-bt-modo', 'btModo', desenharHistorico); ligarSeg('seg-bt-escala', 'btEscala', desenharHistorico); ligarLivre('nj-bt-janela', { obter: () => S.btJanela, definir: (v) => { S.btJanela = v; salvar(); }, max: 99, cheio: ANOS_BASE, aoMudar: desenharHistorico });
 
 function desenharHistorico() {
   const H = preparar(S.carteiras, desdeDe(S.btJanela), S.cambio, S.curto === 'estimar' ? 'cortar' : S.curto);
@@ -1349,17 +1378,21 @@ function desenharAnalise() {
   const cart = S.carteiras[S.an];
   // correlação e fronteira precisam de todos os ativos no mesmo período: os com menos de 2 anos ficam de fora daqui
   const novos = cart.itens.filter((i) => !i.t.startsWith('RF:') && info(i.t) && serie(i.t).i1 - serie(i.t).i0 < 23);
-  const cartA = { ...cart, itens: cart.itens.filter((i) => !novos.includes(i)) };
-  const H = cartA.itens.length ? preparar([cartA], Math.floor(BASE / 12), S.cambio, 'cortar') : { erro: 'Todos os ativos desta carteira têm menos de 2 anos de histórico: a análise de correlação e a fronteira precisam de mais dados. A simulação e o histórico funcionam normalmente.' };
+  // se todos forem novos, a análise usa os próprios meses que existem (nunca recusa)
+  const cartA = cart.itens.some((i) => !novos.includes(i)) ? { ...cart, itens: cart.itens.filter((i) => !novos.includes(i)) } : cart;
+  if (cartA === cart) novos.length = 0;
+  const H = cartA.itens.length ? preparar([cartA], Math.floor(BASE / 12), S.cambio, 'cortar') : { erro: 'Adicione ativos à carteira.' };
   const vazio = (msg) => { ['risk-bars', 'ef-chart'].forEach((id) => { $(id).innerHTML = `<p class="empty-note">${esc(msg)}</p>`; }); ['tbl-corr', 'tbl-ef'].forEach((id) => { $(id).innerHTML = ''; }); $('an-runline').innerHTML = ''; $('ef-leg').innerHTML = ''; };
   if (H.erro) return vazio(H.erro);
   const K = H.uni.length, L = H.L, w = H.W[0];
   $('an-runline').innerHTML = `<span>Janela: <b>${rotulo(H.ini)}–${rotulo(H.fim)} (${L} m)</b></span><span>Ativos: <b>${K}</b></span><span>Valores: <b>em reais</b></span>` +
     (novos.length ? `<span>Fora desta análise (menos de 2 anos de dados): <b>${novos.map((i) => esc(rotuloAtivo(i.t))).join(', ')}</b></span>` : '') +
     (H.trocouModo ? '<span>Ativos com pouco histórico em comum: cada um entra quando começa</span>' : '');
-  const mu = H.R.map((r) => media(r));
+  // meses em que um ativo não existia: usa o retorno da carteira nesse mês (mesma regra de redistribuir o peso)
+  const RR = H.Rc ? H.R.map((r, k) => H.Rc[0][k] || r) : H.R;
+  const mu = RR.map((r) => media(r));
   const cov = []; for (let i = 0; i < K; i++) cov.push(new Float64Array(K));
-  for (let i = 0; i < K; i++) for (let j = 0; j <= i; j++) { let s = 0; for (let t = 0; t < L; t++) s += (H.R[i][t] - mu[i]) * (H.R[j][t] - mu[j]); cov[i][j] = cov[j][i] = s / (L - 1); }
+  for (let i = 0; i < K; i++) for (let j = 0; j <= i; j++) { let s = 0; for (let t = 0; t < L; t++) s += (RR[i][t] - mu[i]) * (RR[j][t] - mu[j]); cov[i][j] = cov[j][i] = s / (L - 1); }
   // contribuição para o risco
   const sw = cov.map((row) => row.reduce((a, c, j) => a + c * w[j], 0));
   const varP = w.reduce((a, wi, i) => a + wi * sw[i], 0);
@@ -1516,10 +1549,80 @@ function otimizarPesos(mu, C, obj, cap, rfm, volAlvo) {
   }
   return w;
 }
+// ---- restrições: retorno ao ano (acima de / igual a / entre) e queda máxima histórica
+function limitesOt(op) {
+  const a = (+op.retA || 0) / 100, b = (+op.retB || 0) / 100;
+  const L = { rmin: -Infinity, rmax: Infinity, dd: op.ddMax > 0 ? op.ddMax / 100 : null, hist: op.retBase === 'hist' };
+  if (op.retModo === 'min') L.rmin = a;
+  else if (op.retModo === 'igual') { L.rmin = a - 0.0025; L.rmax = a + 0.0025; }
+  else if (op.retModo === 'entre') { L.rmin = Math.min(a, b); L.rmax = Math.max(a, b); }
+  L.ativo = L.dd !== null || isFinite(L.rmin) || isFinite(L.rmax);
+  return L;
+}
+function quedaPesos(w, R) { // queda máxima do caminho histórico e gradiente de log(vale/pico)
+  const K = R.length, T = R[0].length, rp = new Float64Array(T);
+  let nivel = 0, pico = 0, iPico = -1, pior = 0, a = -1, b = -1, soma = 0;
+  for (let t = 0; t < T; t++) {
+    let r = 0; for (let k = 0; k < K; k++) if (w[k]) r += w[k] * R[k][t];
+    rp[t] = Math.max(r, -0.999); const l = Math.log1p(rp[t]); nivel += l; soma += l;
+    if (nivel > pico) { pico = nivel; iPico = t; }
+    if (nivel - pico < pior) { pior = nivel - pico; a = iPico; b = t; }
+  }
+  return { dd: -Math.expm1(pior), pior, a, b, rp, cagr: Math.exp(soma / T * 12) - 1 };
+}
+function gradLog(R, rp, t0, t1, K) { const g = new Float64Array(K); for (let t = t0; t <= t1; t++) { const d = 1 / (1 + rp[t]); for (let k = 0; k < K; k++) g[k] += R[k][t] * d; } return g; }
+function avaliarLimites(w, mu, C, R, lim) { // violações (em fração ao ano) e gradientes
+  const K = w.length, Cw = mulCv(C, w), m = dot(w, mu), v = Math.max(dot(w, Cw), 1e-14);
+  const q = quedaPesos(w, R), T = R[0].length;
+  let ret, gRet;
+  if (lim.hist) { ret = q.cagr; const g = gradLog(R, q.rp, 0, T - 1, K); gRet = Array.from(g, (x) => (1 + ret) * 12 / T * x); }
+  else {
+    ret = anualGeo(m, v); const E = Math.pow(1 + m, 12) * Math.exp(-6 * v / (1 + m) ** 2);
+    const dm = E * (12 / (1 + m) + 12 * v / (1 + m) ** 3), dv = E * (-6 / (1 + m) ** 2);
+    gRet = mu.map((x, i) => dm * x + dv * 2 * Cw[i]);
+  }
+  const viol = [], grads = [];
+  if (ret < lim.rmin) { viol.push(lim.rmin - ret); grads.push(gRet.map((x) => -x)); }
+  if (ret > lim.rmax) { viol.push(ret - lim.rmax); grads.push(gRet); }
+  if (lim.dd !== null && q.dd > lim.dd && q.b >= 0) { const g = gradLog(R, q.rp, q.a + 1, q.b, K), e = Math.exp(q.pior); viol.push(q.dd - lim.dd); grads.push(Array.from(g, (x) => -e * x)); }
+  if (lim.vol) { const vol = Math.sqrt(12 * v); if (vol > lim.vol) { viol.push(vol - lim.vol); grads.push(Cw.map((x) => 12 * x / vol)); } }
+  return { ret, dd: q.dd, viol, grads, Cw, m, v };
+}
+// melhor carteira do objetivo que respeite os limites: gradiente projetado com penalidade crescente
+function ajustarLimites(w0, mu, C, R, lim, obj, cap, rfm) {
+  if (!lim.ativo) return w0;
+  const K = w0.length, ref = w0.slice();
+  const pontua = (w, e) => { // objetivo (normalizado) e gradiente
+    if (obj === 'sharpe') { const sd = Math.sqrt(e.v), m = e.m - rfm; return [m / sd, mu.map((x, i) => x / sd - m * e.Cw[i] / (sd * e.v))]; }
+    if (obj === 'minvar') return [-e.v, e.Cw.map((x) => -2 * x)];
+    if (obj === 'alvo') return [e.m, mu.slice()];
+    let d = 0; const g = new Array(K); for (let i = 0; i < K; i++) { d += (w[i] - ref[i]) ** 2; g[i] = -2 * (w[i] - ref[i]); } return [-d, g];
+  };
+  let w = w0.slice(), e0 = avaliarLimites(w, mu, C, R, lim), [s0] = pontua(w, e0);
+  const escala = Math.max(Math.abs(s0), 1e-6);
+  const J = (w, rho) => { const e = avaliarLimites(w, mu, C, R, lim), [sc, gs] = pontua(w, e); let P = 0; for (const x of e.viol) P += x * x; return { e, j: sc / escala - rho * P, gs, P }; };
+  for (const rho of [10, 100, 1e3, 1e4, 1e5, 1e6, 1e7]) {
+    let atual = J(w, rho), eta = 0.05;
+    for (let it = 0; it < 160 && eta > 1e-7; it++) {
+      const g = atual.gs.map((x) => x / escala);
+      atual.e.viol.forEach((vv, c) => { const gg = atual.e.grads[c]; for (let i = 0; i < K; i++) g[i] -= 2 * rho * vv * gg[i]; });
+      let gmax = 0; for (const x of g) gmax = Math.max(gmax, Math.abs(x)); if (!(gmax > 0)) break;
+      const cand = projetar(w.map((x, i) => x + eta * g[i] / gmax), cap), nv = J(cand, rho);
+      if (nv.j > atual.j) { w = cand; atual = nv; eta = Math.min(eta * 1.4, 0.5); } else eta /= 2;
+    }
+    if (atual.P < 1e-10) break;
+  }
+  return w;
+}
 function otimizarCompleto(R, op, rfm) {
+  const lim = limitesOt(op); if (op.obj === 'alvo') lim.vol = op.volAlvo / 100;
+  const temLim = lim.ativo; lim.ativo = temLim || false;
   const resolve = (cols) => {
     const sub = cols.map((k) => R[k]); const { mu, C } = estimarRobusto(sub);
-    return otimizarPesos(mu, C, op.obj, op.pesoMax / 100, rfm, op.volAlvo);
+    const cap = Math.max(op.pesoMax / 100, 1 / cols.length + 1e-9);
+    let w = otimizarPesos(mu, C, op.obj, op.pesoMax / 100, rfm, op.volAlvo);
+    if (temLim) w = ajustarLimites(w, mu, C, sub, { ...lim, ativo: true }, op.obj, cap, rfm);
+    return w;
   };
   const K = R.length; let idxs = [...Array(K).keys()], w = resolve(idxs);
   if (op.maxAtivos && w.filter((x) => x > 1e-4).length > op.maxAtivos) {
@@ -1536,20 +1639,95 @@ function reamostrar(R, n, bloco, semente) {
   }
   return out;
 }
-function otimizarRobusto(R, op, rfm, aoProgresso) {
+// etapa final (pesos, limites, fronteira, ativos isolados e teste fora da amostra) — roda num núcleo separado
+function finalOtimizacao(d) {
+  const { R, op, rfm, rfmTreino, T } = d, K = R.length, L = R[0].length;
+  const lim = limitesOt(op);
+  const { mu, C, delta } = estimarRobusto(R);
+  let w = d.wMedia ? d.wMedia.slice() : otimizarCompleto(R, op, rfm);
+  if (d.wMedia) {
+    if (op.maxAtivos && w.filter((x) => x > 1e-4).length > op.maxAtivos) { const corte = w.slice().sort((a, b) => b - a)[op.maxAtivos - 1]; w = w.map((x) => (x >= corte ? x : 0)); }
+    let s = w.reduce((a, b) => a + b, 0); w = w.map((x) => x / s);
+    if (lim.ativo || op.obj === 'alvo') { // a média das reamostragens pode sair dos limites: ajuste mínimo, só nos ativos escolhidos
+      const ix = [...w.keys()].filter((k) => w[k] > 0), sub = ix.map((k) => R[k]), e = estimarRobusto(sub);
+      const l2 = { ...lim, ativo: true }; if (op.obj === 'alvo') l2.vol = op.volAlvo / 100;
+      const ws = ajustarLimites(ix.map((k) => w[k]), e.mu, e.C, sub, l2, 'perto', Math.max(op.pesoMax / 100, 1 / ix.length + 1e-9), rfm);
+      w = new Array(K).fill(0); ix.forEach((k, i) => { w[k] = ws[i] < 1e-4 ? 0 : ws[i]; }); s = w.reduce((a, b) => a + b, 0); w = w.map((x) => x / s);
+    }
+  }
+  const cap = Math.max(op.pesoMax / 100, 1 / K + 1e-9);
+  let lmax = 0; for (let i = 0; i < K; i++) lmax = Math.max(lmax, C[i].reduce((a, b) => a + Math.abs(b), 0));
+  const fronteira = [];
+  for (const lam of [0.2, 0.5, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]) {
+    let ww = projetar(new Array(K).fill(1 / K), cap); const eta = 1 / (2 * lam * lmax);
+    for (let it = 0; it < (K > 400 ? 250 : 500); it++) { const g = mulCv(C, ww); ww = projetar(ww.map((x, i) => x + eta * (mu[i] - 2 * lam * g[i])), cap); }
+    fronteira.push(estatPesos(ww, mu, C, rfm));
+  }
+  fronteira.sort((a, b) => a.vol - b.vol);
+  const isolados = mu.map((m, k) => ({ ret: anualGeo(m, C[k][k]), vol: Math.sqrt(C[k][k] * 12) }));
+  const est = estatPesos(w, mu, C, rfm), lw = avaliarLimites(w, mu, C, R, { ...lim, hist: lim.hist });
+  let wT = null;
+  if (L >= 48) wT = otimizarCompleto(R.map((c) => c.slice(0, L - T)), { ...op, reamostra: false }, rfmTreino);
+  return { w, delta, fronteira, isolados, est, wT, retLim: lw.ret, ddLim: lw.dd, semPremio: op.obj === 'sharpe' && Math.max(...mu) <= rfm };
+}
+function otimizarRobusto(R, op, rfm, aoProgresso) { // versão síncrona (sem núcleos paralelos)
   if (!op.reamostra) return otimizarCompleto(R, op, rfm);
-  const K = R.length, soma = new Array(K).fill(0), amostras = reamostrar(R, 50, 6, 11);
-  amostras.forEach((Rs, i) => { const w = otimizarCompleto(Rs, op, rfm); for (let k = 0; k < K; k++) soma[k] += w[k] / 50; if (aoProgresso) aoProgresso(i / 50); });
-  let w = soma;
-  if (op.maxAtivos && w.filter((x) => x > 1e-4).length > op.maxAtivos) { const corte = w.slice().sort((a, b) => b - a)[op.maxAtivos - 1]; w = w.map((x) => (x >= corte ? x : 0)); }
-  const s = w.reduce((a, b) => a + b, 0); return w.map((x) => x / s);
+  const K = R.length, soma = new Array(K).fill(0);
+  for (let i = 0; i < 50; i++) { const w = otimizarCompleto(reamostrar(R, 1, 6, 1000 + i)[0], op, rfm); for (let k = 0; k < K; k++) soma[k] += w[k] / 50; if (aoProgresso) aoProgresso(i / 50); }
+  return soma;
+}
+// núcleos paralelos para o otimizador
+let otWorkerURL = null;
+function criarWorkerOt() {
+  try {
+    if (!otWorkerURL) {
+      const fns = [media, aleatorio, estimarRobusto, projetar, anualGeo, estatPesos, otimizarPesos, limitesOt, quedaPesos, gradLog, avaliarLimites, ajustarLimites, otimizarCompleto, reamostrar, finalOtimizacao];
+      const src = `const mulCv = ${mulCv.toString()};\nconst dot = ${dot.toString()};\n` + fns.map((f) => f.toString()).join('\n') +
+        `\nonmessage = (e) => { const d = e.data;
+  if (d.tipo === 'amostras') { const ws = []; for (let i = d.de; i < d.ate; i++) { ws.push(otimizarCompleto(reamostrar(d.R, 1, 6, 1000 + i)[0], d.op, d.rfm)); postMessage({ p: 1 }); } postMessage({ ws }); }
+  else postMessage({ fim: finalOtimizacao(d) }); };`;
+      otWorkerURL = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+    }
+    return new Worker(otWorkerURL);
+  } catch (e) { return null; }
+}
+let otCancelar = null;
+function noWorkerOt(msg, aoPasso) {
+  return new Promise((ok, falha) => {
+    const w = semWorker ? null : criarWorkerOt();
+    if (!w) {
+      setTimeout(() => { try {
+        if (msg.tipo === 'amostras') { const ws = []; for (let i = msg.de; i < msg.ate; i++) { ws.push(otimizarCompleto(reamostrar(msg.R, 1, 6, 1000 + i)[0], msg.op, msg.rfm)); aoPasso(); } ok({ ws }); } else ok({ fim: finalOtimizacao(msg) });
+      } catch (e) { falha(e); } }, 20);
+      return;
+    }
+    const antes = otCancelar;
+    otCancelar = () => { w.terminate(); falha(new Error('cancelado')); if (antes) antes(); };
+    w.onmessage = (e) => { if (e.data.p) { aoPasso(); return; } w.terminate(); ok(e.data); };
+    w.onerror = (e) => { e.preventDefault(); w.terminate(); falha(new Error(e.message || 'erro no núcleo de cálculo')); };
+    w.postMessage(msg);
+  });
+}
+async function otimizarParalelo(R, op, rfm, rfmTreino, T, aoProgresso) {
+  let wMedia = null, feitos = 0;
+  const total = op.reamostra ? 50 : 0;
+  if (op.reamostra) {
+    const n = Math.max(1, Math.min(NUCLEOS, 50)), por = Math.ceil(50 / n), tarefas = [];
+    for (let de = 0; de < 50; de += por) tarefas.push(noWorkerOt({ tipo: 'amostras', R, op, rfm, de, ate: Math.min(50, de + por) }, () => { feitos++; aoProgresso(feitos / (total + 3)); }));
+    const partes = await Promise.all(tarefas);
+    wMedia = new Array(R.length).fill(0);
+    for (const pt of partes) for (const w of pt.ws) for (let k = 0; k < w.length; k++) wMedia[k] += w[k] / 50;
+  }
+  const r = await noWorkerOt({ tipo: 'final', R, op, rfm, rfmTreino, T, wMedia }, () => {});
+  otCancelar = null;
+  return r.fim;
 }
 
 // interface
 const OT_CLASSES = [['acao', 'Ações BR'], ['fii', 'Todos os FIIs'], ['fii:papel', 'FIIs de papel'], ['fii:tijolo', 'FIIs de tijolo'], ['fii:hibrido', 'FIIs híbridos'],
   ['fiagro|fiinfra', 'Fiagro e Infra'], ['etf', 'ETFs B3'], ['fundo_rf', 'Fundos de renda fixa'], ['fundo_mm', 'Multimercados'], ['fundo_acoes', 'Fundos de ações'],
   ['acao_us', 'Ações EUA'], ['etf_us', 'ETFs EUA'], ['cripto', 'Cripto'], ['indice|commodity|moeda', 'Índices, ouro e moedas']];
-let otPronto = false, otUltimo = null;
+let otPronto = false, otUltimo = null; const otMostra = [];
 function prepararOtimizador() {
   const O_ = S.ot;
   if (!otPronto) {
@@ -1563,17 +1741,28 @@ function prepararOtimizador() {
     const liga = (id, chave, conv) => { const el = $(id); el.value = String(O_[chave]).replace('.', ','); el.addEventListener('input', () => { O_[chave] = conv(el.value); salvar(); }); };
     liga('ot-vol', 'volAlvo', (v) => Math.max(1, lerDec(v))); liga('ot-peso', 'pesoMax', (v) => Math.max(1, Math.min(100, lerDec(v))));
     liga('ot-nmax', 'maxAtivos', (v) => Math.max(0, parseInt(v, 10) || 0));
-    for (const [id, chave] of [['ot-min', 'minAnos'], ['ot-max', 'maxUniv']]) { $(id).value = O_[chave]; $(id).addEventListener('change', () => { O_[chave] = +$(id).value; salvar(); prepararOtimizador(); }); }
+    const ligaU = (id, chave, conv) => { const el = $(id); el.value = String(O_[chave] || '').replace('.', ','); el.addEventListener('input', () => { O_[chave] = conv(el.value); salvar(); otUltimo = null; prepararOtimizador(); }); };
+    ligaU('ot-min', 'minAnos', (v) => Math.max(0, Math.min(40, lerDec(v))));
+    ligaU('ot-dd', 'ddMax', (v) => (String(v).trim() === '' ? 0 : Math.max(0, Math.min(100, lerDec(v)))));
+    ligaU('ot-ret-a', 'retA', (v) => lerDec(v)); ligaU('ot-ret-b', 'retB', (v) => lerDec(v));
+    otMostra.push(ligarLivre('nj-ot-max', { obter: () => O_.maxUniv, definir: (v) => { O_.maxUniv = v; salvar(); }, min: 2, max: 1e6, cheio: () => 1e6, aoMudar: () => { otUltimo = null; prepararOtimizador(); } }));
+    otMostra.push(ligarLivre('nj-ot-janela', { obter: () => O_.janela, definir: (v) => { O_.janela = v; salvar(); }, min: 1, max: 99, cheio: () => 99, aoMudar: () => { otUltimo = null; prepararOtimizador(); } }));
     for (const [id, chave] of [['ot-estender', 'estender'], ['ot-reamostra', 'reamostra']]) { $(id).checked = O_[chave]; $(id).addEventListener('change', () => { O_[chave] = $(id).checked; salvar(); prepararOtimizador(); }); }
     const seg = (id, chave) => $(id).addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; O_[chave] = isNaN(+b.dataset.v) ? b.dataset.v : +b.dataset.v; salvar(); prepararOtimizador(); });
-    seg('seg-ot-fonte', 'fonte'); seg('seg-ot-janela', 'janela'); seg('seg-ot-obj', 'obj'); seg('seg-ot-cart', 'cart');
+    seg('seg-ot-fonte', 'fonte'); seg('seg-ot-obj', 'obj'); seg('seg-ot-cart', 'cart'); seg('seg-ot-ret', 'retModo'); seg('seg-ot-retbase', 'retBase');
     $('btn-ot').addEventListener('click', rodarOtimizador);
     $('ot-salvar').addEventListener('click', salvarOtimizada);
   }
+  otMostra.forEach((f) => f());
   if (O_.cart >= S.carteiras.length) O_.cart = 0;
   $('seg-ot-cart').innerHTML = S.carteiras.map((c, i) => `<button type="button" data-v="${i}">${esc(c.nome.slice(0, 16))}</button>`).join('');
   const marca = (id, v) => [...$(id).children].forEach((b) => { const on = String(b.dataset.v) === String(v); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
-  marca('seg-ot-fonte', O_.fonte); marca('seg-ot-janela', O_.janela); marca('seg-ot-obj', O_.obj); marca('seg-ot-cart', O_.cart);
+  marca('seg-ot-fonte', O_.fonte); marca('seg-ot-obj', O_.obj); marca('seg-ot-cart', O_.cart); marca('seg-ot-ret', O_.retModo); marca('seg-ot-retbase', O_.retBase);
+  $('ot-ret-campos').hidden = O_.retModo === 'livre'; $('seg-ot-retbase').hidden = O_.retModo === 'livre'; $('f-ot-ret-b').hidden = O_.retModo !== 'entre';
+  $('ot-ret-a-lbl').textContent = { min: 'Pelo menos', igual: 'Igual a', entre: 'De' }[O_.retModo] || 'Mínimo'; $('f-ot-ret-b').querySelector('label').textContent = 'Até';
+  $('ot-ret-help').textContent = O_.retModo === 'livre' ? 'Sem exigência de retorno: vale só o objetivo.' :
+    (O_.retBase === 'est' ? 'Estimado: média de cada ativo puxada para a média geral (James-Stein), mais conservador e menos sujeito a sorte. ' : 'Histórico: o retorno ao ano que a carteira teve na janela (pode ser otimista: o passado não se repete igual). ') +
+    'Em reais, antes do IR. "Igual a" aceita ±0,25 p.p.';
   [...$('ot-classes').children].forEach((b) => { const on = O_.classes.includes(b.dataset.k); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
   $('ot-filtro').hidden = O_.fonte !== 'filtro'; $('ot-cart').hidden = O_.fonte !== 'cart';
   $('f-ot-vol').classList.toggle('dim', O_.obj !== 'alvo');
@@ -1583,84 +1772,114 @@ function prepararOtimizador() {
   }[O_.obj];
   const U = universoOtimizador();
   $('ot-univ-meta').textContent = U.erro ? '' : `${U.codigos.length} ativos`;
-  if (!otUltimo) $('ot-runline').innerHTML = U.erro ? `<span>${esc(U.erro)}</span>` : `<span>Universo: <b>${U.codigos.length} ativos</b> com dados de ${rotulo(U.ini)} a ${rotulo(FIM_DADOS)}. Toque em Otimizar.</span>`;
+  if (!otUltimo) $('ot-runline').innerHTML = U.erro ? `<span>${esc(U.erro)}</span>` : `<span>Universo: <b>${U.codigos.length} ativos</b> com dados de ${rotulo(U.ini)} a ${rotulo(FIM_DADOS)}${U.codigos.length > 300 ? ' (acima de 300 ativos é feita uma pré-seleção de ~250)' : ''}. Toque em Otimizar.</span>` +
+    (U.avisos && U.avisos.length ? `<span class="stale" style="display:block;margin-top:6px">Ajustes automáticos: ${esc(U.avisos.join('; '))}.</span>` : '');
 }
 function universoOtimizador() {
-  const O_ = S.ot, ini = O_.janela >= 99 ? BASE : FIM_DADOS - O_.janela * 12 + 1;
+  const O_ = S.ot, maxU = O_.maxUniv >= 1e6 ? Infinity : O_.maxUniv;
   const sr = (t) => (O_.estender ? serieEstendida(t) : serie(t));
+  const avisos = [];
   let cods;
   if (O_.fonte === 'cart') cods = S.carteiras[O_.cart].itens.map((i) => i.t);
   else {
     if (!O_.classes.length) return { erro: 'Marque pelo menos uma classe.' };
-    cods = [...ATIVOS.values()].filter((a) => O_.classes.some((k) => noGrupo(a, k))).filter((a) => serie(a.t).v.length >= O_.minAnos * 12 || O_.estender)
+    cods = [...ATIVOS.values()].filter((a) => O_.classes.some((k) => noGrupo(a, k))).filter((a) => O_.estender || serie(a.t).v.length >= O_.minAnos * 12)
       .sort((a, b) => (b.tam || 0) - (a.tam || 0)).map((a) => a.t);
   }
-  let ini2 = ini;
-  if (O_.janela >= 99) { // janela máxima: começa no ativo mais novo (limitado a 120 ativos)
-    cods = cods.slice(0, O_.fonte === 'cart' ? 999 : O_.maxUniv);
-    ini2 = Math.max(...cods.filter((t) => !t.startsWith('RF:')).map((t) => sr(t).i0), serie('USDBRL').i0);
+  if (!cods.length) return { erro: 'Nenhum ativo nessas classes com esse histórico mínimo. Reduza o histórico mínimo.' };
+  const vivo = (t) => t.startsWith('RF:') || sr(t).i1 >= FIM_DADOS - 1; // ainda com dados no fim da base
+  const lacunas = (t, ini) => { if (t.startsWith('RF:')) return 0; const s_ = sr(t); let n = 0; for (let mi = Math.max(ini, s_.i0); mi <= s_.i1; mi++) if (isNaN(val(s_, mi))) n++; return n; };
+  const inicio = (t) => (t.startsWith('RF:') ? -Infinity : sr(t).i0);
+  cods = cods.filter(vivo);
+  const lim = O_.fonte === 'cart' ? Infinity : maxU;
+  const maximo = (lista) => { // janela máxima: começa no ativo mais novo, mas nunca menos de 3 anos
+    let l = lista.filter((t) => inicio(t) <= FIM_DADOS - 35).slice(0, lim);
+    const i0 = Math.max(serie('USDBRL').i0, BASE, ...l.map(inicio));
+    return { l, i0 };
+  };
+  let ini, sel;
+  if (O_.janela >= 99) { const m = maximo(cods); sel = m.l; ini = m.i0; }
+  else {
+    ini = Math.max(BASE, FIM_DADOS - O_.janela * 12 + 1);
+    sel = cods.filter((t) => inicio(t) <= ini).slice(0, lim);
+    if (sel.length < 2) { // poucos ativos tão antigos: a janela recua até onde há pelo menos 2
+      const ord = cods.slice().sort((a, b) => inicio(a) - inicio(b)).slice(0, Math.max(2, Math.min(lim, 30)));
+      const m = maximo(ord); sel = m.l; ini = m.i0;
+      avisos.push(`poucos ativos têm ${O_.janela} anos de dados; a janela foi ajustada para começar em ${rotulo(ini)}`);
+    }
   }
-  cods = cods.filter((t) => t.startsWith('RF:') || (sr(t).i0 <= ini2 && sr(t).i1 >= FIM_DADOS - 1)).slice(0, O_.fonte === 'cart' ? 999 : O_.maxUniv);
-  if (cods.length < 2) return { erro: 'Menos de 2 ativos com dados na janela. Aumente a janela, reduza o histórico mínimo ou estenda os históricos.' };
-  return { codigos: cods, ini: ini2 };
+  // ativos com muitos meses sem negociação na janela (> 5%) ficam de fora; os poucos meses que faltam são preenchidos
+  const n0 = sel.length; sel = sel.filter((t) => lacunas(t, ini) <= 0.05 * (FIM_DADOS - ini + 1));
+  if (sel.length < n0) avisos.push(`${n0 - sel.length} ${n0 - sel.length === 1 ? 'ativo ficou' : 'ativos ficaram'} de fora por ter muitos meses sem negociação`);
+  if (sel.length < 2) { sel = [...sel, 'RF:CDI:100'].filter((t, i, a) => a.indexOf(t) === i); if (!info('RF:CDI:100')) return { erro: 'Menos de 2 ativos com dados.' }; avisos.push('o CDI entrou no universo para completar 2 ativos'); }
+  return { codigos: sel, ini, avisos };
 }
 function rodarOtimizador() {
   const O_ = S.ot, err = (m) => { $('ot-err').textContent = m; $('ot-err').hidden = !m; };
+  if (otCancelar) { otCancelar(); otCancelar = null; return; }
   const U = universoOtimizador(); if (U.erro) return err(U.erro);
-  const H = preparar([{ nome: 'U', itens: U.codigos.map((t) => ({ t, p: 1 })) }], Math.floor(U.ini / 12), S.cambio, O_.estender);
+  const H = preparar([{ nome: 'U', itens: U.codigos.map((t) => ({ t, p: 1 })) }], Math.floor(U.ini / 12), S.cambio, O_.estender ? 'estimar' : 'redistribuir');
   if (H.erro) return err(H.erro);
   err('');
-  const i0 = H.meses.findIndex((mi) => mi >= U.ini), sel = (arr) => arr.slice(Math.max(0, i0));
-  const R = H.R.map(sel), cdi = sel(H.cdi), meses = sel(H.meses), uni = H.uni;
-  if (R[0].length < 24) return err('Janela com menos de 24 meses.');
-  $('btn-ot').disabled = true; $('btn-ot-label').textContent = 'Otimizando…';
-  setTimeout(() => {
-    try {
-      const t0 = performance.now(), rfm = media(cdi);
-      const w = otimizarRobusto(R, O_, rfm);
-      const { mu, C, delta } = estimarRobusto(R);
-      // fronteira (λ) e ativos isolados
-      const fronteira = [];
-      const K = R.length; let lmax = 0; for (let i = 0; i < K; i++) lmax = Math.max(lmax, C[i].reduce((a, b) => a + Math.abs(b), 0));
-      for (const lam of [0.2, 0.5, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]) {
-        let ww = projetar(new Array(K).fill(1 / K), Math.max(O_.pesoMax / 100, 1 / K + 1e-9)); const eta = 1 / (2 * lam * lmax);
-        for (let it = 0; it < 500; it++) { const g = mulCv(C, ww); ww = projetar(ww.map((x, i) => x + eta * (mu[i] - 2 * lam * g[i])), Math.max(O_.pesoMax / 100, 1 / K + 1e-9)); }
-        fronteira.push(estatPesos(ww, mu, C, rfm));
-      }
-      fronteira.sort((a, b) => a.vol - b.vol);
-      const isolados = R.map((_, k) => { const e = new Array(K).fill(0); e[k] = 1; return { t: uni[k], ...estatPesos(e, mu, C, rfm) }; });
-      const est = estatPesos(w, mu, C, rfm);
-      // histórico real dos pesos na janela
-      const rp = R[0].map((_, t) => R.reduce((acc, col, k) => acc + w[k] * col[t], 0));
+  const i0 = Math.max(0, H.meses.findIndex((mi) => mi >= U.ini)), sel = (arr) => arr.slice(i0);
+  const base = H.Rc ? H.Rc[0] : H.R;
+  const R = base.map((r) => Float64Array.from(sel(r), (x) => (isFinite(x) ? x : 0))), cdi = sel(H.cdi), meses = sel(H.meses), uni = H.uni;
+  if (R[0].length < 6) return err('A base tem menos de 6 meses em comum para esses ativos.');
+  const K = R.length, L = R[0].length, T = Math.min(36, Math.floor(L / 3)), rfm = media(cdi);
+  // universos muito grandes: pré-seleção (ativos usados por uma otimização rápida + os de melhor retorno por risco)
+  let Rx = R, uniX = uni, pre = null;
+  if (K > 300) {
+    const { mu, C } = estimarRobusto(R);
+    const ordem = [...Array(K).keys()].sort((a, b) => (mu[b] - rfm) / Math.sqrt(C[b][b]) - (mu[a] - rfm) / Math.sqrt(C[a][a]));
+    const minv = [...Array(K).keys()].sort((a, b) => C[a][a] - C[b][b]);
+    const ix = [...new Set([...ordem.slice(0, 200), ...minv.slice(0, 60)])].sort((a, b) => a - b);
+    Rx = ix.map((k) => R[k]); uniX = ix.map((k) => uni[k]); pre = { de: K, para: ix.length };
+  }
+  $('btn-ot-label').textContent = 'Otimizando… (toque para parar)';
+  const t0 = performance.now();
+  otimizarParalelo(Rx, O_, rfm, media(cdi.slice(0, L - T)), T, (f) => { $('btn-ot-label').textContent = `Otimizando… ${Math.round(f * 100)}% (toque para parar)`; })
+    .then((F) => {
+      const KX = Rx.length, w = F.w;
+      const rp = Rx[0].map((_, t) => Rx.reduce((acc, col, k) => acc + w[k] * col[t], 0));
       const mh = metricas(rp, cdi);
-      // carteira de referência (ativa) se couber no universo
       const ref = S.carteiras[S.ativa];
-      const wRef = ref.itens.length && ref.itens.every((i) => uni.includes(i.t)) ? (() => { const s = ref.itens.reduce((a, i) => a + i.p, 0); return uni.map((t) => (ref.itens.find((i) => i.t === t)?.p || 0) / s); })() : null;
-      // teste fora da amostra
-      const L = R[0].length, T = Math.min(36, Math.floor(L / 3));
+      const wRef = ref.itens.length && ref.itens.every((i) => uniX.includes(i.t)) ? (() => { const s_ = ref.itens.reduce((a, i) => a + i.p, 0); return uniX.map((t) => (ref.itens.find((i) => i.t === t)?.p || 0) / s_); })() : null;
       let wf = null;
-      if (L >= 48) {
-        const treino = R.map((c) => c.slice(0, L - T)), prova = R.map((c) => c.slice(L - T));
-        const wT = otimizarRobusto(treino, { ...O_, reamostra: false }, media(cdi.slice(0, L - T)));
-        const igual = new Array(K).fill(1 / K);
-        const med = (ww, base) => { const r = base[0].map((_, t) => base.reduce((acc, c, k) => acc + ww[k] * c[t], 0)); return metricas(r, cdi.slice(base === treino ? 0 : L - T, base === treino ? L - T : L)); };
-        wf = [['Otimizada no passado', wT], ['Pesos iguais no universo', igual], ...(wRef ? [[`${ref.nome} (atual)`, wRef]] : [])]
-          .map(([n, ww]) => ({ n, treino: med(ww, treino).cagr, depois: med(ww, prova), }));
+      if (L >= 48 && F.wT) {
+        const treino = Rx.map((c) => c.slice(0, L - T)), prova = Rx.map((c) => c.slice(L - T));
+        const igual = new Array(KX).fill(1 / KX);
+        const med = (ww, b_) => { const r = b_[0].map((_, t) => b_.reduce((acc, c, k) => acc + ww[k] * c[t], 0)); return metricas(r, cdi.slice(b_ === treino ? 0 : L - T, b_ === treino ? L - T : L)); };
+        wf = [['Otimizada no passado', F.wT], ['Pesos iguais no universo', igual], ...(wRef ? [[`${ref.nome} (atual)`, wRef]] : [])].map(([n, ww]) => ({ n, treino: med(ww, treino).cagr, depois: med(ww, prova) }));
         wf.meta = `treino ${rotulo(meses[0])}–${rotulo(meses[L - T - 1])} · teste ${rotulo(meses[L - T])}–${rotulo(meses[L - 1])}`;
       }
-      const semPremio = O_.obj === 'sharpe' && Math.max(...mu) <= rfm;
-      otUltimo = { semPremio, w, uni, est, mh, fronteira, isolados, wRef: wRef ? estatPesos(wRef, mu, C, rfm) : null, refNome: ref.nome, wf, meses, delta, ms: performance.now() - t0, K, L };
+      let estRef = null;
+      if (wRef) { const e = estimarRobusto(Rx); estRef = estatPesos(wRef, e.mu, e.C, rfm); }
+      const isolados = F.isolados.map((x, k) => ({ t: uniX[k], ...x }));
+      otUltimo = { semPremio: F.semPremio, w, uni: uniX, est: F.est, mh, fronteira: F.fronteira, isolados, wRef: estRef, refNome: ref.nome, wf, meses, delta: F.delta,
+        ms: performance.now() - t0, K: KX, L, pre, avisos: U.avisos, lim: limitesOt(O_), retLim: F.retLim, ddLim: F.ddLim };
       desenharOtimizacao();
-    } catch (e) { err(`Não foi possível otimizar: ${e.message}`); }
-    $('btn-ot').disabled = false; $('btn-ot-label').textContent = 'Otimizar de novo';
-  }, 30);
+    })
+    .catch((e) => { if (e.message !== 'cancelado') err(`Não foi possível otimizar: ${e.message}`); })
+    .finally(() => { otCancelar = null; $('btn-ot-label').textContent = otUltimo ? 'Otimizar de novo' : 'Otimizar'; });
 }
 function desenharOtimizacao() {
   const o = otUltimo, O_ = S.ot; if (!o) return;
   const nomeObj = { sharpe: 'máximo Sharpe', minvar: 'mínimo risco', paridade: 'paridade de risco', alvo: `risco-alvo ${num(O_.volAlvo, 0)}%` }[O_.obj];
   $('ot-runline').innerHTML = [['Objetivo', nomeObj + (O_.reamostra ? ' · reamostrado 50×' : '')], ['Universo', `${o.K} ativos`], ['Janela', `${rotulo(o.meses[0])}–${rotulo(o.meses[o.L - 1])} (${o.L} m)`],
-    ['Limites', `peso ≤ ${num(O_.pesoMax, 0)}%${O_.maxAtivos ? `, até ${O_.maxAtivos} ativos` : ''}`], ['Encolhimento da covariância (Ledoit-Wolf)', pct(o.delta, 0)], ['Tempo', `${Math.round(o.ms)} ms`]]
+    ['Limites', `peso ≤ ${num(O_.pesoMax, 0)}%${O_.maxAtivos ? `, até ${O_.maxAtivos} ativos` : ''}`], ['Encolhimento da covariância (Ledoit-Wolf)', pct(o.delta, 0)], ['Tempo', o.ms < 2000 ? `${Math.round(o.ms)} ms` : `${num(o.ms / 1000, 1)} s`]]
     .map(([k, v]) => `<span>${k}: <b>${v}</b></span>`).join('') +
+    (o.pre ? `<span>Pré-seleção: <b>${o.pre.para} de ${o.pre.de} ativos</b> (melhor retorno por risco e menor risco)</span>` : '') +
+    (o.avisos && o.avisos.length ? `<span class="stale" style="display:block;margin-top:6px">Ajustes automáticos: ${esc(o.avisos.join('; '))}.</span>` : '') +
+    (() => { // restrições pedidas: atendidas ou o mais perto possível
+      const L_ = o.lim, it = [], ok = (b) => (b ? '<b class="pos">✓</b>' : '<b class="neg">✗</b>');
+      if (isFinite(L_.rmin) || isFinite(L_.rmax)) {
+        const pedido = O_.retModo === 'min' ? `≥ ${num(O_.retA, 1)}%` : O_.retModo === 'igual' ? `= ${num(O_.retA, 1)}%` : `entre ${num(Math.min(O_.retA, O_.retB), 1)}% e ${num(Math.max(O_.retA, O_.retB), 1)}%`;
+        const atende = o.retLim >= L_.rmin - 5e-4 && o.retLim <= L_.rmax + 5e-4;
+        it.push(`Retorno ${L_.hist ? 'histórico' : 'estimado'} ${pedido}: ${pct(o.retLim)} ${ok(atende)}${atende ? '' : ' (o mais perto possível neste universo)'}`);
+      }
+      if (L_.dd !== null) { const atende = o.ddLim <= L_.dd + 5e-4; it.push(`Queda máxima ≤ ${num(O_.ddMax, 0)}%: ${pct(-o.ddLim, 0)} ${ok(atende)}${atende ? '' : ' (o mais perto possível neste universo)'}`); }
+      return it.length ? `<span style="display:block;margin-top:6px">${it.join(' · ')}</span>` : '';
+    })() +
     (o.semPremio ? '<span class="stale" style="display:block;margin-top:6px">Nenhum ativo do universo tem retorno esperado acima do CDI nesta janela, então não existe carteira de máximo Sharpe: foi usada a de mínimo risco. Considere incluir o CDI ou outras classes no universo.</span>' : '');
   const n = o.w.filter((x) => x > 0).length;
   const kpi = (k, v, s_, cls = '') => `<div class="kpi"><span class="k">${k}</span><span class="v ${cls}">${v}</span><span class="s">${s_}</span></div>`;
@@ -1705,7 +1924,7 @@ function salvarOtimizada(e) {
   const b = e.target.closest('[data-slot]'); if (!b || !otUltimo) return;
   const o = otUltimo, itens = o.uni.map((t, k) => ({ t, p: Math.round(o.w[k] * 1000) / 10 })).filter((i) => i.p >= 0.5);
   fecha100(itens);
-  const nome = `Otimizada (${{ sharpe: 'Sharpe', minvar: 'mín. risco', paridade: 'paridade', alvo: 'risco-alvo' }[S.ot.obj]})`;
+  const nome = `Otimizada (${{ sharpe: 'Sharpe', minvar: 'mín. risco', paridade: 'paridade', alvo: 'risco-alvo' }[S.ot.obj]}${S.ot.retModo !== 'livre' ? ', retorno-alvo' : ''}${S.ot.ddMax > 0 ? `, queda ≤ ${num(S.ot.ddMax, 0)}%` : ''})`;
   if (b.dataset.slot === 'novo') { S.carteiras.push({ nome, itens }); S.ativa = S.carteiras.length - 1; } else { S.carteiras[+b.dataset.slot] = { nome, itens }; S.ativa = +b.dataset.slot; }
   mudouCarteiras(); desenharCarteira(); prepararOtimizador(); desenharOtimizacao();
   b.textContent = 'Salva ✓ — veja em Simulação';

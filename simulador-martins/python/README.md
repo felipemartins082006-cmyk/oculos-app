@@ -50,7 +50,7 @@ saques), a simulação (modelo, nº de cenários, janela) e os modelos de robust
 | `coleta.py` | Acesso direto ao TradingView (histórico mensal/diário com ajuste de dividendos, scanner) e ao SGS do Banco Central |
 | `modelos.py` | Bootstrap, blocos, bootstrap estacionário (Politis-Romano), normal, t-Student, GARCH(1,1) + simulação histórica filtrada, mudança de regime (cadeia de Markov oculta, EM) |
 | `monte_carlo.py` | Simulação vetorizada em lotes; aportes, correção pelo IPCA, aumento real, saques/aposentadoria, custos, IR, rebalanceamento, câmbio, ajuste de retorno; números aleatórios comuns entre carteiras |
-| `otimizacao.py` | Máx. Sharpe, mín. variância, risco-alvo, paridade de risco, mín. CVaR (programação linear), máx. Sortino, utilidade; média James-Stein e covariância Ledoit-Wolf; reamostragem de Michaud; escolha por meta com Monte Carlo e restrições de risco; teste fora da amostra |
+| `otimizacao.py` | Máx. Sharpe, mín. variância, risco-alvo, paridade de risco, mín. CVaR (programação linear), máx. Sortino, utilidade; média James-Stein e covariância Ledoit-Wolf; reamostragem de Michaud; limites de retorno ao ano (`ret_min`, `ret_max`, `ret_base`: estimado ou histórico) e de queda máxima histórica (`queda_max_historica` no JSON do estudo); escolha por meta com Monte Carlo e restrições de risco; teste fora da amostra |
 | `proxy.py` | Estende históricos curtos por modelo de fatores (IFIX, CDI, IPCA, Ibovespa, S&P) com validação fora da amostra |
 | `backtest.py` | Backtest com Sharpe, Sortino, drawdown, VaR/CVaR, beta, retorno por ano |
 | `relatorio.py` | Relatório HTML de arquivo único com gráficos |
