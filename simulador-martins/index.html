@@ -119,6 +119,7 @@
             <div class="ex-ctl"><button type="button" class="btn" id="ex-girar" hidden>Girar sozinho</button><button type="button" class="btn" id="ex-reset">Ver tudo</button></div>
           </div>
           <div class="legend" id="ex-leg"></div>
+          <div id="ex-eixos"></div>
         </section>
         <section class="panel" id="ex-det-panel" hidden>
           <div class="ph"><h2 id="ex-det-t">Ativo</h2><span class="meta" id="ex-det-m"></span></div>
@@ -256,6 +257,7 @@
           <div class="readout" id="mt-read">Cada fatia é um ano; a altura mostra onde os cenários se concentram. Arraste para girar e passe o cursor ou o dedo na montanha.</div>
           <div class="ex-box mt-box"><canvas id="mt-canvas" aria-label="Montanha 3D da distribuição do patrimônio ao longo dos anos"></canvas><div class="ex-tip" id="mt-tip" hidden></div><div class="ex-ctl"><button type="button" class="btn" id="mt-girar">Girar sozinho</button></div></div>
           <div class="legend" id="mt-leg"></div>
+          <div id="mt-eixos"></div>
         </section>
         <div class="grid2">
           <section class="panel">
@@ -292,6 +294,14 @@
       <section class="panel">
         <div class="ph"><h2>Quedas do topo (drawdown)</h2><span class="meta">% abaixo do pico anterior</span></div>
         <div class="chart" id="dd-chart"></div>
+      </section>
+      <section class="panel">
+        <div class="ph"><h2>Superfície de retornos (3D)</h2><span class="meta" id="sr-meta"></span></div>
+        <div class="pb row-ctl"><div class="field"><span class="lbl">Carteira</span><div class="seg" id="seg-sr"></div></div></div>
+        <div class="readout" id="sr-read">Para cada ano de início (X) e cada prazo em anos (Z), a altura é o retorno ao ano que a carteira entregou de verdade. Passe o cursor ou o dedo na superfície.</div>
+        <div class="ex-box c3d-box"><canvas id="sr-canvas" aria-label="Superfície 3D de retornos por ano de início e prazo"></canvas><div class="ex-tip" id="sr-tip" hidden></div><div class="ex-ctl"><button type="button" class="btn" id="sr-girar">Girar sozinho</button></div></div>
+        <div class="legend" id="sr-leg"></div>
+        <div id="sr-eixos"></div>
       </section>
       <section class="panel">
         <div class="ph"><h2>Métricas de risco e retorno</h2><span class="meta" id="met-meta"></span></div>
@@ -392,6 +402,13 @@
           <div class="ph"><h2>Fronteira eficiente</h2><span class="meta">risco × retorno histórico, em R$</span></div>
           <div class="chart" id="ot-chart"></div>
           <div class="legend" id="ot-leg"></div>
+        </section>
+        <section class="panel">
+          <div class="ph"><h2>Fronteira em 3D</h2><span class="meta">volatilidade × retorno × queda máxima</span></div>
+          <div class="readout" id="o3-read">Cada ponto é um ativo do universo; o destaque é a carteira otimizada. Passe o cursor ou o dedo para ver.</div>
+          <div class="ex-box c3d-box"><canvas id="o3-canvas" aria-label="Fronteira 3D: volatilidade, retorno e queda máxima"></canvas><div class="ex-tip" id="o3-tip" hidden></div><div class="ex-ctl"><button type="button" class="btn" id="o3-girar">Girar sozinho</button></div></div>
+          <div class="legend" id="o3-leg"></div>
+          <div id="o3-eixos"></div>
         </section>
         <section class="panel">
           <div class="ph"><h2>Teste fora da amostra</h2><span class="meta" id="ot-wf-meta"></span></div>

@@ -1,7 +1,7 @@
 {
   "name": "simulador-martins",
   "productName": "Simulador Martins",
-  "version": "5.0.0",
+  "version": "5.1.0",
   "description": "Monte Carlo, otimização e backtest de carteiras (B3, fundos, EUA e cripto)",
   "author": "Martins",
   "main": "main.js",

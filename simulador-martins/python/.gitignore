@@ -1,3 +1,7 @@
 __pycache__/
 *.pyc
 exemplos/saida/
+dados_intradia/
+saida_superficie/
+__pycache__/
+.venv/

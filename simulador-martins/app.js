@@ -1354,6 +1354,7 @@ function desenharHistorico() {
   graficoLinhas($('dd-chart'), lst.filter((s) => !/IPCA|CDI/.test(s.nome)).map((s) => ({ v: s.dd, cor: s.cor, w: s.w })), meses, {
     altura: 180, zeroTopo: true, fmtY: (v) => pct(v, 0), titulo: 'Drawdown',
   });
+  desenharSuperficieRetornos(H, lst);
   const cdi = Array.from(H.cdi), okIbov = !rIbov.some(isNaN);
   const ms = lst.map((s) => ({ s, m: metricas(s.r, cdi, okIbov ? rIbov : null) }));
   const linhas = [
@@ -1924,8 +1925,9 @@ function rodarOtimizador() {
       let estRef = null;
       if (wRef) { const e = estimarRobusto(Rx, opW.classe); estRef = estatPesos(wRef, e.mu, e.C, rfm); }
       const isolados = F.isolados.map((x, k) => ({ t: uniX[k], ...x }));
+      const ddIso = Rx.map((col) => { let n = 0, pico = 0, dd = 0; for (const x of col) { n += Math.log1p(Math.max(x, -0.999)); if (n > pico) pico = n; if (n - pico < dd) dd = n - pico; } return Math.expm1(dd); });
       otUltimo = { semPremio: F.semPremio, w, uni: uniX, est: F.est, mh, fronteira: F.fronteira, isolados, wRef: estRef, refNome: ref.nome, wf, meses, delta: F.delta,
-        ms: performance.now() - t0, K: KX, L, pre, avisos: U.avisos, lim: limitesOt(O_), retLim: F.retLim, ddLim: F.ddLim,
+        ms: performance.now() - t0, K: KX, L, pre, avisos: U.avisos, ddIso, lim: limitesOt(O_), retLim: F.retLim, ddLim: F.ddLim,
         classes: opW.cadaClasse && O_.classes.length > 1 ? O_.classes.map((k, c) => ({ nome: OT_CLASSES.find((x) => x[0] === k)[1], n: w.filter((x, j) => x > 0 && gX[j] === c).length })) : null };
       desenharOtimizacao();
     })
@@ -1993,6 +1995,7 @@ function desenharOtimizacao() {
     $('ot-wf').innerHTML = `<thead><tr><th></th><th>Treino</th><th>Depois</th><th class="hide-s">Volatilidade depois</th><th>Queda depois</th></tr></thead><tbody>` +
       o.wf.map((l) => `<tr><td class="t" style="white-space:normal">${esc(l.n)}</td><td>${pct(l.treino)}</td><td class="${l.depois.cagr < 0 ? 'neg' : 'pos'}"><b>${pct(l.depois.cagr)}</b></td><td class="hide-s">${pct(l.depois.vol)}</td><td>${pct(l.depois.maxdd)}</td></tr>`).join('') + '</tbody>';
   } else { $('ot-wf').innerHTML = '<tbody><tr><td class="empty">Janela curta demais para o teste (precisa de 48+ meses).</td></tr></tbody>'; $('ot-wf-meta').textContent = ''; }
+  desenharFronteira3d(o);
 }
 function salvarOtimizada(e) {
   const b = e.target.closest('[data-slot]'); if (!b || !otUltimo) return;
@@ -2029,13 +2032,209 @@ function dicaPontos(box, W, pontos, raio = 22, soX = false) {
 const dicaRV = (titulo, p, extra = '') => `<b>${titulo}</b><br><span class="k">retorno</span> ${pct(p.ret)} · <span class="k">volat.</span> ${pct(p.vol)}${isFinite(p.sharpe) ? ` · <span class="k">Sharpe</span> ${num(p.sharpe)}` : ''}${extra}`;
 const dicaPesos = (ws, uni) => { const o = [...ws.keys()].filter((i) => ws[i] >= 0.01).sort((a, b) => ws[b] - ws[a]).slice(0, 4); return o.length ? `<br>${o.map((i) => `${esc(rotuloAtivo(uni[i]).slice(0, 9))} ${pct(ws[i], 0)}`).join(' · ')}` : ''; };
 
+// ---------------------------------------------------------------- escala por eixo (X, Y, Z): barra, lista fixa de % e % livre
+const ESCALAS = [10, 25, 50, 75, 100, 125, 150, 200, 300, 400, 500];
+function controleEixos(box, estado, eixos, aoMudar) {
+  // eixos: [['x', 'horário'], ['y', '...'], ['z', '...']]; estado: { x: 100, y: 100, z: 100 }
+  box.classList.add('eixos-ctl');
+  box.innerHTML = eixos.map(([e, nome]) => `<div class="eixo-ctl" data-e="${e}"><span class="nm">${e.toUpperCase()} · ${esc(nome)}</span>` +
+    `<input type="range" min="10" max="500" step="5" aria-label="Aumentar ou diminuir o eixo ${e.toUpperCase()}">` +
+    `<select aria-label="Porcentagem fixa do eixo ${e.toUpperCase()}"><option value="">lista</option>${ESCALAS.map((p) => `<option value="${p}">${p}%</option>`).join('')}</select>` +
+    `<input type="number" inputmode="numeric" min="1" max="2000" placeholder="outro %" aria-label="Porcentagem livre do eixo ${e.toUpperCase()}"><output></output></div>`).join('') +
+    '<div class="eixo-rod"><button type="button" class="btn" data-zera>100% nos eixos</button><span>Barra de 10% a 500%, lista fixa ou qualquer % de 1 a 2000.</span></div>';
+  const mostra = () => { for (const [e] of eixos) { const l = box.querySelector(`[data-e="${e}"]`), v = estado[e] || 100;
+    l.querySelector('input[type=range]').value = Math.min(500, Math.max(10, v)); l.querySelector('select').value = ESCALAS.includes(v) ? String(v) : ''; l.querySelector('output').textContent = `${v}%`; } };
+  const muda = (e, v) => { if (!(v >= 1 && v <= 2000)) return; estado[e] = Math.round(v); mostra(); aoMudar(); };
+  for (const [e] of eixos) {
+    const l = box.querySelector(`[data-e="${e}"]`);
+    l.querySelector('input[type=range]').addEventListener('input', (ev) => muda(e, +ev.target.value));
+    l.querySelector('select').addEventListener('change', (ev) => { if (ev.target.value) muda(e, +ev.target.value); });
+    const livre = l.querySelector('input[type=number]');
+    livre.addEventListener('change', () => muda(e, +livre.value)); livre.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') muda(e, +livre.value); });
+  }
+  box.querySelector('[data-zera]').addEventListener('click', () => { for (const [e] of eixos) estado[e] = 100; mostra(); aoMudar(); });
+  mostra();
+  return { mostra, mostrarEixo: (e, on) => { const l = box.querySelector(`[data-e="${e}"]`); if (l) l.hidden = !on; } };
+}
+
+// ---------------------------------------------------------------- cena 3D genérica (canvas): pontos e superfícies
+// Coordenadas normalizadas em [-1, 1]; Y é a altura. Arraste para girar, role/pince para aproximar,
+// passe o cursor para a dica. A escala de cada eixo (%) estica ou encolhe o eixo.
+class Cena3D {
+  constructor(canvas, tip, op = {}) {
+    Object.assign(this, { cv: canvas, tip, rot: { yaw: -0.7, pitch: 0.45, zoom: 1, ...(op.rot || {}) }, escala: op.escala || { x: 100, y: 100, z: 100 },
+      rotulos: op.rotulos || { x: '', y: '', z: '' }, ticks: { x: [], y: [], z: [] }, pontos: [], sup: null, hover: null, mouse: null, quadro: 0, girando: false, linhas: [] });
+    const pos = (e) => { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+    let ini = null, pinca = null; const ptrs = new Map();
+    canvas.addEventListener('pointerdown', (e) => { e.preventDefault(); canvas.setPointerCapture(e.pointerId); const q = pos(e); ptrs.set(e.pointerId, q); ini = { ...q, rot: { ...this.rot }, mov: 0 };
+      if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinca = { d: Math.hypot(a.x - b.x, a.y - b.y), zoom: this.rot.zoom }; } });
+    canvas.addEventListener('pointermove', (e) => {
+      const q = pos(e); if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, q);
+      if (pinca && ptrs.size === 2) { const [a, b] = [...ptrs.values()]; this.rot.zoom = Math.max(0.4, Math.min(6, pinca.zoom * Math.hypot(a.x - b.x, a.y - b.y) / (pinca.d || 1))); this.pedir(); return; }
+      if (ini && ptrs.size === 1) { const dx = q.x - ini.x, dy = q.y - ini.y; ini.mov = Math.max(ini.mov, Math.abs(dx) + Math.abs(dy));
+        if (ini.mov > 4) { this.arrastando = true; this.rot.yaw = ini.rot.yaw + dx * 0.009; this.rot.pitch = Math.max(-1.45, Math.min(1.45, ini.rot.pitch + dy * 0.009)); this.tip.hidden = true; this.hover = null; this.pedir(); return; } }
+      this.mouse = q; this.pedir();
+    });
+    const fim = (e) => { ptrs.delete(e.pointerId); if (ptrs.size < 2) pinca = null; if (ptrs.size === 0) { ini = null; this.arrastando = false; } this.pedir(); };
+    canvas.addEventListener('pointerup', fim); canvas.addEventListener('pointercancel', fim);
+    canvas.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') { this.mouse = null; this.hover = null; this.tip.hidden = true; this.pedir(); } });
+    canvas.addEventListener('wheel', (e) => { e.preventDefault(); this.rot.zoom = Math.max(0.4, Math.min(6, this.rot.zoom * (e.deltaY > 0 ? 0.9 : 1.1))); this.pedir(); }, { passive: false });
+    canvas.addEventListener('dblclick', () => { this.rot = { yaw: -0.7, pitch: 0.45, zoom: 1, ...(op.rot || {}) }; this.pedir(); });
+    new ResizeObserver(() => this.pedir()).observe(canvas);
+  }
+  girar(on) { this.girando = on; const passo = () => { if (!this.girando) return; if (!this.arrastando && this.cv.offsetParent) { this.rot.yaw += 0.005; this.desenhar(); } requestAnimationFrame(passo); }; if (on) passo(); }
+  pedir() { if (this.quadro) return; this.quadro = requestAnimationFrame(() => { this.quadro = 0; this.desenhar(); }); }
+  proj(W, H) {
+    const { yaw, pitch, zoom } = this.rot, cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+    const kx = this.escala.x / 100, ky = this.escala.y / 100, kz = this.escala.z / 100, f = Math.min(W, H * 1.3) * 0.27 * zoom, d = 3.8;
+    return (X, Y, Z) => { X *= kx; Y *= ky; Z *= kz; const x1 = X * cy - Z * sy, z1 = X * sy + Z * cy, y2 = Y * cp - z1 * sp, z2 = Y * sp + z1 * cp, s = f * d / (d + z2); return { x: W / 2 + x1 * s, y: H / 2 + 14 - y2 * s, z: z2, s: s / f }; };
+  }
+  desenhar() {
+    const cv = this.cv, W = cv.clientWidth, H = cv.clientHeight, dpr = window.devicePixelRatio || 1; if (!W || !H) return;
+    if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+    const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+    const C = { ink: exCor('--ink'), muted: exCor('--muted'), rule: exCor('--rule'), rule2: exCor('--rule-2'), accent: exCor('--accent'), panel: exCor('--panel') };
+    const P = this.proj(W, H);
+    // chão quadriculado, caixa e rótulos
+    ctx.lineWidth = 1; ctx.strokeStyle = C.rule;
+    for (let i = -1; i <= 1.001; i += 0.5) { const a = P(i, -1, -1), b = P(i, -1, 1), c = P(-1, -1, i), e = P(1, -1, i); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.moveTo(c.x, c.y); ctx.lineTo(e.x, e.y); ctx.stroke(); }
+    ctx.strokeStyle = C.rule2;
+    const cantos = []; for (const X of [-1, 1]) for (const Y of [-1, 1]) for (const Z of [-1, 1]) cantos.push([X, Y, Z]);
+    for (let i = 0; i < 8; i++) for (let j = i + 1; j < 8; j++) { const a = cantos[i], b = cantos[j]; if (Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]) !== 2) continue; const pa = P(...a), pb = P(...b); ctx.beginPath(); ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y); ctx.stroke(); }
+    ctx.font = '10px "IBM Plex Mono", monospace'; ctx.fillStyle = C.muted; ctx.textAlign = 'center';
+    for (const t of this.ticks.x) { const q = P(t.v, -1, 1.15); ctx.fillText(t.txt, q.x, q.y + 4); }
+    for (const t of this.ticks.y) { const q = P(-1.16, t.v, -1); ctx.fillText(t.txt, q.x, q.y + 3); }
+    for (const t of this.ticks.z) { const q = P(1.17, -1, t.v); ctx.fillText(t.txt, q.x, q.y + 4); }
+    ctx.font = '600 11px "IBM Plex Sans", sans-serif'; ctx.fillStyle = C.ink;
+    { const a = P(0, -1, 1.42), b = P(-1.22, 1.22, -1), c = P(1.45, -1, 0); ctx.fillText(this.rotulos.x, a.x, a.y + 6); ctx.fillText(this.rotulos.y, b.x, b.y); ctx.fillText(this.rotulos.z, c.x, c.y + 6); }
+    const alvos = [];
+    // superfície: quadriláteros do fundo para a frente, sombreados pela inclinação
+    if (this.sup) {
+      const { nx, nz, Y, X, Z, cor, html } = this.sup, quads = [];
+      for (let i = 0; i < nx - 1; i++) for (let j = 0; j < nz - 1; j++) {
+        const h = [Y[i][j], Y[i + 1][j], Y[i + 1][j + 1], Y[i][j + 1]]; if (h.some((v) => !isFinite(v))) continue;
+        const v = [P(X[i], h[0], Z[j]), P(X[i + 1], h[1], Z[j]), P(X[i + 1], h[2], Z[j + 1]), P(X[i], h[3], Z[j + 1])];
+        const luz = 0.6 + 0.4 * Math.max(0, Math.min(1, 0.5 + ((h[0] + h[3]) - (h[1] + h[2])) * 0.9 + ((h[0] + h[1]) - (h[2] + h[3])) * 0.5));
+        quads.push({ v, z: (v[0].z + v[1].z + v[2].z + v[3].z) / 4, i, j, hm: (h[0] + h[1] + h[2] + h[3]) / 4, luz });
+      }
+      quads.sort((a, b) => b.z - a.z);
+      for (const q of quads) {
+        ctx.beginPath(); ctx.moveTo(q.v[0].x, q.v[0].y); for (let k = 1; k < 4; k++) ctx.lineTo(q.v[k].x, q.v[k].y); ctx.closePath();
+        ctx.globalAlpha = 0.95; ctx.fillStyle = cor(q.i, q.j, q.hm); ctx.fill();
+        ctx.globalAlpha = (1 - q.luz) * 0.6; ctx.fillStyle = '#000'; ctx.fill();
+        ctx.globalAlpha = 0.3; ctx.strokeStyle = C.panel; ctx.lineWidth = 0.6; ctx.stroke();
+        alvos.push({ x: (q.v[0].x + q.v[2].x) / 2, y: (q.v[0].y + q.v[2].y) / 2, z: q.z, html: () => html(q.i, q.j), quad: q });
+      }
+      ctx.globalAlpha = 1;
+    }
+    // pontos (com neblina pela profundidade)
+    const pts = this.pontos.map((p) => ({ p, ...P(p.X, p.Y, p.Z) })).sort((a, b) => b.z - a.z);
+    for (const d of pts) {
+      ctx.globalAlpha = d.p.destaque ? 1 : Math.max(0.2, Math.min(1, 0.78 - d.z * 0.3));
+      ctx.fillStyle = d.p.cor; ctx.beginPath(); ctx.arc(d.x, d.y, (d.p.r || 3) * d.s, 0, 7); ctx.fill();
+      if (d.p.destaque) { ctx.strokeStyle = C.panel; ctx.lineWidth = 2; ctx.stroke(); ctx.fillStyle = C.ink; ctx.font = '600 11px "IBM Plex Sans", sans-serif'; ctx.textAlign = 'left'; ctx.fillText(d.p.rotulo || '', d.x + 9, d.y - 7); }
+      alvos.push({ x: d.x, y: d.y, z: d.z, html: () => d.p.html, ponto: d });
+    }
+    ctx.globalAlpha = 1;
+    for (const l of this.linhas) { ctx.strokeStyle = l.cor; ctx.lineWidth = l.w || 2; ctx.setLineDash(l.tracos || []); ctx.beginPath(); l.pts.forEach((q, k) => { const r = P(q[0], q[1], q[2]); k ? ctx.lineTo(r.x, r.y) : ctx.moveTo(r.x, r.y); }); ctx.stroke(); ctx.setLineDash([]); }
+    // cursor
+    this.hover = null;
+    if (this.mouse && !this.arrastando) {
+      let m = null, dm = 22 * 22;
+      for (let k = alvos.length - 1; k >= 0; k--) { const a = alvos[k], dd = (a.x - this.mouse.x) ** 2 + (a.y - this.mouse.y) ** 2; if (dd < dm) { dm = dd; m = a; } }
+      if (m) {
+        this.hover = m; ctx.strokeStyle = C.ink; ctx.lineWidth = 2;
+        if (m.quad) { const v = m.quad.v; ctx.beginPath(); ctx.moveTo(v[0].x, v[0].y); for (let k = 1; k < 4; k++) ctx.lineTo(v[k].x, v[k].y); ctx.closePath(); ctx.stroke(); }
+        else { ctx.beginPath(); ctx.arc(m.x, m.y, 8, 0, 7); ctx.stroke(); const p = m.ponto.p, ch = P(p.X, -1, p.Z); ctx.strokeStyle = C.accent; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(m.x, m.y); ctx.lineTo(ch.x, ch.y); ctx.stroke(); ctx.setLineDash([]); }
+        const tip = this.tip; tip.innerHTML = m.html(); tip.hidden = false;
+        let lx = this.mouse.x + 14, ly = this.mouse.y + 14; if (lx + tip.offsetWidth > W - 4) lx = this.mouse.x - tip.offsetWidth - 14; if (ly + tip.offsetHeight > H) ly = this.mouse.y - tip.offsetHeight - 14;
+        tip.style.left = `${Math.max(4, lx)}px`; tip.style.top = `${Math.max(4, ly)}px`;
+        if (this.aoLer) this.aoLer(m.html());
+      } else this.tip.hidden = true;
+    }
+    ctx.fillStyle = C.muted; ctx.font = '10.5px "IBM Plex Sans", sans-serif'; ctx.textAlign = 'left';
+    ctx.fillText('Arraste para girar · role ou pince para aproximar · toque duplo volta', 10, H - 8);
+  }
+}
+const ticks3d = (lo, hi, fmt, n = 3) => Array.from({ length: n }, (_, i) => { const v = -1 + 2 * i / (n - 1); return { v, txt: fmt(lo + (hi - lo) * i / (n - 1)) }; });
+const norm3d = (lo, hi) => (v) => Math.max(-1.1, Math.min(1.1, ((v - lo) / (hi - lo || 1)) * 2 - 1));
+
+// ---------------------------------------------------------------- Histórico: superfície de retornos 3D
+// X = mês/ano de início, Z = prazo em anos, altura = retorno ao ano que a carteira de fato entregou.
+let SR = null;
+function desenharSuperficieRetornos(H, lst) {
+  if (!SR) {
+    SR = { escala: { x: 100, y: 100, z: 100 } };
+    SR.cena = new Cena3D($('sr-canvas'), $('sr-tip'), { escala: SR.escala, rot: { yaw: -0.55, pitch: 0.5 } });
+    SR.cena.aoLer = (h) => { $('sr-read').innerHTML = h.replace(/<br>/g, ' · '); };
+    controleEixos($('sr-eixos'), SR.escala, [['x', 'ano de início'], ['y', 'retorno ao ano'], ['z', 'prazo (anos)']], () => SR.cena.pedir());
+    $('sr-girar').addEventListener('click', (e) => { const on = !SR.cena.girando; e.target.classList.toggle('primary', on); SR.cena.girar(on); });
+    $('seg-sr').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; S.sr = +b.dataset.v; salvar(); desenharHistorico(); });
+  }
+  const carts = lst.filter((s) => s.cart);
+  if (!(S.sr < carts.length)) S.sr = 0;
+  $('seg-sr').innerHTML = carts.map((c, i) => `<button type="button" data-v="${i}" class="${i === S.sr ? 'on' : ''}"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;background:${c.cor}"></span>${esc(c.nome.slice(0, 18))}</button>`).join('');
+  const r = carts[S.sr].r, L = r.length, real = S.real;
+  const rr = r.map((x, j) => (real ? (1 + x) / (1 + H.ipca[j]) - 1 : x));
+  const passo = L >= 60 ? 12 : L >= 12 ? 3 : 1, nIni = Math.floor((L - passo) / passo) + 1, nPrazo = Math.floor(L / passo);
+  if (nIni < 2 || nPrazo < 2) { SR.cena.sup = null; SR.cena.ticks = { x: [], y: [], z: [] }; $('sr-meta').textContent = 'histórico curto demais para a superfície'; SR.cena.pedir(); return; }
+  const acum = [1]; for (const x of rr) acum.push(acum[acum.length - 1] * (1 + x));
+  const V = [], todos = [];
+  for (let i = 0; i < nIni; i++) { const lin = []; for (let j = 0; j < nPrazo; j++) { const a = i * passo, b = a + (j + 1) * passo; const v = b <= L ? Math.pow(acum[b] / acum[a], 12 / (b - a)) - 1 : NaN; lin.push(v); if (isFinite(v)) todos.push(v); } V.push(lin); }
+  todos.sort((a, b) => a - b);
+  const lo = quantil(todos, 0.02), hi = quantil(todos, 0.98), ny = norm3d(lo, hi);
+  const X = Array.from({ length: nIni }, (_, i) => -1 + 2 * i / Math.max(1, nIni - 1)), Z = Array.from({ length: nPrazo }, (_, j) => -1 + 2 * j / Math.max(1, nPrazo - 1));
+  const un = passo === 12 ? 'anos' : 'meses', prazoTxt = (j) => (passo === 12 ? `${j + 1} ${j ? 'anos' : 'ano'}` : `${(j + 1) * passo} meses`);
+  const mesIni = (i) => rotulo(H.meses[i * passo]);
+  const cor = (i, j) => { const v = V[i][j]; const t = Math.max(-1, Math.min(1, v / Math.max(Math.abs(lo), Math.abs(hi), 1e-9))); return t >= 0 ? `hsl(205 ${40 + 35 * t}% ${62 - 22 * t}%)` : `hsl(4 ${40 - 30 * t}% ${62 + 18 * t}%)`; };
+  SR.cena.sup = { nx: nIni, nz: nPrazo, X, Z, Y: V.map((l) => l.map((v) => (isFinite(v) ? ny(v) : NaN))), cor,
+    html: (i, j) => `<b>Início ${mesIni(i)} · ${prazoTxt(j)}</b><br><span class="k">retorno ${real ? 'real ' : ''}ao ano</span> <b>${pct(V[i][j])}</b><br><span class="k">R$ 10 mil →</span> ${brl(10000 * Math.pow(1 + V[i][j], ((j + 1) * passo) / 12))}` };
+  SR.cena.rotulos = { x: 'ano de início →', y: `retorno ${real ? 'real ' : ''}a.a.`, z: `prazo (${un}) →` };
+  SR.cena.ticks = { x: [0, Math.floor((nIni - 1) / 2), nIni - 1].map((i) => ({ v: X[i], txt: mesIni(i) })), y: ticks3d(lo, hi, (v) => pct(v, 0)), z: [0, Math.floor((nPrazo - 1) / 2), nPrazo - 1].map((j) => ({ v: Z[j], txt: prazoTxt(j) })) };
+  const neg = todos.filter((v) => v < 0).length / todos.length;
+  $('sr-meta').textContent = `${esc(carts[S.sr].nome)} · ${todos.length} combinações de início e prazo`;
+  $('sr-leg').innerHTML = `<span><i style="background:hsl(205 75% 40%)"></i>retorno positivo</span><span><i style="background:hsl(4 70% 70%)"></i>retorno negativo</span><span>${pct(neg, 0)} das combinações perderam ${real ? 'para a inflação' : 'dinheiro'}</span>`;
+  SR.cena.pedir();
+}
+
+// ---------------------------------------------------------------- Otimizar: fronteira em 3D (volatilidade × retorno × queda)
+let O3 = null;
+function desenharFronteira3d(o) {
+  if (!o || !o.ddIso) return;
+  if (!O3) {
+    O3 = { escala: { x: 100, y: 100, z: 100 } };
+    O3.cena = new Cena3D($('o3-canvas'), $('o3-tip'), { escala: O3.escala, rot: { yaw: -0.6, pitch: 0.4 } });
+    O3.cena.aoLer = (h) => { $('o3-read').innerHTML = h.replace(/<br>/g, ' · '); };
+    controleEixos($('o3-eixos'), O3.escala, [['x', 'volatilidade'], ['y', 'retorno'], ['z', 'queda máxima']], () => O3.cena.pedir());
+    $('o3-girar').addEventListener('click', (e) => { const on = !O3.cena.girando; e.target.classList.toggle('primary', on); O3.cena.girar(on); });
+  }
+  const cores = exPaleta();
+  const pts = o.isolados.map((p, k) => ({ t: p.t, vol: p.vol, ret: p.ret, dd: -o.ddIso[k], w: o.w[k] }));
+  const otm = { t: 'Otimizada', vol: o.est.vol, ret: o.est.ret, dd: -o.mh.maxdd };
+  const q = (k, a, b) => { const v = [...pts.map((p) => p[k]), otm[k]].filter(isFinite).sort((x, y) => x - y); return [quantil(v, a), quantil(v, b)]; };
+  const [vx0, vx1] = q('vol', 0.02, 0.97), [vy0, vy1] = q('ret', 0.02, 0.98), [vz0, vz1] = q('dd', 0.02, 0.97);
+  const nx = norm3d(0, vx1 * 1.05), ny = norm3d(Math.min(0, vy0), vy1 * 1.05), nz = norm3d(0, vz1 * 1.05);
+  O3.cena.pontos = pts.filter((p) => isFinite(p.vol) && isFinite(p.ret) && isFinite(p.dd)).map((p) => {
+    const a = info(p.t), g = a ? (TIPOS[a.tipo] || ['', 'indice'])[1] : 'rf';
+    return { X: nx(p.vol), Y: ny(p.ret), Z: nz(p.dd), cor: cores[g] || cores.indice, r: p.w > 0 ? 5 : 3, destaque: p.w > 0.08, rotulo: rotuloAtivo(p.t).slice(0, 9),
+      html: `<b>${esc(rotuloAtivo(p.t))}</b>${a ? ` <span class="k">${esc(TIPOS[a.tipo][0])}</span>` : ''}<br><span class="k">retorno</span> ${pct(p.ret)} · <span class="k">volat.</span> ${pct(p.vol)} · <span class="k">queda</span> ${pct(-p.dd, 0)}${p.w > 0 ? `<br><span class="k">peso na otimizada</span> <b>${pct(p.w, 1)}</b>` : ''}` };
+  });
+  O3.cena.pontos.push({ X: nx(otm.vol), Y: ny(otm.ret), Z: nz(otm.dd), cor: exCor('--amber'), r: 8, destaque: true, rotulo: 'Otimizada',
+    html: `<b>Carteira otimizada</b><br><span class="k">retorno</span> ${pct(otm.ret)} · <span class="k">volat.</span> ${pct(otm.vol)} · <span class="k">queda</span> ${pct(-otm.dd, 0)}` });
+  O3.cena.rotulos = { x: 'volatilidade →', y: 'retorno a.a.', z: 'queda máxima →' };
+  O3.cena.ticks = { x: ticks3d(0, vx1 * 1.05, (v) => pct(v, 0)), y: ticks3d(Math.min(0, vy0), vy1 * 1.05, (v) => pct(v, 0)), z: ticks3d(0, vz1 * 1.05, (v) => pct(v, 0)) };
+  const cont = {}; for (const p of pts) { const a = info(p.t); const g = a ? TIPOS[a.tipo][1] : 'rf'; cont[g] = (cont[g] || 0) + 1; }
+  $('o3-leg').innerHTML = CLASSES.filter(([k]) => cont[k]).map(([k, n]) => `<span><i style="background:${cores[k]}"></i>${n} (${cont[k]})</span>`).join('') + '<span><i style="background:var(--amber)"></i>Otimizada</span><span>pontos maiores = ativos na carteira</span>';
+  O3.cena.pedir();
+}
+
 // ---------------------------------------------------------------- montanha 3D de probabilidades (simulação)
 // Superfície feita das trajetórias simuladas guardadas: para cada ano, que fração dos cenários termina em
 // cada faixa de patrimônio. Arraste para girar; passe o cursor para ler a faixa.
-const MT = { rot: { yaw: -0.42, pitch: 0.62, zoom: 1 }, girar: false, malha: null, pronto: false, quadro: 0, hover: null, arr: false };
-function proj3d(W, H, rot, esc0 = 0.3) {
+const MT = { escala: { x: 100, y: 100, z: 100 }, rot: { yaw: -0.42, pitch: 0.62, zoom: 1 }, girar: false, malha: null, pronto: false, quadro: 0, hover: null, arr: false };
+function proj3d(W, H, rot, esc0 = 0.3, k = { x: 100, y: 100, z: 100 }) {
   const cy = Math.cos(rot.yaw), sy = Math.sin(rot.yaw), cp = Math.cos(rot.pitch), sp = Math.sin(rot.pitch), f = Math.min(W, H * 1.25) * esc0 * rot.zoom, d = 3.6;
-  return (X, Y, Z) => { const x1 = X * cy - Z * sy, z1 = X * sy + Z * cy, y2 = Y * cp - z1 * sp, z2 = Y * sp + z1 * cp, s = f * d / (d + z2); return { x: W / 2 + x1 * s, y: H / 2 + 10 - y2 * s, z: z2 }; };
+  return (X, Y, Z) => { X *= k.x / 100; Y *= k.y / 100; Z *= k.z / 100; const x1 = X * cy - Z * sy, z1 = X * sy + Z * cy, y2 = Y * cp - z1 * sp, z2 = Y * sp + z1 * cp, s = f * d / (d + z2); return { x: W / 2 + x1 * s, y: H / 2 + 10 - y2 * s, z: z2 }; };
 }
 function montarMontanha() {
   if (!ultimo) return null;
@@ -2083,6 +2282,7 @@ function desenharMontanha() {
     cv.addEventListener('wheel', (e) => { e.preventDefault(); MT.rot.zoom = Math.max(0.5, Math.min(4, MT.rot.zoom * (e.deltaY > 0 ? 0.9 : 1.1))); pedirMontanha(); }, { passive: false });
     $('mt-girar').addEventListener('click', () => { MT.girar = !MT.girar; $('mt-girar').classList.toggle('primary', MT.girar); if (MT.girar) girarMontanha(); });
     new ResizeObserver(() => pedirMontanha()).observe(cv);
+    controleEixos($('mt-eixos'), MT.escala, [['x', 'tempo (anos)'], ['y', 'concentração'], ['z', 'patrimônio']], pedirMontanha);
   }
   MT.malha = montarMontanha();
   const r = ultimo.R.res[S.ver];
@@ -2099,7 +2299,7 @@ function pintarMontanha() {
   const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
   const C = { ink: exCor('--ink'), muted: exCor('--muted'), rule: exCor('--rule'), rule2: exCor('--rule-2'), amber: exCor('--amber'), panel: exCor('--panel') };
   if (!M) { ctx.fillStyle = C.muted; ctx.font = '12px "IBM Plex Sans", sans-serif'; ctx.fillText('Rode a simulação para ver a montanha.', 16, 28); return; }
-  const P = proj3d(W, H, MT.rot), T = M.ks.length, B = M.B;
+  const P = proj3d(W, H, MT.rot, 0.3, MT.escala), T = M.ks.length, B = M.B;
   const X = (t) => -1 + 2 * t / Math.max(1, T - 1), Z = (b) => -1 + 2 * b / (B - 1), Y = (h) => -1 + 1.7 * h;
   const zVal = (v) => (v > 0 ? -1 + 2 * ((Math.log(v) - M.lo) / (M.hi - M.lo) * B - 0.5) / (B - 1) : -1);
   // chão: grade, eixos e linhas de meta e aportado
@@ -2160,7 +2360,7 @@ const EX_MET = {
   cs: ['Correlação com S&P 500', (v) => num(v)], pior: ['Pior mês', (v) => pct(v)], melhor: ['Melhor mês', (v) => pct(v)], pos: ['Meses positivos', (v) => pct(v, 0)],
   tam: ['Tamanho (log₁₀ de valor de mercado, PL ou liquidez)', (v) => num(v, 1)],
 };
-const EX_PADRAO = { modo: '2d', x: 'vol', y: 'ret', z: 'dd', cor: 'classe', classes: [], janela: 10, min: 24, ordem: 'sharpe', desc: true };
+const EX_PADRAO = { modo: '3d', escala: { x: 100, y: 100, z: 100 }, x: 'vol', y: 'ret', z: 'dd', cor: 'classe', classes: [], janela: 10, min: 24, ordem: 'sharpe', desc: true };
 const EX = { stats: null, chave: '', vis: [], view: null, rot: { yaw: -0.65, pitch: 0.38, zoom: 1 }, girar: false, sel: null, hover: null, fixos: [], ocultas: new Set(),
   proj: [], mouse: null, pronto: false, quadro: 0, faixas: null };
 function exCor(nome) { return getComputedStyle(document.documentElement).getPropertyValue(nome).trim() || '#888'; }
@@ -2222,6 +2422,7 @@ function exPaleta() { const o = {}; for (const [k] of CLASSES) o[k] = exCor(`--c
 function abrirExplorador() {
   if (!S.ex) S.ex = { ...EX_PADRAO };
   S.ex = { ...EX_PADRAO, ...S.ex };
+  if (!S.ex.v51) { S.ex.v51 = true; S.ex.modo = '3d'; S.ex.escala = { x: 100, y: 100, z: 100 }; salvar(); } // 3D em destaque
   const E = S.ex;
   if (!EX.pronto) {
     EX.pronto = true;
@@ -2249,6 +2450,7 @@ function abrirExplorador() {
       const tr = e.target.closest('tr[data-t]'); if (tr) exSelecionar(tr.dataset.t, true);
     });
     exInteracao();
+    EX.eixos = controleEixos($('ex-eixos'), E.escala, [['x', 'eixo horizontal'], ['y', 'eixo vertical'], ['z', 'profundidade (3D)']], () => { salvar(); exAplicaEscala2d(); exPedir(); });
     new ResizeObserver(() => { if (vista === 'explorar') exPedir(); }).observe($('ex-box'));
   }
   $('ex-busca').value = E.busca || '';
@@ -2263,6 +2465,7 @@ function exAtualizar() {
   [...$('seg-ex-modo').children].forEach((b) => { const on = b.dataset.v === E.modo; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
   [...$('ex-classes').children].forEach((b) => { const on = E.classes.includes(b.dataset.k); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
   $('f-ex-z').classList.toggle('dim', E.modo !== '3d'); $('ex-girar').hidden = E.modo !== '3d';
+  if (EX.eixos) { EX.eixos.mostrarEixo('z', E.modo === '3d'); $('ex-eixos').hidden = E.modo === 'rank'; }
   $('ex-box').hidden = E.modo === 'rank'; $('ex-leg').hidden = E.modo === 'rank';
   $('ex-titulo').textContent = E.modo === '3d' ? 'Nuvem 3D' : E.modo === 'rank' ? 'Ranking' : 'Mapa';
   const st = EX.stats || [];
@@ -2293,7 +2496,7 @@ function exDesenhar() {
   if (!EX.vis.length) { ctx.fillStyle = C.muted; ctx.fillText('Nenhum ativo com esses filtros.', 20, 30); return; }
   if (E.modo === '3d') return exDesenhar3d(ctx, W, H, C, cores, escala);
   const ml = 58, mr = 14, mt = 14, mb = 40, iw = W - ml - mr, ih = H - mt - mb;
-  if (!EX.view) { const fx = exFaixa(E.x), fy = exFaixa(E.y); EX.view = { x0: fx[0], x1: fx[1], y0: fy[0], y1: fy[1] }; }
+  if (!EX.view) { const fx = exFaixa(E.x), fy = exFaixa(E.y); EX.vista0 = { x0: fx[0], x1: fx[1], y0: fy[0], y1: fy[1] }; EX.view = { ...EX.vista0 }; exAplicaEscala2d(); }
   const V = EX.view, sx = (v) => ml + (v - V.x0) / (V.x1 - V.x0) * iw, sy = (v) => mt + ih - (v - V.y0) / (V.y1 - V.y0) * ih;
   EX.mapa = { ml, mt, iw, ih, sx, sy, V };
   const fmt = (k, v) => EX_MET[k][1](v);
@@ -2345,6 +2548,13 @@ function exDesenhar() {
   }
   exMarcaHover(ctx, C, r);
 }
+// no mapa 2D, a escala de cada eixo aproxima (mais de 100%) ou afasta (menos de 100%) em torno do centro atual
+function exAplicaEscala2d() {
+  if (!EX.view || !EX.vista0) return;
+  const e = S.ex.escala, V = EX.view, B = EX.vista0, cx = (V.x0 + V.x1) / 2, cy = (V.y0 + V.y1) / 2;
+  const hx = (B.x1 - B.x0) / 2 * 100 / (e.x || 100), hy = (B.y1 - B.y0) / 2 * 100 / (e.y || 100);
+  EX.view = { x0: cx - hx, x1: cx + hx, y0: cy - hy, y1: cy + hy };
+}
 function exEtiqueta(ctx, txt, x, y, lado, C) {
   ctx.font = '600 10.5px "IBM Plex Mono", monospace'; const w = ctx.measureText(txt).width + 8, h = 16;
   const bx = lado === 'baixo' ? x - w / 2 : x - w, by = lado === 'baixo' ? y : y - h / 2;
@@ -2357,7 +2567,8 @@ function exMarcaHover(ctx, C, r) {
 function exProjetar3d(W, H) {
   const E = S.ex, { yaw, pitch, zoom } = EX.rot, cy = Math.cos(yaw), sy_ = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
   const f = Math.min(W, H) * 0.235 * zoom, d = 3.6, cx = W / 2, cyy = H / 2 + 18;
-  return (X, Y, Z) => { const x1 = X * cy - Z * sy_, z1 = X * sy_ + Z * cy, y2 = Y * cp - z1 * sp, z2 = Y * sp + z1 * cp, s = f * d / (d + z2); return { x: cx + x1 * s, y: cyy - y2 * s, z: z2, s }; };
+  const k = S.ex.escala || { x: 100, y: 100, z: 100 }, kx = k.x / 100, ky = k.y / 100, kz = k.z / 100;
+  return (X, Y, Z) => { X *= kx; Y *= ky; Z *= kz; const x1 = X * cy - Z * sy_, z1 = X * sy_ + Z * cy, y2 = Y * cp - z1 * sp, z2 = Y * sp + z1 * cp, s = f * d / (d + z2); return { x: cx + x1 * s, y: cyy - y2 * s, z: z2, s }; };
 }
 function exDesenhar3d(ctx, W, H, C, cores, escala) {
   const E = S.ex;

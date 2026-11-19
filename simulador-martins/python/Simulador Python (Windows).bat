@@ -30,6 +30,8 @@ echo   3 - Rodar um estudo meu (arquivo .json)
 echo   4 - Simulacao gigante (escolher numero de cenarios)
 echo   5 - Atualizar todos os dados (internet, ~15 min)
 echo   6 - Ver a base de dados
+echo   7 - Superficies 3D + predicao intradiaria (escolher ativos)
+echo   8 - Superficies 3D: melhor ativo e melhor configuracao (automatico)
 echo   0 - Sair
 echo.
 set /p OP="Escolha: "
@@ -45,5 +47,13 @@ if "%OP%"=="4" (
   pause & goto menu )
 if "%OP%"=="5" ( "%VPY%" -m pip install websocket-client >nul & "%VPY%" -m simulador atualizar & pause & goto menu )
 if "%OP%"=="6" ( "%VPY%" -m simulador info & pause & goto menu )
+if "%OP%"=="7" (
+  set /p AT="Ativos separados por virgula (ex.: BTCUSDT,ETHUSDT,WIN): "
+  set /p AL="Alvo em %% (ex.: 0.5): "
+  set /p HZ="Horizonte em minutos (ex.: 30): "
+  set /p SP="Stop em %% (ex.: 0.3): "
+  call "%VPY%" -m superficie --ativos "%%AT%%" --alvo %%AL%% --horizonte %%HZ%% --stop %%SP%% --abrir
+  pause & goto menu )
+if "%OP%"=="8" ( "%VPY%" -m superficie --ativos auto --alvo 0.3,0.5,0.8 --stop 0.3,0.5 --horizonte 15,30,60 --abrir & pause & goto menu )
 if "%OP%"=="0" exit /b 0
 goto menu

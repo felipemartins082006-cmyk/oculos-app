@@ -77,6 +77,14 @@ S&P 500, Global 60/40, Permanente, Big Techs, FIIs, top multimercados etc.).
   cenários de cada faixa sob o cursor). Aviso automático quando a janela histórica é curta.
 - Todos os gráficos seguem o cursor ou o dedo (valores do mês, da faixa ou do ponto apontado).
 
+**Gráficos 3D** — nuvem 3D de todos os ativos (Explorar, abre em 3D), montanha de probabilidades
+(Simulação), superfície de retornos por ano de início × prazo (Histórico) e fronteira 3D volatilidade ×
+retorno × queda (Otimizar). Em todos, cada eixo X, Y e Z tem barra para aumentar/diminuir, lista fixa de
+% e campo para digitar a % que quiser; arraste para girar e passe o cursor ou o dedo para ler os valores.
+
+**Superfícies intradiárias e predição (Python)** — pipeline em `python/superficie/` (ver
+`python/docs/ARQUITETURA.md`).
+
 **Histórico (backtest)** — evolução real das carteiras contra CDI, IPCA, Ibovespa e S&P 500 em
 reais; drawdown; retorno, volatilidade, Sharpe, Sortino, VaR/CVaR, beta, correlação; retorno ano a ano.
 

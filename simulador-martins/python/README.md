@@ -76,3 +76,22 @@ O relatório avisa quais ativos são mais novos e com que parte dos pesos cada c
 - A janela histórica comum é limitada pelo ativo mais novo. A extensão por fatores (`"estender": true`)
   ajuda, mas os meses estimados não são dados reais (erro mediano de ~4 p.p. no retorno anual).
 - Material educativo, não é recomendação de investimento.
+
+
+## Superfícies 3D e predição intradiária (`superficie/`)
+
+Pipeline da fase 1 (MVP): superfície tridimensional de mercado (X = horário em candles de 15 min,
+Y = oscilação % desde a abertura da sessão, Z = volume financeiro e saldo de agressão por faixa) e
+classificador LightGBM/XGBoost da chance de atingir um alvo antes do stop no curto prazo, sem vazamento
+de dados do futuro e validado no tempo (70/15/15 ou walk-forward).
+
+```
+python -m superficie --ativos BTCUSDT,ETHUSDT,WIN --alvo 0.5 --stop 0.3 --horizonte 30
+python -m superficie --ativos auto --alvo 0.3,0.5,0.8 --stop 0.3,0.5 --horizonte 15,30,60   # melhor ativo e configuração
+python testes/test_superficie.py
+```
+
+O relatório HTML traz as superfícies 3D (com barra, lista de % e % livre para os eixos X, Y e Z),
+matriz de confusão, precisão, recall, AUC, calibração, importâncias e o Sharpe bruto e líquido da
+simulação. Arquitetura, controles contra vazamento, limitações, cronograma e dependências:
+[docs/ARQUITETURA.md](docs/ARQUITETURA.md).
