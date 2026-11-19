@@ -146,6 +146,8 @@ def executar(caminho: str | Path, base: Base | None = None, verbose: bool = True
     if J.encerrados:
         texto += ('<p class="aviso">Ativos sem dados depois de certa data (fundo encerrado, ticker trocado ou sem negociação); saem da carteira nesse mês e o peso vai para os demais: '
                   + ", ".join(f"{c} até {f}" for c, f in J.encerrados) + ".</p>")
+    if J.pulados:
+        texto += f'<p class="aviso">{J.pulados} meses ficaram fora da amostra porque nenhum ativo de alguma carteira teve cotação neles. Só entram meses com dados reais.</p>'
     for n_, de, ate, k in J.proxies:
         texto += f'<p class="aviso">{n_}: em {k} meses entre {de} e {ate} nenhum ativo da carteira tinha dados; esses meses usam o índice de referência da classe (IFIX, Ibovespa, S&amp;P 500, Bitcoin ou CDI).</p>'
     if len(J.meses) < 216:

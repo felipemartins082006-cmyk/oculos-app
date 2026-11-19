@@ -289,21 +289,22 @@ def fora_da_amostra(R: pd.DataFrame, objetivo: str, teste: int = 36, reamostrage
 def universo(base, tipos: list[str] | None = None, mandato: str | None = None, min_meses: int = 60,
              janela_meses: int | None = None, codigos: list[str] | None = None, max_ativos_universo: int = 120,
              cambio: bool = True, estender: bool = False) -> pd.DataFrame:
-    """Retornos (em reais) do universo filtrado, numa janela em que todos têm dados."""
-    from . import proxy
+    """Retornos (em reais) do universo filtrado, numa janela em que todos têm dados reais.
+    estender: ignorado (nada é estimado). Se a janela pedida deixar menos de 2 ativos, ela recua até
+    onde houver pelo menos 2 (a análise não é recusada)."""
     if codigos is None:
         m = base.buscar(tipos=tipos, mandato=mandato, min_meses=min_meses, limite=10_000)
         codigos = m.index.tolist()[:max_ativos_universo]
-    R = base.retornos_brl(codigos, cambio)
-    if estender:
-        for c in codigos:
-            if not c.startswith("RF:"):
-                s, n = proxy.estender(base, c)
-                if n:
-                    R[c] = s if base.meta.loc[c, "moeda"] != "USD" or not cambio else (1 + s) * (1 + base.retornos["USDBRL"]) - 1
+    R0 = base.retornos_brl(codigos, cambio)
+    R = R0
     if janela_meses:
-        R = R.iloc[-janela_meses - 1:]
+        R = R0.iloc[-janela_meses - 1:]
         R = R.loc[:, R.notna().all()]
     else:
-        R = R.dropna(axis=0, how="any")
+        R = R0.dropna(axis=0, how="any")
+    if R.shape[1] < 2 or len(R.dropna()) < 2:
+        ini = R0.apply(lambda c: c.first_valid_index()).dropna().sort_values()
+        if len(ini) >= 2:
+            R = R0.loc[ini.iloc[1]:, ini.index[:max(2, (ini <= ini.iloc[1]).sum())]]
+            R = R.loc[:, R.notna().mean() > 0.95]
     return R.dropna()

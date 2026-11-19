@@ -333,3 +333,28 @@ td.best { font-weight: 600; }
 .livre .btn { min-height: 38px; flex: none; }
 .livre .btn.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .row-ctl .livre { min-width: 190px; }
+
+/* explorador */
+.ex-box { position: relative; touch-action: none; user-select: none; -webkit-user-select: none; }
+.ex-box canvas { display: block; width: 100%; height: 440px; cursor: crosshair; }
+@media (max-width: 700px) { .ex-box canvas { height: 380px; } }
+.ex-tip { position: absolute; z-index: 3; pointer-events: none; background: var(--panel); border: 1px solid var(--rule-2); border-radius: var(--r); box-shadow: 0 6px 20px rgba(0,0,0,.18); padding: 8px 10px; font-size: 12px; line-height: 1.45; max-width: 260px; color: var(--ink); }
+.ex-tip b { font-family: var(--mono); }
+.ex-tip .nm { color: var(--muted); display: block; margin-bottom: 3px; }
+.ex-tip .g { display: grid; grid-template-columns: auto auto; gap: 0 10px; font-family: var(--mono); font-size: 11.5px; }
+.ex-tip .g span:nth-child(odd) { color: var(--muted); font-family: inherit; }
+.ex-ctl { position: absolute; right: 8px; top: 8px; display: flex; gap: 6px; }
+.ex-ctl .btn { min-height: 30px; font-size: 12px; padding: 0 9px; background: color-mix(in srgb, var(--panel) 88%, transparent); }
+.legend button.lg { border: 0; background: none; padding: 0; font: inherit; color: inherit; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.legend button.lg.off { opacity: .35; text-decoration: line-through; }
+#ex-rank tr[data-t] { cursor: pointer; }
+#ex-rank th[data-k] { cursor: pointer; }
+#ex-rank th[data-k].on { color: var(--accent); }
+.chart.hov { position: relative; }
+.hov-line { pointer-events: none; }
+.tip-svg { position: absolute; pointer-events: none; z-index: 3; background: var(--panel); border: 1px solid var(--rule-2); border-radius: var(--r); padding: 6px 8px; font-size: 11.5px; box-shadow: 0 6px 18px rgba(0,0,0,.15); white-space: nowrap; font-family: var(--mono); }
+.tip-svg .k { color: var(--muted); font-family: var(--sans, inherit); }
+.mt-box canvas { height: 360px; cursor: grab; }
+@media (max-width: 700px) { .mt-box canvas { height: 300px; } }
+/* no celular, o mapa do explorador vem antes dos controles */
+@media (max-width: 999px) { #v-explorar .layout > .col:not(.ctl) { order: -1; } }

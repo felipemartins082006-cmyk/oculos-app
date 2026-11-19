@@ -28,6 +28,7 @@
   </div>
   <nav class="tabs gut" role="tablist" aria-label="Seções">
     <button role="tab" data-v="carteiras" type="button">Carteiras</button>
+    <button role="tab" data-v="explorar" type="button">Explorar</button>
     <button role="tab" data-v="simulacao" type="button">Simulação</button>
     <button role="tab" data-v="historico" type="button">Histórico</button>
     <button role="tab" data-v="analise" type="button">Análise</button>
@@ -85,6 +86,58 @@
   </section>
 
   <!-- ======================= SIMULAÇÃO ======================= -->
+  <section class="view" id="v-explorar" role="tabpanel">
+    <div class="layout">
+      <div class="col ctl">
+        <section class="panel">
+          <div class="ph"><h2>O mar de opções</h2><span class="meta" id="ex-meta"></span></div>
+          <div class="pb">
+            <div class="field"><span class="lbl">Classes (toque para marcar várias)</span><div class="chips wrap" id="ex-classes"></div></div>
+            <div class="field"><label class="lbl" for="ex-busca">Procurar (código ou nome)</label><div class="inp"><input id="ex-busca" type="search" autocomplete="off" placeholder="ex.: PETR4, Solana, Kinea, IPCA 2035"></div></div>
+            <div class="form">
+              <div class="field"><span class="lbl">Janela (anos de passado)</span><div class="livre" id="nj-ex-janela"><div class="inp"><input inputmode="numeric" autocomplete="off" aria-label="Anos de passado no explorador"><span>anos</span></div><button type="button" class="btn" data-max>Máximo</button></div></div>
+              <div class="field"><label class="lbl" for="ex-min">Histórico mínimo</label><div class="inp"><input id="ex-min" inputmode="numeric" autocomplete="off"><span>meses</span></div></div>
+            </div>
+            <div class="field"><span class="lbl">Visão</span>
+              <div class="seg full" id="seg-ex-modo"><button type="button" data-v="2d">Mapa 2D</button><button type="button" data-v="3d">Nuvem 3D</button><button type="button" data-v="rank">Ranking</button></div></div>
+            <div class="form">
+              <div class="field"><label class="lbl" for="ex-x">Eixo horizontal</label><select id="ex-x" class="sel"></select></div>
+              <div class="field"><label class="lbl" for="ex-y">Eixo vertical</label><select id="ex-y" class="sel"></select></div>
+              <div class="field" id="f-ex-z"><label class="lbl" for="ex-z">Profundidade (3D)</label><select id="ex-z" class="sel"></select></div>
+              <div class="field"><label class="lbl" for="ex-cor">Cor</label><select id="ex-cor" class="sel"></select></div>
+            </div>
+            <p class="help">Cada ponto é um ativo, com dados reais da janela escolhida (em reais; ativos em dólar convertidos pelo câmbio). Passe o cursor ou o dedo para ver; toque ou clique para abrir o ativo. No mapa: arraste para mover, role ou pince para aproximar, toque duplo volta ao início. Na nuvem 3D: arraste para girar.</p>
+          </div>
+        </section>
+      </div>
+      <div class="col">
+        <section class="panel">
+          <div class="ph"><h2 id="ex-titulo">Mapa</h2><span class="meta" id="ex-conta"></span></div>
+          <div class="ex-box" id="ex-box">
+            <canvas id="ex-canvas" aria-label="Mapa interativo dos ativos"></canvas>
+            <div class="ex-tip" id="ex-tip" hidden></div>
+            <div class="ex-ctl"><button type="button" class="btn" id="ex-girar" hidden>Girar sozinho</button><button type="button" class="btn" id="ex-reset">Ver tudo</button></div>
+          </div>
+          <div class="legend" id="ex-leg"></div>
+        </section>
+        <section class="panel" id="ex-det-panel" hidden>
+          <div class="ph"><h2 id="ex-det-t">Ativo</h2><span class="meta" id="ex-det-m"></span></div>
+          <div class="pb">
+            <div class="kpis" id="ex-det-kpis"></div>
+            <div class="readout" id="ex-det-read">Passe o cursor no gráfico para ver cada mês.</div>
+            <div class="chart" id="ex-det-chart"></div>
+            <div class="legend" id="ex-det-leg"></div>
+            <div class="btns" style="padding:8px 0 0" id="ex-det-btns"></div>
+          </div>
+        </section>
+        <section class="panel">
+          <div class="ph"><h2 id="ex-rank-t">Ranking</h2><span class="meta">toque no título da coluna para ordenar</span></div>
+          <div class="tbl-wrap"><table id="ex-rank"></table></div>
+        </section>
+      </div>
+    </div>
+  </section>
+
   <section class="view" id="v-simulacao" role="tabpanel">
     <div class="layout">
       <div class="col ctl">
@@ -122,6 +175,7 @@
               <div class="seg full wrap" id="seg-metodo">
                 <button type="button" data-v="boot">Bootstrap</button>
                 <button type="button" data-v="bloco">Blocos</button>
+                <button type="button" data-v="estac">Blocos aleatórios</button>
                 <button type="button" data-v="normal">Normal</button>
                 <button type="button" data-v="t">t-Student</button>
               </div>
@@ -139,7 +193,7 @@
             <div class="field">
               <span class="lbl">Ativos mais novos que a janela</span>
               <div class="seg full wrap" id="seg-curto">
-                <button type="button" data-v="redistribuir">Entram quando começam</button><button type="button" data-v="cortar">Cortar a janela</button><button type="button" data-v="estimar">Estimar por fatores</button>
+                <button type="button" data-v="redistribuir">Entram quando começam</button><button type="button" data-v="cortar">Cortar a janela</button>
               </div>
               <p class="help" id="curto-help"></p>
             </div>
@@ -196,6 +250,12 @@
           <div class="readout" id="readout">Toque ou passe o cursor no gráfico para ver cada ano.</div>
           <div class="chart" id="fan"></div>
           <div class="legend" id="fan-leg"></div>
+        </section>
+        <section class="panel">
+          <div class="ph"><h2>Montanha de probabilidades (3D)</h2><span class="meta" id="mt-meta"></span></div>
+          <div class="readout" id="mt-read">Cada fatia é um ano; a altura mostra onde os cenários se concentram. Arraste para girar e passe o cursor ou o dedo na montanha.</div>
+          <div class="ex-box mt-box"><canvas id="mt-canvas" aria-label="Montanha 3D da distribuição do patrimônio ao longo dos anos"></canvas><div class="ex-tip" id="mt-tip" hidden></div><div class="ex-ctl"><button type="button" class="btn" id="mt-girar">Girar sozinho</button></div></div>
+          <div class="legend" id="mt-leg"></div>
         </section>
         <div class="grid2">
           <section class="panel">
@@ -291,7 +351,6 @@
             <div class="field"><span class="lbl">Janela de otimização</span>
               <div class="livre" id="nj-ot-janela"><div class="inp"><input inputmode="numeric" autocomplete="off" aria-label="Anos da janela de otimização"><span>anos</span></div><button type="button" class="btn" data-max>Máximo</button></div>
               <p class="help" id="ot-janela-help">Só entram ativos com dados em toda a janela. Máximo: a janela começa no ativo mais novo do universo.</p></div>
-            <label class="chk"><span>Estender históricos curtos<small>Modelo de fatores para os anos antes do início de cada ativo</small></span><input type="checkbox" id="ot-estender"></label>
           </div>
         </section>
         <section class="panel">
@@ -314,6 +373,7 @@
               </div>
               <div class="seg full" id="seg-ot-retbase" style="margin-top:8px"><button type="button" data-v="est">Retorno estimado (encolhido)</button><button type="button" data-v="hist">Retorno histórico</button></div>
               <p class="help" id="ot-ret-help"></p></div>
+            <label class="chk"><span>Pelo menos 1 ativo de cada classe marcada<small>Com várias classes, cada uma entra com o seu melhor ativo para o objetivo e os limites escolhidos (peso mínimo de 2%)</small></span><input type="checkbox" id="ot-cada"></label>
             <label class="chk"><span>Reamostragem (50×)<small>Repete a otimização em 50 versões sorteadas do histórico e tira a média: pesos mais estáveis e menos ajustados ao acaso</small></span><input type="checkbox" id="ot-reamostra"></label>
             <p class="err" id="ot-err" hidden></p>
             <button class="run" id="btn-ot" type="button"><svg class="ic" viewBox="0 0 24 24"><path d="M4 18l6-6 4 4 6-8"/><circle cx="20" cy="8" r="1.5"/></svg><span id="btn-ot-label">Otimizar</span></button>
@@ -394,9 +454,9 @@
             <h3>Simulação de Monte Carlo</h3>
             <ol>
               <li><b>Retornos mensais reais</b> de cada ativo, com proventos reinvestidos. Ativos em dólar são convertidos pelo câmbio do mesmo mês, então a variação do dólar entra no risco.</li>
-              <li><b>Quatro modelos.</b> Bootstrap: sorteia meses do passado (o mesmo mês para todos os ativos). Blocos: sorteia trechos seguidos de 3 a 24 meses, preservando crises e tendências. Normal: sorteia da distribuição normal com a média e a covariância históricas. t-Student: igual à normal, com caudas gordas (5 graus de liberdade), gerando mais meses extremos.</li>
+              <li><b>Cinco modelos.</b> Bootstrap: sorteia meses do passado (o mesmo mês para todos os ativos). Blocos: sorteia trechos seguidos do tamanho escolhido, preservando crises e tendências. Blocos aleatórios (bootstrap estacionário de Politis-Romano): trechos seguidos com tamanho sorteado, de média igual ao bloco escolhido. Normal: sorteia da distribuição normal com a média e a covariância históricas. t-Student: igual à normal, com caudas gordas (5 graus de liberdade), gerando mais meses extremos.</li>
               <li><b>Mesmos sorteios para todas as carteiras</b> (números aleatórios comuns), para a diferença entre elas não ser sorte. Até 100 mil cenários, calculados em segundo plano.</li>
-              <li><b>Históricos curtos</b> podem ser estendidos por um modelo de fatores (FIIs pelo IFIX e IPCA; ações pelo Ibovespa e small caps; ativos americanos pelo SPY), com variação sorteada dos erros reais do próprio ativo. Validado fora da amostra: erro mediano de ~4 p.p. no retorno anual e sem viés nos FIIs de papel.</li>
+              <li><b>Só dados reais:</b> nenhum mês é estimado, completado por modelo ou trocado por índice. Um ativo entra no mês em que começa a ter cotação e sai quando ela acaba; um mês em que uma carteira não tem nenhum ativo com cotação fica fora da amostra. Com pouco histórico a análise continua com o que existe, e o app avisa quantos meses foram usados.</li>
               <li><b>Otimizador:</b> médias encolhidas (James-Stein), covariância Ledoit-Wolf, reamostragem de Michaud em todos os núcleos do processador, limites de peso, de número de ativos, de retorno ao ano (acima de, igual a, entre) e de queda máxima histórica, e teste fora da amostra. Universos acima de 300 ativos passam por uma pré-seleção (melhor retorno por risco e menor risco).</li>
               <li><b>Plano:</b> aporte no fim do mês (corrigido pelo IPCA e com aumento real, se escolhido), retiradas a partir do ano escolhido, custo extra mensal e rebalanceamento na frequência escolhida. Sem rebalanceamento, os pesos derivam e os aportes seguem os pesos-alvo.</li>
               <li><b>Leitura:</b> percentis do patrimônio, chance de perda, de bater o CDI, de atingir a meta e de esgotar o dinheiro. Retorno anual e queda máxima são da carteira, sem o efeito dos aportes.</li>
@@ -405,8 +465,9 @@
           <div>
             <h3>Fontes de dados</h3>
             <ul>
-              <li><b>TradingView:</b> lista de ativos (todas as ações, FIIs, Fiagros, FI-Infras e ETFs da B3 com negociação; ações dos EUA acima de ~US$ 1 bilhão; ~900 ETFs americanos sem alavancagem; ~300 criptoativos pelo índice agregado do TradingView, sem stablecoins; índices da B3, dos EUA e de 17 outras bolsas convertidos para dólar; commodities e moedas) e histórico mensal com ajuste de dividendos. É o mesmo protocolo de dados usado pelos projetos open source tvdatafeed e TradingView-API.</li>
-              <li><b>CVM (dados abertos):</b> cota diária dos fundos de investimento. Entram fundos abertos e não exclusivos, para público geral ou qualificado, fora de previdência, com 50+ cotistas, patrimônio de R$ 10 milhões ou mais e entre os maiores de cada classe (cerca de 1.700 fundos). A cota já é líquida das taxas do fundo.</li>
+              <li><b>TradingView:</b> lista de ativos (todas as ações, BDRs, FIIs, Fiagros, FI-Infras e ETFs da B3 com negociação; ~4.400 ações dos EUA (até as pequenas, de ~US$ 150 milhões); ~2.000 ETFs americanos sem alavancagem; ~600 criptoativos pelo índice agregado do TradingView, sem stablecoins nem tokens "embrulhados"; índices da B3, dos EUA e de 29 outras bolsas convertidos para dólar; commodities e moedas) e histórico mensal com ajuste de dividendos. É o mesmo protocolo de dados usado pelos projetos open source tvdatafeed e TradingView-API.</li>
+              <li><b>CVM (dados abertos):</b> cota diária dos fundos de investimento. Entram fundos abertos e não exclusivos, para público geral ou qualificado, fora de previdência, com 20+ cotistas, patrimônio de R$ 5 milhões ou mais e entre os maiores de cada classe (cerca de 2.400 fundos), com cotas desde 2000. A cota já é líquida das taxas do fundo.</li>
+              <li><b>Tesouro Transparente:</b> preço oficial (PU de recompra, marcado a mercado) de todos os títulos do Tesouro Direto sem cupom ainda à venda: Selic, IPCA+, Prefixado, Renda+ e Educa+. Os títulos com juros semestrais ficam de fora porque o arquivo oficial não traz o valor dos cupons, e sem ele o retorno ficaria errado.</li>
               <li><b>CVM, informe mensal de FIIs:</b> mandato (papel, tijolo, híbrido), segmento, valor patrimonial (P/VP) e cotistas.</li>
               <li><b>Yahoo Finance + Fundamentus:</b> completam o começo do histórico de 40 ativos em que o TradingView começa tarde, só quando as duas fontes batem no período em comum.</li>
               <li><b>Banco Central:</b> CDI (SGS 4391) e IPCA (SGS 433).</li>

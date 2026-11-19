@@ -56,7 +56,8 @@ def test_redistribuir_ativo_novo():
 def test_ativo_muito_novo_nao_recusa():
     from simulador.monte_carlo import preparar
     J = preparar(BASE, {"So novo": {"RBFY11": 100}}, 1995, modo="redistribuir")
-    assert len(J.meses) >= 36 and J.proxies and J.proxies[0][0] == "So novo"
+    # só os meses reais do ativo (nada de índice no lugar), e a análise não é recusada
+    assert 1 <= len(J.meses) == BASE.retornos["RBFY11"].notna().sum() and not J.proxies
     J2 = preparar(BASE, {"X": {"RBFY11": 50, "KNCR11": 50}}, 1995, modo="cortar")
     assert J2.trocou_modo == "cortar" and len(J2.meses) > 100
     r = simular(BASE, {"So novo": {"RBFY11": 100}}, Plano(anos=10), Config(cenarios=2000), progresso=False)
@@ -67,6 +68,8 @@ def test_ativo_encerrado_nao_corta_janela():
     from simulador.monte_carlo import preparar
     J = preparar(BASE, {"X": {"SEED11": 50, "KNCR11": 50}}, 1995, modo="redistribuir")
     assert J.meses[-1] == BASE.retornos["CDI"].last_valid_index() and J.encerrados and J.encerrados[0][0] == "SEED11"
+    J1 = preparar(BASE, {"X": {"SEED11": 100}}, 1995, modo="redistribuir")  # meses sem negociação ficam fora
+    assert J1.pulados > 0 and J1.R["SEED11"].notna().all()
     r = simular(BASE, {"X": {"SEED11": 100}}, Plano(anos=10), Config(cenarios=2000, janela_anos=5), progresso=False)
     assert np.isfinite(r.resumo().loc["X", "P50"])
 

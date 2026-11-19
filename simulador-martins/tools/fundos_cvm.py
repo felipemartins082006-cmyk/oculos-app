@@ -5,7 +5,7 @@ Uso: python3 tools/fundos_cvm.py PASTA_CACHE   ->  gera PASTA_CACHE/fundos.json
 
 1. Escolhe os fundos: classes FIF abertas, não exclusivas, público geral ou qualificado, fora de
    previdência, com 100+ cotistas, os maiores em patrimônio de cada classificação.
-2. Lê o informe diário (cota de cada dia) de 2012 até o último mês e guarda a última cota de cada mês.
+2. Lê o informe diário (cota de cada dia) de 2000 até o último mês e guarda a última cota de cada mês.
    A cota já vem líquida de taxa de administração e performance: o retorno é o que o cotista recebeu
    (antes do IR e do come-cotas).
 """
@@ -13,8 +13,8 @@ import csv, io, json, re, sys, time, urllib.request, zipfile, datetime as dt
 from pathlib import Path
 
 BASE = "https://dados.cvm.gov.br/dados/FI"
-INICIO = 2012
-QUANTOS = {"Renda Fixa": 600, "Multimercado": 700, "Ações": 450, "Cambial": 60}
+INICIO = 2000
+QUANTOS = {"Renda Fixa": 900, "Multimercado": 1000, "Ações": 700, "Cambial": 80}
 csv.field_size_limit(10**8)
 
 
@@ -110,7 +110,7 @@ def main():
             a["cot"] += int(float(r["NR_COTST"] or 0))
     escolhidos = {}
     for cl, n in QUANTOS.items():
-        cand = [(a["pl"], c) for c, a in atual.items() if classes[c]["classe"] == cl and a["cot"] >= 50 and a["pl"] >= 1e7]
+        cand = [(a["pl"], c) for c, a in atual.items() if classes[c]["classe"] == cl and a["cot"] >= 20 and a["pl"] >= 5e6]
         for pl, c in sorted(cand, reverse=True)[:n]:
             escolhidos[c] = {**classes[c], "pl": pl, "cotistas": atual[c]["cot"]}
     print(f"escolhidos: {len(escolhidos)} fundos", flush=True)
@@ -149,7 +149,7 @@ def main():
     saida = []
     for c, info in escolhidos.items():
         cq = cotas[c]
-        if len(cq) < 25:
+        if len(cq) < 4:
             continue
         saida.append({"cnpj": c, "nome": nome_curto(info["nome"]), "classe": info["classe"], "anbima": info["anbima"],
                       "gestor": info["gestor"], "pl": round(info["pl"]), "cotistas": info["cotistas"], "cotas": cq})

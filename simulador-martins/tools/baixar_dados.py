@@ -27,9 +27,9 @@ except ImportError:
 INICIO = "1995-01"
 UA = {"User-Agent": "Mozilla/5.0", "Content-Type": "application/json"}
 LIQ_MIN_BR = 1            # qualquer ativo da B3 com negociação nos últimos 30 dias
-N_ACOES_US = 2700         # empresas americanas por valor de mercado (todas acima de ~US$ 1 bilhão)
-N_ETFS_US = 900
-N_CRIPTO = 320            # maiores criptoativos por valor de mercado (índice agregado CRYPTO: do TradingView)
+N_ACOES_US = 4500         # empresas americanas por valor de mercado (até as pequenas, ~US$ 150 milhões)
+N_ETFS_US = 2000
+N_CRIPTO = 650            # maiores criptoativos por valor de mercado (índice agregado CRYPTO: do TradingView)
 
 SETOR = {
     "Finance": "Financeiro", "Utilities": "Utilidade pública", "Energy Minerals": "Petróleo e gás",
@@ -74,10 +74,10 @@ EXTRAS = [  # (símbolo TradingView, código, nome, tipo, setor, mercado, moeda)
     ("BMFBOVESPA:IAGRO", "IAGRO", "Índice Agronegócio (IAGRO)", "indice", "Índice B3", "BR", "BRL"),
     ("BMFBOVESPA:IBSD", "IBSD", "Ibovespa Smart Dividendos (IBSD)", "indice", "Índice B3", "BR", "BRL"),
     ("BMFBOVESPA:IBLV", "IBLV", "Ibovespa Smart Baixa Volatilidade (IBLV)", "indice", "Índice B3", "BR", "BRL"),
-    ("SP:SPX", "SPX", "S&P 500 (índice, sem dividendos)", "indice", "Índice EUA", "US", "USD"),
+    ("TVC:SPX", "SPX", "S&P 500 (índice, sem dividendos)", "indice", "Índice EUA", "US", "USD"),
     ("NASDAQ:NDX", "NDX", "Nasdaq-100 (índice, sem dividendos)", "indice", "Índice EUA", "US", "USD"),
     ("NASDAQ:IXIC", "IXIC", "Nasdaq Composite (índice, sem dividendos)", "indice", "Índice EUA", "US", "USD"),
-    ("DJ:DJI", "DJI", "Dow Jones (índice, sem dividendos)", "indice", "Índice EUA", "US", "USD"),
+    ("TVC:DJI", "DJI", "Dow Jones (índice, sem dividendos)", "indice", "Índice EUA", "US", "USD"),
     ("TVC:RUT", "RUT", "Russell 2000 (small caps EUA, sem dividendos)", "indice", "Índice EUA", "US", "USD"),
     ("SP:MID", "SPMID", "S&P 400 MidCap (sem dividendos)", "indice", "Índice EUA", "US", "USD"),
     ("SP:SP600", "SP600", "S&P 600 SmallCap (sem dividendos)", "indice", "Índice EUA", "US", "USD"),
@@ -126,6 +126,18 @@ INDICES_MUNDO = [
     ("TVC:AXJO", "ASX200", "S&P/ASX 200 (Austrália)", "FX_IDC:AUDUSD", True),
     ("TVC:TWII", "TAIEX", "TAIEX (Taiwan)", "FX_IDC:USDTWD", False),
     ("BCBA:IMV", "MERVAL", "Merval (Argentina)", "FX_IDC:USDARS", False),
+    ("TVC:SXXP", "STOXX600", "Stoxx 600 (Europa)", "FX_IDC:EURUSD", True),
+    ("EURONEXT:AEX", "AEX", "AEX (Holanda)", "FX_IDC:EURUSD", True),
+    ("OMXSTO:OMXS30", "OMXS30", "OMX Stockholm 30 (Suécia)", "FX_IDC:USDSEK", False),
+    ("BIST:XU100", "BIST100", "BIST 100 (Turquia)", "FX_IDC:USDTRY", False),
+    ("JSE:J203", "JSEALL", "FTSE/JSE All Share (África do Sul)", "FX_IDC:USDZAR", False),
+    ("TVC:STI", "STI", "Straits Times (Singapura)", "FX_IDC:USDSGD", False),
+    ("SET:SET", "SETTAI", "SET (Tailândia)", "FX_IDC:USDTHB", False),
+    ("IDX:COMPOSITE", "JKSE", "IDX Composite (Indonésia)", "FX_IDC:USDIDR", False),
+    ("TASE:TA35", "TA35", "TA-35 (Israel)", "FX_IDC:USDILS", False),
+    ("TVC:NZ50G", "NZX50", "NZX 50 (Nova Zelândia, com dividendos)", "FX_IDC:NZDUSD", True),
+    ("BCS:SPCLXIGPA", "IGPACL", "S&P/CLX IGPA (Chile)", "FX_IDC:USDCLP", False),
+    ("BVC:ICAP", "COLCAP", "COLCAP (Colômbia)", "FX_IDC:USDCOP", False),
 ]
 CRIPTO_FORA = re.compile(r"(^|\b)(usd|tether|dollar|stable|euro|eur[a-z]?\b|gold|paxg|xaut|dai|wrapped|bridged|staked|lido|restaked|liquid staking|binance-peg|steth|wbtc|weth|cbbtc|cbeth|reth|jitosol|msol|wsteth|tokenized|buidl|treasury)", re.I)
 
@@ -204,7 +216,7 @@ def universo():
     cols = ["name", "description", "type", "typespecs", "sector", "close", "average_volume_30d_calc", "market_cap_basic", "currency"]
     ativos = []
     # B3
-    br = scan("brazil", [{"left": "type", "operation": "in_range", "right": ["stock", "fund"]}], None, 4000, cols)
+    br = scan("brazil", [{"left": "type", "operation": "in_range", "right": ["stock", "fund", "dr"]}], None, 5000, cols)
     for x in br:
         spec = x["typespecs"] or []
         if "odd" in spec or "otc" in spec or x["name"].endswith("F"):
@@ -212,7 +224,7 @@ def universo():
         liq = (x["close"] or 0) * (x["average_volume_30d_calc"] or 0)
         if liq < LIQ_MIN_BR:
             continue
-        t = tipo_b3(x)
+        t = "bdr" if x["type"] == "dr" else tipo_b3(x)
         setor = SETOR.get(x["sector"] or "", x["sector"] or "")
         if t in ("fii", "fiagro", "fiinfra"):
             setor = {"fii": "Fundo imobiliário", "fiagro": "Fiagro", "fiinfra": "Infraestrutura"}[t]
@@ -257,9 +269,9 @@ def universo():
     co = scan("coin", [], "market_cap_calc", 2500, ["name", "description", "base_currency", "market_cap_calc", "24h_vol_cmc"])
     for x in co:
         nome, cod = x["description"] or "", (x["base_currency"] or "").upper()
-        if not (x["name"] or "").endswith("USD") or CRIPTO_FORA.search(nome) or CRIPTO_FORA.search(cod) or re.search(r"usd|usx|usat|^gho$|^sbtc$", cod, re.I):
+        if not (x["name"] or "").endswith("USD") or CRIPTO_FORA.search(nome) or CRIPTO_FORA.search(cod) or re.search(r"usd|usx|usat|^gho$|^[a-z]{1,4}btc$|^(w|st|wst|we|cb|r|m)eth$", cod, re.I):
             continue
-        if not re.fullmatch(r"[A-Z0-9]{1,10}", cod) or (x["24h_vol_cmc"] or 0) < 2e6:
+        if not re.fullmatch(r"[A-Z0-9]{1,10}", cod) or (x["24h_vol_cmc"] or 0) < 3e5:
             continue
         cripto.append({"sym": x["s"], "t": cod, "n": nome[:60], "tipo": "cripto", "setor": "Criptoativo", "mercado": "Global",
                        "moeda": "USD", "liq": round(x["market_cap_calc"] or 0)})
@@ -400,10 +412,73 @@ def compacta(rets, escala):
     return out
 
 
+ORDEM_TIPO = ["acao", "bdr", "fii", "fiagro", "fiinfra", "etf", "tesouro", "fundo_rf", "fundo_mm", "fundo_acoes", "fundo_cambial",
+              "acao_us", "etf_us", "cripto", "indice", "commodity", "moeda"]
+FUNDOS_TESOURO = {"fundo_rf", "fundo_mm", "fundo_acoes", "fundo_cambial", "tesouro"}
+
+
+def juntar_cvm(series, meta, cache):
+    """Fundos da CVM (cache/fundos.json) e títulos do Tesouro Direto (cache/tesouro.json)."""
+    tj = cache / "tesouro.json"
+    if tj.exists():
+        for t in json.loads(tj.read_text(encoding="utf-8")):
+            rets = retornos(t["cotas"], "fundo")
+            if len(rets) < 3:
+                continue
+            series[t["cod"]] = compacta(rets, 100000)
+            meta.append({"t": t["cod"], "n": t["nome"], "tipo": "tesouro", "setor": t["tipo"], "mercado": "BR", "moeda": "BRL", "liq": 0})
+    # fundos de investimento (CVM)
+    fj = cache / "fundos.json"
+    nf = 0
+    if fj.exists():
+        classe_tipo = {"Renda Fixa": "fundo_rf", "Multimercado": "fundo_mm", "Ações": "fundo_acoes", "Cambial": "fundo_cambial"}
+        for f in json.loads(fj.read_text(encoding="utf-8")):
+            rets = retornos(f["cotas"], "fundo")
+            if len(rets) < 3:
+                continue
+            cod = "FI" + f["cnpj"][:8]
+            if cod in series:
+                cod = "FI" + f["cnpj"]
+            series[cod] = compacta(rets, 100000 if f["classe"] == "Renda Fixa" else 10000)
+            gestor = re.sub(r"\b(LTDA|S\.?A|GESTÃO DE RECURSOS|GESTAO DE RECURSOS|GESTÃO DE INVESTIMENTOS|ASSET MANAGEMENT|INVESTIMENTOS|GESTORA DE RECURSOS|GESTORA)\b\.?", "", (f["gestor"] or "").upper())
+            gestor = re.sub(r"\s+", " ", gestor).strip(" .-")
+            meta.append({"t": cod, "n": nome_fundo(f["nome"]), "tipo": classe_tipo[f["classe"]], "setor": f["anbima"],
+                         "mercado": "BR", "moeda": "BRL", "liq": f["pl"], "gestor": limpa_gestor(nome_fundo(gestor.title()).replace("Dtvm", "DTVM"))[:40],
+                         "cnpj": f["cnpj"], "cot": f["cotistas"]})
+            nf += 1
+
+    return nf
+
+
+def juntar_existente(base, cache):
+    """Refaz só os fundos e o Tesouro em um data.js já pronto (sem baixar o TradingView de novo)."""
+    txt = (base / "data.js").read_text(encoding="utf-8")
+    cab, corpo = txt.split("window.DADOS = ", 1)
+    D = json.loads(corpo.rstrip().rstrip(";"))
+    velhos = {a[0] for a in D["ativos"] if a[2] in FUNDOS_TESOURO}
+    D["ativos"] = [a for a in D["ativos"] if a[0] not in velhos]
+    for t in velhos:
+        D["series"].pop(t, None)
+    meta = []
+    nf = juntar_cvm(D["series"], meta, cache)
+    for a in meta:
+        item = [a["t"], a["n"], a["tipo"], a["setor"], a["mercado"], a["moeda"], a.get("liq") or 0]
+        if a.get("cnpj"):
+            item += [a.get("gestor", ""), a.get("cnpj", ""), a.get("cot", 0)]
+        D["ativos"].append(item)
+    D["ativos"].sort(key=lambda x: (ORDEM_TIPO.index(x[2]), -(x[6] or 0)))
+    (base / "data.js").write_text(cab + "window.DADOS = " + json.dumps(D, ensure_ascii=False, separators=(",", ":")) + ";\n", encoding="utf-8")
+    print(f"OK: {nf} fundos e {sum(1 for a in meta if a['tipo'] == 'tesouro')} títulos do Tesouro; {len(D['ativos'])} ativos", flush=True)
+
+
 # ------------------------------------------------------------------ principal
 def main():
     base = Path(__file__).resolve().parent.parent
-    cache = Path(sys.argv[1]) if len(sys.argv) > 1 else base / "tools" / "cache"
+    args = [x for x in sys.argv[1:] if not x.startswith("--")]
+    cache = Path(args[0]) if args else base / "tools" / "cache"
+    if "--juntar" in sys.argv:  # só fundos + Tesouro sobre o data.js atual
+        juntar_existente(base, cache)
+        return
     print("Montando o universo de ativos pelo scanner do TradingView...", flush=True)
     ativos = universo()
     print(f"  {len(ativos)} ativos candidatos", flush=True)
@@ -451,29 +526,9 @@ def main():
     for cod, serie in (("CDI", 4391), ("IPCA", 433)):
         series[cod] = compacta(bcb_mensal(serie), 1000000)
 
-    # fundos de investimento (CVM)
-    fj = cache / "fundos.json"
-    nf = 0
-    if fj.exists():
-        classe_tipo = {"Renda Fixa": "fundo_rf", "Multimercado": "fundo_mm", "Ações": "fundo_acoes", "Cambial": "fundo_cambial"}
-        for f in json.loads(fj.read_text(encoding="utf-8")):
-            rets = retornos(f["cotas"], "fundo")
-            if len(rets) < 24:
-                continue
-            cod = "FI" + f["cnpj"][:8]
-            if cod in series:
-                cod = "FI" + f["cnpj"]
-            series[cod] = compacta(rets, 100000 if f["classe"] == "Renda Fixa" else 10000)
-            gestor = re.sub(r"\b(LTDA|S\.?A|GESTÃO DE RECURSOS|GESTAO DE RECURSOS|GESTÃO DE INVESTIMENTOS|ASSET MANAGEMENT|INVESTIMENTOS|GESTORA DE RECURSOS|GESTORA)\b\.?", "", (f["gestor"] or "").upper())
-            gestor = re.sub(r"\s+", " ", gestor).strip(" .-")
-            meta.append({"t": cod, "n": nome_fundo(f["nome"]), "tipo": classe_tipo[f["classe"]], "setor": f["anbima"],
-                         "mercado": "BR", "moeda": "BRL", "liq": f["pl"], "gestor": limpa_gestor(nome_fundo(gestor.title()).replace("Dtvm", "DTVM"))[:40],
-                         "cnpj": f["cnpj"], "cot": f["cotistas"]})
-            nf += 1
+    nf = juntar_cvm(series, meta, cache)
 
-    ordem_tipo = ["acao", "fii", "fiagro", "fiinfra", "etf", "fundo_rf", "fundo_mm", "fundo_acoes", "fundo_cambial",
-                  "acao_us", "etf_us", "cripto", "indice", "commodity", "moeda"]
-    meta.sort(key=lambda a: (ordem_tipo.index(a["tipo"]), -(a.get("liq") or 0)))
+    meta.sort(key=lambda a: (ORDEM_TIPO.index(a["tipo"]), -(a.get("liq") or 0)))
     lista = []
     for a in meta:
         item = [a["t"], a["n"], a["tipo"], a["setor"], a["mercado"], a["moeda"], a.get("liq") or 0]

@@ -32,19 +32,29 @@ Antes, aumente `versionCode` e `versionName` em `android/app/build.gradle.kts`.
 
 ## O que faz
 
-**Carteiras** — quantas carteiras quiser, comparadas lado a lado, montadas a partir de 6.609 ativos:
+**Carteiras** — quantas carteiras quiser, comparadas lado a lado, montadas a partir de 11.387 ativos
+(só dados reais: nada é estimado, completado por modelo ou trocado por índice):
 
 | Classe | Ativos |
 |---|---|
-| Ações da B3 (todas com negociação; ON, PN e units) | 378 |
-| FIIs, Fiagro e FI-Infra (todos com negociação) | 403 |
+| Ações da B3 (todas com negociação; ON, PN e units) | 381 |
+| BDRs (empresas de fora negociadas na B3, em reais) | 826 |
+| FIIs, Fiagro e FI-Infra (todos com negociação) | 400 |
 | ETFs da B3 (ações, renda fixa, Tesouro, S&P, cripto, ouro) | 212 |
-| Fundos de investimento da CVM (549 renda fixa, 654 multimercado, 433 ações, 30 cambial) | 1.666 |
-| Ações dos EUA (todas acima de ~US$ 1 bilhão de valor de mercado) | 2.675 |
-| ETFs dos EUA (sem alavancados nem inversos) | 898 |
-| Criptoativos (índice agregado do TradingView, sem stablecoins) | 309 |
-| Índices (25 da B3, 7 dos EUA, 17 de outras bolsas em dólar, mercado cripto total) | 45 |
+| Tesouro Direto (Selic, IPCA+, Prefixado, Renda+, Educa+; preço oficial) | 42 |
+| Fundos da CVM, cotas desde 2000 (816 renda fixa, 926 multimercado, 659 ações, 35 cambial) | 2.436 |
+| Ações dos EUA (até ~US$ 150 milhões de valor de mercado) | 4.407 |
+| ETFs dos EUA (sem alavancados nem inversos) | 1.980 |
+| Criptoativos (índice agregado do TradingView, sem stablecoins nem tokens "embrulhados") | 623 |
+| Índices (B3, EUA e 29 outras bolsas em dólar, mercado cripto total) | 57 |
 | Commodities (metais, energia, agrícolas, boi gordo) e moedas | 23 |
+
+**Explorar** — todos os ativos num mapa interativo antes de montar a carteira: mapa 2D (com zoom,
+arrasto e retícula que mostra os valores nos eixos), nuvem 3D girável (três métricas ao mesmo tempo)
+e ranking ordenável. Eixos e cor à escolha (retorno, volatilidade, Sharpe, queda máxima, anos de
+histórico, correlação com Ibovespa e S&P 500, pior/melhor mês, meses positivos, tamanho). Passe o
+cursor ou o dedo para ver cada ativo; toque para abrir o gráfico dele, comparar com outros e
+adicionar à carteira.
 
 Ativos novos entram a partir de 3 meses de histórico: na simulação cada um passa a contar no mês
 em que começa (antes disso, o peso dele vai para os demais).
@@ -53,7 +63,8 @@ Mais renda fixa por modelo: CDI × %, IPCA + taxa e prefixado. Há 11 modelos pr
 S&P 500, Global 60/40, Permanente, Big Techs, FIIs, top multimercados etc.).
 
 **Simulação (Monte Carlo)**
-- 4 modelos de retorno: bootstrap mensal, bootstrap em blocos (qualquer tamanho, em meses), normal multivariada
+- 5 modelos de retorno: bootstrap mensal, bootstrap em blocos (qualquer tamanho, em meses), bootstrap
+  estacionário (blocos de tamanho aleatório), normal multivariada
   e t-Student (caudas gordas).
 - Mesmos sorteios para todas as carteiras (comparação justa) e para o CDI de referência.
 - Plano: aporte inicial e mensal, correção pelo IPCA, aumento real do aporte, meta.
@@ -61,8 +72,10 @@ S&P 500, Global 60/40, Permanente, Big Techs, FIIs, top multimercados etc.).
 - Rebalanceamento mensal, trimestral, anual ou nunca; câmbio convertido ou ignorado;
   ajuste no retorno esperado; custo anual extra; IR no resgate; valores reais ou nominais.
 - Resultados: percentis, chance de perda / de bater o CDI / de atingir a meta, retorno anual e
-  queda máxima por cenário, leque de futuros e distribuição final. Aviso automático quando a janela
-  histórica é curta.
+  queda máxima por cenário, leque de futuros, distribuição final e **montanha 3D de probabilidades**
+  (a distribuição do patrimônio ano a ano, feita das trajetórias simuladas, girável, com a fração de
+  cenários de cada faixa sob o cursor). Aviso automático quando a janela histórica é curta.
+- Todos os gráficos seguem o cursor ou o dedo (valores do mês, da faixa ou do ponto apontado).
 
 **Histórico (backtest)** — evolução real das carteiras contra CDI, IPCA, Ibovespa e S&P 500 em
 reais; drawdown; retorno, volatilidade, Sharpe, Sortino, VaR/CVaR, beta, correlação; retorno ano a ano.
@@ -72,8 +85,10 @@ reais; drawdown; retorno, volatilidade, Sharpe, Sortino, VaR/CVaR, beta, correla
 
 **Otimizar** — escolhe a melhor carteira num universo filtrado (ex.: todos os FIIs de papel com 5+
 anos) ou nos ativos de uma carteira: máximo Sharpe, mínimo risco, paridade de risco ou risco-alvo;
-médias James-Stein, covariância Ledoit-Wolf, reamostragem 50×, limite de peso e de nº de ativos;
-teste fora da amostra; salva o resultado como carteira.
+médias James-Stein (encolhidas para a média da própria classe), covariância Ledoit-Wolf, reamostragem
+50× em todos os núcleos, limite de peso e de nº de ativos, retorno ao ano (acima de / igual a / entre)
+e queda máxima tolerada; com várias classes marcadas, **pelo menos 1 ativo de cada classe** (o melhor
+dela para o objetivo e os limites); teste fora da amostra; salva o resultado como carteira.
 
 **FIIs** — mandato (papel, tijolo, híbrido), segmento, P/VP e cotistas pelo informe mensal da CVM;
 filtros "FIIs de papel/tijolo/híbridos" no seletor e no otimizador.
@@ -82,11 +97,13 @@ filtros "FIIs de papel/tijolo/híbridos" no seletor e no otimizador.
 restante e botão Parar). Até 200 mil os percentis são exatos; acima, vêm de um histograma de 20 mil
 faixas (erro menor que 0,1%), então a memória não cresce. Horizonte padrão de 40 anos (até 60).
 
-**Janela histórica** — em anos (5 a 40), com dados desde 1995 (Plano Real). Ativos mais novos que a
+**Janela histórica** — em anos (qualquer número, ou o máximo), com dados desde 1995 (Plano Real). Ativos mais novos que a
 janela: por padrão a contagem começa no ativo mais antigo de cada carteira e os mais novos **entram
 quando passam a existir** (antes disso, o peso deles é dividido entre os demais). O app avisa quais
-ativos são mais novos, desde quando, e com que parte dos pesos cada carteira começa. Alternativas:
-cortar a janela no ativo mais novo ou estimar os anos faltantes por modelo de fatores.
+ativos são mais novos, desde quando, e com que parte dos pesos cada carteira começa. Alternativa:
+cortar a janela no ativo mais novo. **Só dados reais**: nada é estimado, completado por modelo ou
+substituído por índice; meses sem cotação de nenhum ativo de uma carteira ficam fora da amostra, e a
+análise segue com os meses que existem, por menos que sejam.
 
 **Siglas** — explicadas entre parênteses nos rótulos e num glossário na aba Metodologia.
 

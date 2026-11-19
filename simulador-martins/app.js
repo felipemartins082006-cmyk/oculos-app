@@ -44,11 +44,13 @@ const TIPOS = {
   fundo_rf: ['Fundo RF', 'fundo'], fundo_mm: ['Multimercado', 'fundo'], fundo_acoes: ['Fundo ações', 'fundo'], fundo_cambial: ['Fundo cambial', 'fundo'],
   acao_us: ['Ação EUA', 'us'], etf_us: ['ETF EUA', 'us'], cripto: ['Cripto', 'cripto'], indice: ['Índice', 'indice'],
   commodity: ['Commodity', 'indice'], moeda: ['Moeda', 'indice'], rf: ['Renda fixa', 'rf'],
+  bdr: ['BDR', 'us'], tesouro: ['Tesouro Direto', 'rf'],
 };
 const GRUPOS = [ // chips do seletor
   ['', 'Todos'], ['acao', 'Ações BR'], ['fii', 'FIIs (fundos imobiliários)'], ['fii:papel', 'FIIs de papel (recebíveis)'], ['fii:tijolo', 'FIIs de tijolo (imóveis)'], ['fii:hibrido', 'FIIs híbridos'],
   ['fiagro|fiinfra', 'Fiagro (agro) e FI-Infra (infraestrutura)'], ['etf', 'ETFs B3 (fundos de índice)'],
   ['fundo_rf', 'Fundos de renda fixa'], ['fundo_mm', 'Multimercados'], ['fundo_acoes|fundo_cambial', 'Fundos de ações e cambiais'],
+  ['tesouro', 'Tesouro Direto'], ['bdr', 'BDRs (empresas de fora, na B3)'],
   ['acao_us', 'Ações EUA'], ['etf_us', 'ETFs EUA'], ['cripto', 'Cripto'], ['indice|commodity|moeda', 'Índices, ouro e moedas'], ['rf', 'Renda fixa (modelo)'],
 ];
 const CLASSES = [ // barra de alocação
@@ -262,7 +264,7 @@ const PADRAO = {
   saqueOn: false, saqueAno: 25, saque: 5000, saqueCorrige: true,
   metodo: 'boot', bloco: 12, janela: 40, curto: 'redistribuir', rebal: 1, cambio: 1, ajuste: 0, taxa: 0, ir: 0, n: 100000, real: true,
   btModo: 'unit', btEscala: 'log', btJanela: 40, btBench: ['CDI', 'IPCA', 'IBOV', 'SPY'],
-  ot: { fonte: 'filtro', classes: ['fii:papel'], minAnos: 5, maxUniv: 60, janela: 6, cart: 0, obj: 'sharpe', volAlvo: 8, pesoMax: 20, maxAtivos: 8, reamostra: true, estender: false, ddMax: 0, retModo: 'livre', retA: 12, retB: 18, retBase: 'est' },
+  ot: { fonte: 'filtro', classes: ['fii:papel'], minAnos: 5, maxUniv: 60, janela: 6, cart: 0, obj: 'sharpe', volAlvo: 8, pesoMax: 20, maxAtivos: 8, reamostra: true, estender: false, ddMax: 0, retModo: 'livre', retA: 12, retB: 18, retBase: 'est', cadaClasse: true },
 };
 let S = carregar();
 function carregar() {
@@ -274,11 +276,13 @@ function carregar() {
       if (x.versao !== 3) { // ajustes da versão 4: horizonte de 40 anos, janela em anos, ativos novos entram quando começam
         if (!x.anos || x.anos === 20) x.anos = 40;
         if (x.meta === 1000000) x.meta = 2000000;
-        x.curto = x.estender ? 'estimar' : 'redistribuir';
+        x.curto = 'redistribuir';
         x.janela = 40; x.btJanela = 40; x.n = Math.max(x.n || 0, 100000); x.versao = 3;
         delete x.desde; delete x.btDesde; delete x.estender;
       }
-      return { ...p, ...x, ot: { ...p.ot, ...(x.ot || {}) } };
+      if (x.curto === 'estimar') x.curto = 'redistribuir'; // dados estimados não existem mais
+      const r = { ...p, ...x, ot: { ...p.ot, ...(x.ot || {}) } }; r.ot.estender = false;
+      return r;
     }
   } catch (e) { /* sem armazenamento */ }
   return JSON.parse(JSON.stringify(PADRAO));
@@ -295,12 +299,13 @@ const cartAtiva = () => S.carteiras[S.ativa];
 // modo para ativos mais novos que a janela:
 //   'redistribuir' (padrão): a janela começa no ativo mais antigo de cada carteira; enquanto um ativo
 //                  ainda não existia, o peso dele é dividido proporcionalmente entre os que existiam;
-//   'cortar': a janela começa no ativo mais novo (só meses em que todos existem);
-//   'estimar': os anos que faltam são estimados por modelo de fatores.
+//   'cortar': a janela começa no ativo mais novo (só meses em que todos existem).
+// Só dados reais: nenhum mês é estimado ou substituído por índice. Um mês em que alguma carteira não tem
+// nenhum ativo com cotação fica de fora da amostra (a análise continua com os meses que existem).
 function preparar(carts, desde, cambio = 1, modo = 'cortar') {
-  if (modo === true) modo = 'estimar'; if (modo === false) modo = 'cortar';
-  const estender = modo === 'estimar', redis = modo === 'redistribuir';
-  const sr = (t) => (estender && !['CDI', 'IPCA', 'USDBRL'].includes(t) ? serieEstendida(t) : serie(t));
+  if (modo === true || modo === 'estimar') modo = 'redistribuir'; if (modo === false) modo = 'cortar';
+  const estender = false, redis = modo === 'redistribuir';
+  const sr = serie;
   const cs = carts.map((c) => ({ ...c, itens: c.itens.filter((i) => i.p > 0 && info(i.t)) })).filter((c) => c.itens.length);
   if (!cs.length) return { erro: 'Adicione ativos com peso maior que zero.' };
   const uni = [...new Set(cs.flatMap((c) => c.itens.map((i) => i.t)))];
@@ -317,19 +322,19 @@ function preparar(carts, desde, cambio = 1, modo = 'cortar') {
       const c0 = rf ? -Infinity : Math.min(...c.itens.map((i) => sr(i.t).i0));
       if (c0 > novo) { novo = c0; limitante = c.itens.reduce((a, i) => (sr(i.t).i0 < sr(a).i0 ? i.t : a), c.itens.find((i) => !i.t.startsWith('RF:'))?.t || c.itens[0].t); }
     }
-    // nunca menos de 3 anos: se o ativo mais antigo for mais novo que isso, a janela recua e os meses
-    // em que nenhum ativo da carteira existia usam o índice de referência da classe (ver indiceClasse)
-    if (novo > fim - 35) { novo = fim - 35; limitante = null; }
     ini = Math.max(ini, novo);
-    ini = Math.max(Math.min(ini, fim - 35), sc.i0, si.i0, sf.i0); // janela de no mínimo 3 anos
   } else {
     for (const t of reais) { const s = sr(t); if (s.i0 > novo) { novo = s.i0; limitante = t; } ini = Math.max(ini, s.i0); }
   }
   const ss = reais.map(sr);
+  // séries de cada carteira (null = tem renda fixa por modelo, que existe em todo mês)
+  const porCart = cs.map((c) => (c.itens.some((i) => i.t.startsWith('RF:')) ? null : c.itens.map((i) => sr(i.t))));
+  let pulados = 0;
   const meses = [];
   for (let mi = ini; mi <= fim; mi++) {
     if (isNaN(val(sc, mi)) || isNaN(val(si, mi)) || isNaN(val(sf, mi))) continue;
     if (!redis && ss.some((s) => isNaN(val(s, mi)))) continue;
+    if (redis && !porCart.every((lista) => lista === null || lista.some((s) => !isNaN(val(s, mi))))) { if (mi >= ini) pulados++; continue; }
     meses.push(mi);
   }
   const L = meses.length;
@@ -337,7 +342,7 @@ function preparar(carts, desde, cambio = 1, modo = 'cortar') {
     // pouco histórico em comum para cortar a janela: os ativos entram quando começam (sem recusar a carteira)
     const H2 = preparar(carts, desde, cambio, 'redistribuir'); if (!H2.erro) H2.trocouModo = modo; return H2;
   }
-  if (L < 2) return { erro: 'A base de dados não tem meses suficientes. Atualize os dados.', meses };
+  if (L < 1) return { erro: 'Nenhum mês com cotação real para estes ativos na janela escolhida. Aumente a janela.', meses };
   const cdi = new Float64Array(L), ipca = new Float64Array(L), fx = new Float64Array(L);
   meses.forEach((mi, j) => { cdi[j] = val(sc, mi); ipca[j] = val(si, mi); fx[j] = val(sf, mi); });
   const R = uni.map((t) => {
@@ -358,17 +363,12 @@ function preparar(carts, desde, cambio = 1, modo = 'cortar') {
   });
   // retorno mensal de cada carteira (pesos redistribuídos entre os ativos que existiam no mês);
   // num mês em que nenhum ativo dela existia, usa o índice de referência da classe de cada ativo
-  const proxies = cs.map(() => ({ n: 0, de: null, ate: null, indices: new Set() }));
   const P = W.map((w, c) => {
     const p = new Float64Array(L);
     for (let j = 0; j < L; j++) {
       let s = 0, sw = 0;
       for (let k = 0; k < uni.length; k++) if (w[k] && !isNaN(R[k][j])) { s += w[k] * R[k][j]; sw += w[k]; }
-      if (sw > 0) { p[j] = s / sw; continue; }
-      let sp = 0;
-      for (let k = 0; k < uni.length; k++) if (w[k]) { const [nome, r] = indiceClasse(uni[k], meses[j], cdi[j], fx[j], cambio); sp += w[k] * r; proxies[c].indices.add(nome); }
-      p[j] = sp;
-      const pr = proxies[c]; pr.n++; if (pr.de === null) pr.de = meses[j]; pr.ate = meses[j];
+      p[j] = sw > 0 ? s / sw : 0; // sw = 0 não acontece: esses meses ficam fora da amostra
     }
     return p;
   });
@@ -385,7 +385,7 @@ function preparar(carts, desde, cambio = 1, modo = 'cortar') {
   return {
     cs, uni, R, Rc, risco, W, P, meses, cdi, ipca, fx, L, ini: meses[0], fim: meses[L - 1], modo,
     limitante: meses[0] > desdeI ? limitante : null, estimados, jovens, encerrados,
-    proxies: proxies.map((pr, c) => ({ nome: cs[c].nome, n: pr.n, de: pr.de, ate: pr.ate, indices: [...pr.indices] })).filter((x) => x.n),
+    proxies: [], pulados,
   };
 }
 // índice de referência da classe (usado só nos meses em que nenhum ativo da carteira existia)
@@ -407,6 +407,7 @@ function avisoProxies(H) {
   const a = [];
   if (H.encerrados && H.encerrados.length) a.push(`Ativos sem dados depois de certa data (fundo encerrado, ticker trocado ou sem negociação); saem da carteira nesse mês e o peso vai para os demais: ${H.encerrados.map((e) => `${esc(rotuloAtivo(e.t))} até ${rotulo(e.ate)}`).join(', ')}.`);
   if (H.trocouModo) a.push(`Os ativos tinham pouco histórico em comum para ${H.trocouModo === 'estimar' ? 'estimar por fatores' : 'cortar a janela'}; por isso cada ativo entra quando começa.`);
+  if (H.pulados) a.push(`${H.pulados} ${H.pulados === 1 ? 'mês ficou' : 'meses ficaram'} fora da amostra porque nenhum ativo de alguma carteira teve cotação neles (sem negociação). Só entram meses com dados reais.`);
   for (const x of H.proxies || []) a.push(`${esc(x.nome)}: em ${x.n} ${x.n === 1 ? 'mês' : 'meses'} entre ${rotulo(x.de)} e ${rotulo(x.ate)} nenhum ativo da carteira tinha dados; esses meses usam o índice de referência da classe (${x.indices.join(', ')}).`);
   return a.join(' ');
 }
@@ -545,7 +546,7 @@ function simular(H, o, progresso) {
         for (let a = 0; a < Dm; a++) { let sum = 0; for (let b = 0; b <= a; b++) sum += Lc[a * Dm + b] * z[b]; x[a] = Math.max(-0.95, mu[a] + sum * e); }
         rc = x[nC]; ri = x[nC + 1];
       } else {
-        if (resta === 0) { pos = (Math.random() * L) | 0; resta = o.metodo === 'bloco' ? o.bloco : 1; } else pos = (pos + 1) % L;
+        if (resta === 0) { pos = (Math.random() * L) | 0; resta = o.metodo === 'bloco' ? o.bloco : o.metodo === 'estac' ? 1 + Math.floor(-Math.log(1 - Math.random()) * (o.bloco - 0.5)) : 1; } else pos = (pos + 1) % L;
         resta--;
         rc = H.cdi[pos]; ri = H.ipca[pos];
       }
@@ -724,7 +725,7 @@ async function simularAssincrono(H, o, aoProgresso) {
 }
 
 // ---------------------------------------------------------------- navegação (abas)
-const VIEWS = ['carteiras', 'simulacao', 'historico', 'analise', 'otimizar', 'metodo'];
+const VIEWS = ['carteiras', 'explorar', 'simulacao', 'historico', 'analise', 'otimizar', 'metodo'];
 let vista = '';
 function irPara(v, push = true) {
   if (!VIEWS.includes(v)) v = 'carteiras';
@@ -737,6 +738,7 @@ function irPara(v, push = true) {
   if (v === 'analise') desenharAnalise();
   if (v === 'carteiras') desenharResumo();
   if (v === 'otimizar') prepararOtimizador();
+  if (v === 'explorar') abrirExplorador();
   window.scrollTo(0, 0);
 }
 document.querySelector('.tabs').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) irPara(b.dataset.v); });
@@ -1034,11 +1036,12 @@ function atualizarAjudas() {
   const txt = {
     boot: 'Sorteia meses reais do passado, um por vez. Mantém as caudas e as correlações reais.',
     bloco: 'Sorteia trechos seguidos do passado. Preserva crises longas, tendências e a memória dos juros.',
+    estac: 'Bootstrap estacionário (Politis-Romano): sorteia trechos seguidos do passado com tamanho aleatório (média = tamanho do bloco). Preserva crises e tendências sem impor um tamanho fixo de bloco.',
     normal: 'Distribuição normal com média e covariância históricas. Gera cenários que nunca aconteceram, mas subestima eventos extremos.',
     t: 'Como a normal, mas com caudas gordas (t-Student, 5 graus de liberdade): mais meses muito bons e muito ruins.',
   };
   $('metodo-help').textContent = txt[S.metodo];
-  $('f-bloco').classList.toggle('dim', S.metodo !== 'bloco');
+  $('f-bloco').classList.toggle('dim', S.metodo !== 'bloco' && S.metodo !== 'estac');
   const param = S.metodo === 'normal' || S.metodo === 't';
   $('seg-rebal').classList.toggle('dim', param);
   $('rebal-help').textContent = param ? 'Nos modelos Normal e t-Student a carteira é rebalanceada todo mês.' : S.rebal === 0 ? 'Os pesos derivam com o mercado; os aportes seguem os pesos-alvo.' : '';
@@ -1048,7 +1051,6 @@ function atualizarAjudas() {
   $('curto-help').textContent = {
     redistribuir: 'A contagem começa no ativo mais antigo da carteira. Um ativo mais novo entra no mês em que passa a existir; antes disso, o peso dele é dividido entre os outros ativos. Assim você vê a performance de todos.',
     cortar: 'Só usa os meses em que todos os ativos existiam: a janela começa no ativo mais novo (mais curta, mas sem redistribuição).',
-    estimar: 'Estima os anos que faltam de cada ativo por modelo de fatores (IFIX, CDI, IPCA, Ibovespa, S&P). Os meses estimados não são dados reais.',
   }[S.curto];
   const carga = S.n * S.anos * 12 * Math.max(1, S.carteiras.length), ms = velocidade ? carga / velocidade : carga / 3e5;
   const tempo = ms < 60e3 ? `${Math.max(1, Math.round(ms / 1000))} s` : ms < 3600e3 ? `${Math.round(ms / 60e3)} min` : `${(ms / 3600e3).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} h`;
@@ -1093,7 +1095,7 @@ function desenharSimulacao() {
   if (!ultimo) return;
   const { H, R, o } = ultimo;
   const base = o.real ? 'R$ de hoje' : 'R$ nominais';
-  const metodoNome = { boot: 'bootstrap mensal', bloco: `blocos de ${o.bloco} m`, normal: 'normal multivariada', t: 't-Student (ν=5)' }[o.metodo];
+  const metodoNome = { boot: 'bootstrap mensal', bloco: `blocos de ${o.bloco} m`, estac: `bootstrap estacionário (média ${o.bloco} m)`, normal: 'normal multivariada', t: 't-Student (ν=5)' }[o.metodo];
   $('runline').innerHTML = [
     ['Cenários', R.nS.toLocaleString('pt-BR')], ['Horizonte', `${R.N} meses`],
     ['Janela', `${rotulo(H.ini)}–${rotulo(H.fim)} (${H.L} m)`], ['Modelo', metodoNome],
@@ -1103,7 +1105,7 @@ function desenharSimulacao() {
   ].map(([k, v]) => `<span>${k}: <b>${v}</b></span>`).join('') + (H.limitante ? `<span>Contagem começa em ${rotulo(H.ini)}, por: <b>${esc(rotuloAtivo(H.limitante))}</b></span>` : '');
   if (Object.keys(H.estimados || {}).length) $('runline').innerHTML += `<span>Meses estimados por fatores: <b>${Object.entries(H.estimados).map(([t, n]) => `${esc(rotuloAtivo(t))} ${n}`).join(', ')}</b></span>`;
   const anosJ = H.L / 12, avisos = [];
-  if (H.ini > idx(`${desdeDe(o.janela)}-01`)) avisos.push(`Você pediu ${o.janela} anos de passado, mas os ativos só permitem contar a partir de ${rotulo(H.ini)} (${num(anosJ, 0)} anos).`);
+  if (H.ini > idx(`${desdeDe(o.janela)}-01`)) avisos.push(`Você pediu ${o.janela >= ANOS_BASE() ? 'toda a base (desde 1995)' : `${o.janela} anos de passado`}, mas as carteiras escolhidas só têm dados reais em comum a partir de ${rotulo(H.ini)} (${anosJ < 1 ? `${H.L} meses` : `${num(anosJ, anosJ < 3 ? 1 : 0)} anos`}). Cada carteira começa no seu ativo mais antigo; a mais nova define o início.`);
   if (H.jovens && H.jovens.length) avisos.push(`Ativos mais novos que a janela (entram quando começam; antes disso o peso deles vai para os demais): ${H.jovens.map((j) => `${esc(rotuloAtivo(j.t))} desde ${rotulo(j.desde)}`).join(', ')}.`, inicioCarteiras(H));
   avisos.push(avisoProxies(H));
   if (anosJ < 18) avisos.push(`O sorteio usa só ${num(anosJ, 0)} anos de história: o resultado reflete muito esse período. Para um cenário mais prudente, use ajuste negativo no retorno, o modelo t-Student ou ativos mais antigos.`);
@@ -1147,7 +1149,7 @@ function desenharSimulacao() {
     kpi('Mesmo plano no CDI (mediana)', curto(R.cdiQ(0.5)), o.ir ? 'após IR (Imposto de Renda)' : 'sem IR (Imposto de Renda)') +
     (r.pMeta !== null ? kpi('Probabilidade de atingir a meta', pct(r.pMeta, 0), `meta ${curto(o.meta)}`, cor(r.pMeta, true)) : kpi('Probabilidade de atingir a meta', '—', 'defina uma meta'));
   $('fan-meta').textContent = base;
-  desenharLeque(); desenharHistograma(); desenharPercentis();
+  desenharLeque(); desenharHistograma(); desenharPercentis(); desenharMontanha();
 }
 $('seg-ver').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; S.ver = +b.dataset.v; salvar(); desenharSimulacao(); });
 
@@ -1245,6 +1247,8 @@ function desenharHistograma() {
   if (o.meta > 0 && Math.abs(x(o.meta) - x(r.q(0.5))) > 40) svg += marca(o.meta, 'var(--amber)', 'meta');
   svg += `<text x="${ml}" y="${Hh - 6}">${esc(eixoBRL(lo))}</text><text x="${W / 2}" y="${Hh - 6}" text-anchor="middle">mediana ${esc(eixoBRL(r.q(0.5)))}</text><text x="${W - mr}" y="${Hh - 6}" text-anchor="end">${esc(eixoBRL(hi))}</text></svg>`;
   box.innerHTML = svg;
+  { const tot = r.fin.length || 1; let ac = 0; for (const v of r.fin) if (v < lo) ac++;
+    dicaPontos(box, W, cont.map((c, i) => { ac += c; const v0 = lo + i * lg; return { x: x(v0) + iw / nb / 2, y: mt + ih - (c / cmax) * ih / 2, html: `<span class="k">entre</span> ${curto(v0)} <span class="k">e</span> ${curto(v0 + lg)}<br><b>${pct(c / tot, 1)}</b> <span class="k">dos cenários</span> · <span class="k">abaixo:</span> ${pct(ac / tot, 0)}` }; }), iw / nb, true); }
   $('hist-meta').textContent = `P1–P99 · ${nb} faixas`;
   $('hist-help').textContent = 'Frequência dos cenários por patrimônio final. Em vermelho, os que terminaram abaixo do total aportado. Os 1% extremos de cada lado ficam fora.';
 }
@@ -1452,6 +1456,8 @@ function desenharAnalise() {
   const marca = (p, cor, t) => `<circle cx="${x(p.vol)}" cy="${y(p.ret)}" r="6" fill="${cor}" stroke="var(--panel)" stroke-width="2"/><text x="${x(p.vol) + 9}" y="${y(p.ret) - 7}" style="fill:${cor};font-weight:600">${t}</text>`;
   svg += marca(minV, 'var(--pC)', 'Mín. risco') + marca(maxS, 'var(--amber)', 'Máx. Sharpe') + marca(mesmoRisco, 'var(--pB)', 'Mesmo risco') + marca(atual, CORES_CART[S.an], 'Atual') + '</svg>';
   box.innerHTML = svg;
+  dicaPontos(box, W, [...pontos.map((p) => ({ x: x(p.vol), y: y(p.ret), html: p.so !== undefined ? dicaRV(`100% em ${esc(rotuloAtivo(H.uni[p.so]))}`, p) : dicaRV('Combinação aleatória', p, p.ws ? dicaPesos(p.ws, H.uni) : '') })),
+    ...[[minV, 'Mínimo risco'], [maxS, 'Máximo Sharpe'], [mesmoRisco, 'Mesmo risco, mais retorno'], [atual, `${esc(cart.nome)} (atual)`]].map(([p, n]) => ({ x: x(p.vol), y: y(p.ret), html: dicaRV(n, p, p.ws ? dicaPesos(p.ws, H.uni) : '') }))]);
   $('ef-leg').innerHTML = '<span><i style="background:var(--rule-2)"></i>Combinações aleatórias</span><span><i style="background:var(--ink-2)"></i>100% em um ativo</span>';
   $('ef-meta').textContent = `${pontos.length.toLocaleString('pt-BR')} carteiras testadas`;
   const cols = [['Atual', atual, null], ['Mesmo risco, mais retorno', mesmoRisco, 'mesmoRisco'], ['Máximo Sharpe', maxS, 'maxS'], ['Mínimo risco', minV, 'minV']];
@@ -1474,15 +1480,19 @@ $('tbl-ef').addEventListener('click', (e) => {
 
 // ---------------------------------------------------------------- OTIMIZADOR
 // estimadores robustos
-function estimarRobusto(R) { // R: lista de colunas (Float64Array por ativo)
+function estimarRobusto(R, g) { // R: lista de colunas (Float64Array por ativo); g: classe de cada ativo (opcional)
   const K = R.length, L = R[0].length;
   const mu = R.map((r) => media(r));
-  // James-Stein: médias puxadas para a média geral
-  if (K >= 3) {
-    const alvo = media(mu), varMedia = media(R.map((r, k) => { let v = 0; for (const x of r) v += (x - mu[k]) ** 2; return v / (L - 1); })) / L;
-    let dist = 0; for (const m of mu) dist += (m - alvo) ** 2;
-    const f = dist > 0 ? Math.max(0, 1 - (K - 2) * varMedia / dist) : 0;
-    for (let k = 0; k < K; k++) mu[k] = alvo + f * (mu[k] - alvo);
+  // James-Stein: médias puxadas para a média da própria classe (cripto não puxa a renda fixa para cima)
+  const grupos = new Map();
+  for (let k = 0; k < K; k++) { const c = g && g.length === K ? g[k] : 0; if (!grupos.has(c)) grupos.set(c, []); grupos.get(c).push(k); }
+  for (const ix of grupos.values()) {
+    if (ix.length < 3) continue;
+    const m0 = ix.map((k) => mu[k]), alvo = media(m0);
+    const varMedia = media(ix.map((k) => { let v = 0; for (const x of R[k]) v += (x - mu[k]) ** 2; return v / Math.max(1, L - 1); })) / L;
+    let dist = 0; for (const m of m0) dist += (m - alvo) ** 2;
+    const f = dist > 0 ? Math.max(0, 1 - (ix.length - 2) * varMedia / dist) : 0;
+    for (const k of ix) mu[k] = alvo + f * (mu[k] - alvo);
   }
   // Ledoit-Wolf (alvo: correlação constante)
   const X = R.map((r) => { const m = media(r); return Float64Array.from(r, (x) => x - m); });
@@ -1506,28 +1516,29 @@ function estimarRobusto(R) { // R: lista de colunas (Float64Array por ativo)
 }
 const mulCv = (C, w) => C.map((r) => { let v = 0; for (let j = 0; j < w.length; j++) v += r[j] * w[j]; return v; });
 const dot = (a, b) => { let v = 0; for (let i = 0; i < a.length; i++) v += a[i] * b[i]; return v; };
-function projetar(v, cap) { // projeção no simplex com teto: 0 ≤ w ≤ cap, Σw = 1
-  let lo = Math.min(...v) - 1, hi = Math.max(...v);
-  for (let it = 0; it < 60; it++) { const tau = (lo + hi) / 2; let s = 0; for (const x of v) s += Math.min(cap, Math.max(0, x - tau)); if (s > 1) lo = tau; else hi = tau; }
-  const tau = (lo + hi) / 2; const w = v.map((x) => Math.min(cap, Math.max(0, x - tau))); const s = w.reduce((a, b) => a + b, 0) || 1;
+function projetar(v, cap, piso) { // projeção no simplex com teto e piso: piso_i ≤ w_i ≤ cap, Σw = 1
+  const p0 = (i) => (piso ? Math.min(piso[i], cap) : 0);
+  let lo = Math.min(...v) - cap - 1, hi = Math.max(...v) + 1;
+  for (let it = 0; it < 70; it++) { const tau = (lo + hi) / 2; let s = 0; for (let i = 0; i < v.length; i++) s += Math.min(cap, Math.max(p0(i), v[i] - tau)); if (s > 1) lo = tau; else hi = tau; }
+  const tau = (lo + hi) / 2; const w = v.map((x, i) => Math.min(cap, Math.max(p0(i), x - tau))); const s = w.reduce((a, b) => a + b, 0) || 1;
   return w.map((x) => x / s);
 }
 function anualGeo(m, v) { return Math.pow(1 + m, 12) * Math.exp(-12 * v / (2 * (1 + m) ** 2)) - 1; }
 function estatPesos(w, mu, C, rfm) { const m = dot(w, mu), v = dot(w, mulCv(C, w)); const ret = anualGeo(m, v), vol = Math.sqrt(Math.max(v, 0) * 12); return { ret, vol, sharpe: vol > 0 ? (ret - (Math.pow(1 + rfm, 12) - 1)) / vol : NaN }; }
-function otimizarPesos(mu, C, obj, cap, rfm, volAlvo) {
+function otimizarPesos(mu, C, obj, cap, rfm, volAlvo, piso) {
   const K = mu.length; cap = Math.max(cap, 1 / K + 1e-9);
   let lmax = 0; for (let i = 0; i < K; i++) lmax = Math.max(lmax, C[i].reduce((a, b) => a + Math.abs(b), 0));
   const passo = 1 / (2 * lmax + 1e-12);
   const minUtil = (lam, w0) => { // máx  w·μ − λ wCw  (gradiente projetado)
-    let w = w0 ? w0.slice() : projetar(new Array(K).fill(1 / K), cap);
+    let w = w0 ? w0.slice() : projetar(new Array(K).fill(1 / K), cap, piso);
     const eta = 1 / (2 * lam * lmax + 1e-12);
-    for (let it = 0; it < 600; it++) { const g = mulCv(C, w); w = projetar(w.map((x, i) => x + eta * (mu[i] - 2 * lam * g[i])), cap); }
+    for (let it = 0; it < 600; it++) { const g = mulCv(C, w); w = projetar(w.map((x, i) => x + eta * (mu[i] - 2 * lam * g[i])), cap, piso); }
     return w;
   };
-  if (obj === 'minvar') { let w = projetar(new Array(K).fill(1 / K), cap); for (let it = 0; it < 1500; it++) { const g = mulCv(C, w); w = projetar(w.map((x, i) => x - passo * g[i]), cap); } return w; }
+  if (obj === 'minvar') { let w = projetar(new Array(K).fill(1 / K), cap, piso); for (let it = 0; it < 1500; it++) { const g = mulCv(C, w); w = projetar(w.map((x, i) => x - passo * g[i]), cap, piso); } return w; }
   if (obj === 'paridade') {
     let w = new Array(K).fill(1 / K);
-    for (let it = 0; it < 400; it++) { const g = mulCv(C, w), v = dot(w, g); w = w.map((x, i) => x * Math.sqrt((v / K) / Math.max(x * g[i], 1e-16))); w = projetar(w.map((x) => x / w.reduce((a, b) => a + b, 0)), cap); }
+    for (let it = 0; it < 400; it++) { const g = mulCv(C, w), v = dot(w, g); w = w.map((x, i) => x * Math.sqrt((v / K) / Math.max(x * g[i], 1e-16))); w = projetar(w.map((x) => x / w.reduce((a, b) => a + b, 0)), cap, piso); }
     return w;
   }
   if (obj === 'alvo') { // maior retorno com vol ≤ alvo: busca em λ
@@ -1537,14 +1548,14 @@ function otimizarPesos(mu, C, obj, cap, rfm, volAlvo) {
   }
   // máximo Sharpe. Se nenhum ativo tem retorno esperado acima do CDI, a carteira tangente não existe
   // (maximizar um Sharpe negativo levaria ao maior risco): usa mínima variância.
-  if (Math.max(...mu) <= rfm) return otimizarPesos(mu, C, 'minvar', cap, rfm, volAlvo);
+  if (Math.max(...mu) <= rfm) return otimizarPesos(mu, C, 'minvar', cap, rfm, volAlvo, piso);
   let melhor = null, mS = -Infinity;
   for (const lam of [0.5, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512]) { const w = minUtil(lam); const e = estatPesos(w, mu, C, rfm); if (e.sharpe > mS) { mS = e.sharpe; melhor = w; } }
   let w = melhor;
   for (let it = 0; it < 800; it++) {
     const g = mulCv(C, w), m = dot(w, mu) - rfm, v = Math.max(dot(w, g), 1e-14), sd = Math.sqrt(v);
     const grad = mu.map((x, i) => x / sd - m * g[i] / (sd * v));
-    const cand = projetar(w.map((x, i) => x + passo * sd * 0.5 * grad[i]), cap);
+    const cand = projetar(w.map((x, i) => x + passo * sd * 0.5 * grad[i]), cap, piso);
     if (estatPesos(cand, mu, C, rfm).sharpe >= estatPesos(w, mu, C, rfm).sharpe - 1e-12) w = cand; else break;
   }
   return w;
@@ -1589,7 +1600,7 @@ function avaliarLimites(w, mu, C, R, lim) { // violações (em fração ao ano) 
   return { ret, dd: q.dd, viol, grads, Cw, m, v };
 }
 // melhor carteira do objetivo que respeite os limites: gradiente projetado com penalidade crescente
-function ajustarLimites(w0, mu, C, R, lim, obj, cap, rfm) {
+function ajustarLimites(w0, mu, C, R, lim, obj, cap, rfm, piso) {
   if (!lim.ativo) return w0;
   const K = w0.length, ref = w0.slice();
   const pontua = (w, e) => { // objetivo (normalizado) e gradiente
@@ -1607,27 +1618,59 @@ function ajustarLimites(w0, mu, C, R, lim, obj, cap, rfm) {
       const g = atual.gs.map((x) => x / escala);
       atual.e.viol.forEach((vv, c) => { const gg = atual.e.grads[c]; for (let i = 0; i < K; i++) g[i] -= 2 * rho * vv * gg[i]; });
       let gmax = 0; for (const x of g) gmax = Math.max(gmax, Math.abs(x)); if (!(gmax > 0)) break;
-      const cand = projetar(w.map((x, i) => x + eta * g[i] / gmax), cap), nv = J(cand, rho);
+      const cand = projetar(w.map((x, i) => x + eta * g[i] / gmax), cap, piso), nv = J(cand, rho);
       if (nv.j > atual.j) { w = cand; atual = nv; eta = Math.min(eta * 1.4, 0.5); } else eta /= 2;
     }
     if (atual.P < 1e-10) break;
   }
   return w;
 }
+// melhor ativo de uma classe para o objetivo e os limites pedidos (usado para garantir 1 ativo por classe)
+function melhorDaClasse(cands, mu, C, R, op, rfm, lim) {
+  const nota = (k) => { const sd = Math.sqrt(Math.max(C[k][k], 1e-14)); return op.obj === 'minvar' || op.obj === 'paridade' ? -sd : (mu[k] - rfm) / sd; };
+  const respeita = (k) => {
+    const ret = lim.hist ? quedaPesos(cands.map((j) => (j === k ? 1 : 0)), cands.map((j) => R[j])).cagr : anualGeo(mu[k], C[k][k]);
+    if (ret < lim.rmin || ret > lim.rmax) return false;
+    if (lim.dd !== null) { const e = new Array(R.length).fill(0); e[k] = 1; if (quedaPesos(e, R).dd > lim.dd) return false; }
+    if (lim.vol && Math.sqrt(12 * C[k][k]) > lim.vol) return false;
+    return true;
+  };
+  const ok = cands.filter(respeita);
+  return (ok.length ? ok : cands).reduce((a, k) => (nota(k) > nota(a) ? k : a));
+}
 function otimizarCompleto(R, op, rfm) {
   const lim = limitesOt(op); if (op.obj === 'alvo') lim.vol = op.volAlvo / 100;
-  const temLim = lim.ativo; lim.ativo = temLim || false;
-  const resolve = (cols) => {
-    const sub = cols.map((k) => R[k]); const { mu, C } = estimarRobusto(sub);
+  const temLim = lim.ativo;
+  const K = R.length, g = op.cadaClasse && op.grupos && op.grupos.length === K ? op.grupos : null;
+  const classes = g ? [...new Set(g.filter((x) => x >= 0))] : [];
+  const PISO = 0.02;
+  const resolve = (cols, forc) => {
+    const sub = cols.map((k) => R[k]); const { mu, C } = estimarRobusto(sub, op.classe ? cols.map((k) => op.classe[k]) : null);
     const cap = Math.max(op.pesoMax / 100, 1 / cols.length + 1e-9);
-    let w = otimizarPesos(mu, C, op.obj, op.pesoMax / 100, rfm, op.volAlvo);
-    if (temLim) w = ajustarLimites(w, mu, C, sub, { ...lim, ativo: true }, op.obj, cap, rfm);
+    const piso = forc ? cols.map((k) => (forc.has(k) ? Math.min(PISO, cap, 1 / Math.max(1, forc.size)) : 0)) : null;
+    let w = otimizarPesos(mu, C, op.obj, op.pesoMax / 100, rfm, op.volAlvo, piso);
+    if (temLim) w = ajustarLimites(w, mu, C, sub, { ...lim, ativo: true }, op.obj, cap, rfm, piso);
     return w;
   };
-  const K = R.length; let idxs = [...Array(K).keys()], w = resolve(idxs);
-  if (op.maxAtivos && w.filter((x) => x > 1e-4).length > op.maxAtivos) {
-    idxs = idxs.slice().sort((a, b) => w[b] - w[a]).slice(0, op.maxAtivos);
-    const ws = resolve(idxs); w = new Array(K).fill(0); idxs.forEach((k, i) => { w[k] = ws[i]; });
+  let idxs = [...Array(K).keys()], w = resolve(idxs, null), forc = null;
+  // pelo menos 1 ativo de cada classe marcada: a classe que ficou sem peso recebe o seu melhor ativo
+  if (classes.length > 1) {
+    const faltam = classes.filter((c) => !idxs.some((k) => g[k] === c && w[k] > 1e-4));
+    if (faltam.length) {
+      const { mu, C } = estimarRobusto(R, op.classe);
+      forc = new Set();
+      for (const c of faltam) forc.add(melhorDaClasse(idxs.filter((k) => g[k] === c), mu, C, R, op, rfm, lim));
+      w = resolve(idxs, forc);
+    }
+  }
+  const limite = op.maxAtivos ? Math.max(op.maxAtivos, classes.length) : 0;
+  if (limite && w.filter((x) => x > 1e-4).length > limite) {
+    const ord = idxs.slice().sort((a, b) => w[b] - w[a]), manter = new Set();
+    if (classes.length > 1) for (const c of classes) { const k = ord.find((j) => g[j] === c); if (k !== undefined) manter.add(k); }
+    for (const k of ord) { if (manter.size >= limite) break; manter.add(k); }
+    idxs = [...manter].sort((a, b) => a - b);
+    const f2 = classes.length > 1 ? new Set(classes.map((c) => idxs.filter((k) => g[k] === c).sort((a, b) => w[b] - w[a])[0]).filter((k) => k !== undefined)) : null;
+    const ws = resolve(idxs, f2); w = new Array(K).fill(0); idxs.forEach((k, i) => { w[k] = ws[i]; });
   }
   return w.map((x) => (x < 1e-4 ? 0 : x));
 }
@@ -1643,15 +1686,23 @@ function reamostrar(R, n, bloco, semente) {
 function finalOtimizacao(d) {
   const { R, op, rfm, rfmTreino, T } = d, K = R.length, L = R[0].length;
   const lim = limitesOt(op);
-  const { mu, C, delta } = estimarRobusto(R);
+  const { mu, C, delta } = estimarRobusto(R, op.classe);
   let w = d.wMedia ? d.wMedia.slice() : otimizarCompleto(R, op, rfm);
   if (d.wMedia) {
-    if (op.maxAtivos && w.filter((x) => x > 1e-4).length > op.maxAtivos) { const corte = w.slice().sort((a, b) => b - a)[op.maxAtivos - 1]; w = w.map((x) => (x >= corte ? x : 0)); }
+    const g = op.cadaClasse && op.grupos && op.grupos.length === K ? op.grupos : null, classes = g ? [...new Set(g.filter((x) => x >= 0))] : [];
+    const limite = op.maxAtivos ? Math.max(op.maxAtivos, classes.length) : 0;
+    if (limite && w.filter((x) => x > 1e-4).length > limite) {
+      const ord = [...w.keys()].sort((a, b) => w[b] - w[a]), manter = new Set();
+      if (classes.length > 1) for (const c of classes) { const k = ord.find((j) => g[j] === c && w[j] > 0); if (k !== undefined) manter.add(k); }
+      for (const k of ord) { if (manter.size >= limite) break; manter.add(k); }
+      w = w.map((x, k) => (manter.has(k) ? x : 0));
+    }
     let s = w.reduce((a, b) => a + b, 0); w = w.map((x) => x / s);
     if (lim.ativo || op.obj === 'alvo') { // a média das reamostragens pode sair dos limites: ajuste mínimo, só nos ativos escolhidos
-      const ix = [...w.keys()].filter((k) => w[k] > 0), sub = ix.map((k) => R[k]), e = estimarRobusto(sub);
+      const ix = [...w.keys()].filter((k) => w[k] > 0), sub = ix.map((k) => R[k]), e = estimarRobusto(sub, op.classe ? ix.map((k) => op.classe[k]) : null);
       const l2 = { ...lim, ativo: true }; if (op.obj === 'alvo') l2.vol = op.volAlvo / 100;
-      const ws = ajustarLimites(ix.map((k) => w[k]), e.mu, e.C, sub, l2, 'perto', Math.max(op.pesoMax / 100, 1 / ix.length + 1e-9), rfm);
+      const pisoG = g && classes.length > 1 ? ix.map((k) => (ix.filter((j) => g[j] === g[k]).every((j) => w[j] <= w[k]) && g[k] >= 0 ? 0.01 : 0)) : null;
+      const ws = ajustarLimites(ix.map((k) => w[k]), e.mu, e.C, sub, l2, 'perto', Math.max(op.pesoMax / 100, 1 / ix.length + 1e-9), rfm, pisoG);
       w = new Array(K).fill(0); ix.forEach((k, i) => { w[k] = ws[i] < 1e-4 ? 0 : ws[i]; }); s = w.reduce((a, b) => a + b, 0); w = w.map((x) => x / s);
     }
   }
@@ -1681,7 +1732,7 @@ let otWorkerURL = null;
 function criarWorkerOt() {
   try {
     if (!otWorkerURL) {
-      const fns = [media, aleatorio, estimarRobusto, projetar, anualGeo, estatPesos, otimizarPesos, limitesOt, quedaPesos, gradLog, avaliarLimites, ajustarLimites, otimizarCompleto, reamostrar, finalOtimizacao];
+      const fns = [media, aleatorio, estimarRobusto, projetar, anualGeo, estatPesos, otimizarPesos, limitesOt, quedaPesos, gradLog, avaliarLimites, ajustarLimites, melhorDaClasse, otimizarCompleto, reamostrar, finalOtimizacao];
       const src = `const mulCv = ${mulCv.toString()};\nconst dot = ${dot.toString()};\n` + fns.map((f) => f.toString()).join('\n') +
         `\nonmessage = (e) => { const d = e.data;
   if (d.tipo === 'amostras') { const ws = []; for (let i = d.de; i < d.ate; i++) { ws.push(otimizarCompleto(reamostrar(d.R, 1, 6, 1000 + i)[0], d.op, d.rfm)); postMessage({ p: 1 }); } postMessage({ ws }); }
@@ -1725,7 +1776,7 @@ async function otimizarParalelo(R, op, rfm, rfmTreino, T, aoProgresso) {
 
 // interface
 const OT_CLASSES = [['acao', 'Ações BR'], ['fii', 'Todos os FIIs'], ['fii:papel', 'FIIs de papel'], ['fii:tijolo', 'FIIs de tijolo'], ['fii:hibrido', 'FIIs híbridos'],
-  ['fiagro|fiinfra', 'Fiagro e Infra'], ['etf', 'ETFs B3'], ['fundo_rf', 'Fundos de renda fixa'], ['fundo_mm', 'Multimercados'], ['fundo_acoes', 'Fundos de ações'],
+  ['fiagro|fiinfra', 'Fiagro e Infra'], ['etf', 'ETFs B3'], ['tesouro', 'Tesouro Direto'], ['bdr', 'BDRs'], ['fundo_rf', 'Fundos de renda fixa'], ['fundo_mm', 'Multimercados'], ['fundo_acoes', 'Fundos de ações'],
   ['acao_us', 'Ações EUA'], ['etf_us', 'ETFs EUA'], ['cripto', 'Cripto'], ['indice|commodity|moeda', 'Índices, ouro e moedas']];
 let otPronto = false, otUltimo = null; const otMostra = [];
 function prepararOtimizador() {
@@ -1747,7 +1798,7 @@ function prepararOtimizador() {
     ligaU('ot-ret-a', 'retA', (v) => lerDec(v)); ligaU('ot-ret-b', 'retB', (v) => lerDec(v));
     otMostra.push(ligarLivre('nj-ot-max', { obter: () => O_.maxUniv, definir: (v) => { O_.maxUniv = v; salvar(); }, min: 2, max: 1e6, cheio: () => 1e6, aoMudar: () => { otUltimo = null; prepararOtimizador(); } }));
     otMostra.push(ligarLivre('nj-ot-janela', { obter: () => O_.janela, definir: (v) => { O_.janela = v; salvar(); }, min: 1, max: 99, cheio: () => 99, aoMudar: () => { otUltimo = null; prepararOtimizador(); } }));
-    for (const [id, chave] of [['ot-estender', 'estender'], ['ot-reamostra', 'reamostra']]) { $(id).checked = O_[chave]; $(id).addEventListener('change', () => { O_[chave] = $(id).checked; salvar(); prepararOtimizador(); }); }
+    for (const [id, chave] of [['ot-reamostra', 'reamostra'], ['ot-cada', 'cadaClasse']]) { $(id).checked = O_[chave]; $(id).addEventListener('change', () => { O_[chave] = $(id).checked; salvar(); prepararOtimizador(); }); }
     const seg = (id, chave) => $(id).addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; O_[chave] = isNaN(+b.dataset.v) ? b.dataset.v : +b.dataset.v; salvar(); prepararOtimizador(); });
     seg('seg-ot-fonte', 'fonte'); seg('seg-ot-obj', 'obj'); seg('seg-ot-cart', 'cart'); seg('seg-ot-ret', 'retModo'); seg('seg-ot-retbase', 'retBase');
     $('btn-ot').addEventListener('click', rodarOtimizador);
@@ -1777,14 +1828,18 @@ function prepararOtimizador() {
 }
 function universoOtimizador() {
   const O_ = S.ot, maxU = O_.maxUniv >= 1e6 ? Infinity : O_.maxUniv;
-  const sr = (t) => (O_.estender ? serieEstendida(t) : serie(t));
+  const sr = serie;
   const avisos = [];
   let cods;
   if (O_.fonte === 'cart') cods = S.carteiras[O_.cart].itens.map((i) => i.t);
   else {
     if (!O_.classes.length) return { erro: 'Marque pelo menos uma classe.' };
-    cods = [...ATIVOS.values()].filter((a) => O_.classes.some((k) => noGrupo(a, k))).filter((a) => O_.estender || serie(a.t).v.length >= O_.minAnos * 12)
-      .sort((a, b) => (b.tam || 0) - (a.tam || 0)).map((a) => a.t);
+    // cada classe marcada entra com a sua parte do limite do universo (as maiores de cada uma),
+    // para nenhuma classe sumir porque outra tem ativos "maiores"
+    const porClasse = O_.classes.map((k) => [...ATIVOS.values()].filter((a) => noGrupo(a, k) && serie(a.t).v.length >= O_.minAnos * 12)
+      .sort((a, b) => (b.tam || 0) - (a.tam || 0)).map((a) => a.t));
+    cods = []; const vistos = new Set(); let i = 0;
+    while (porClasse.some((l) => i < l.length)) { for (const l of porClasse) if (i < l.length && !vistos.has(l[i])) { vistos.add(l[i]); cods.push(l[i]); } i++; }
   }
   if (!cods.length) return { erro: 'Nenhum ativo nessas classes com esse histórico mínimo. Reduza o histórico mínimo.' };
   const vivo = (t) => t.startsWith('RF:') || sr(t).i1 >= FIM_DADOS - 1; // ainda com dados no fim da base
@@ -1811,14 +1866,22 @@ function universoOtimizador() {
   // ativos com muitos meses sem negociação na janela (> 5%) ficam de fora; os poucos meses que faltam são preenchidos
   const n0 = sel.length; sel = sel.filter((t) => lacunas(t, ini) <= 0.05 * (FIM_DADOS - ini + 1));
   if (sel.length < n0) avisos.push(`${n0 - sel.length} ${n0 - sel.length === 1 ? 'ativo ficou' : 'ativos ficaram'} de fora por ter muitos meses sem negociação`);
+  // garante as classes marcadas no universo (o ativo de cada uma com mais histórico, se nenhum coube)
+  if (O_.fonte !== 'cart' && O_.classes.length > 1) for (const k of O_.classes) {
+    if (sel.some((t) => info(t) && noGrupo(info(t), k))) continue;
+    const c = cods.filter((t) => noGrupo(info(t), k) && lacunas(t, ini) <= 0.05 * (FIM_DADOS - ini + 1)).sort((a, b) => inicio(a) - inicio(b))[0];
+    if (c) { sel.push(c); if (inicio(c) > ini) { ini = inicio(c); avisos.push(`a janela começou em ${rotulo(ini)} para incluir ${OT_CLASSES.find((x) => x[0] === k)[1]}`); } }
+    else avisos.push(`nenhum ativo de ${OT_CLASSES.find((x) => x[0] === k)[1]} tem cotação contínua nesta janela`);
+  }
   if (sel.length < 2) { sel = [...sel, 'RF:CDI:100'].filter((t, i, a) => a.indexOf(t) === i); if (!info('RF:CDI:100')) return { erro: 'Menos de 2 ativos com dados.' }; avisos.push('o CDI entrou no universo para completar 2 ativos'); }
-  return { codigos: sel, ini, avisos };
+  const grupos = sel.map((t) => (O_.fonte === 'cart' || !info(t) ? -1 : O_.classes.findIndex((k) => noGrupo(info(t), k))));
+  return { codigos: sel, ini, avisos, grupos };
 }
 function rodarOtimizador() {
   const O_ = S.ot, err = (m) => { $('ot-err').textContent = m; $('ot-err').hidden = !m; };
   if (otCancelar) { otCancelar(); otCancelar = null; return; }
   const U = universoOtimizador(); if (U.erro) return err(U.erro);
-  const H = preparar([{ nome: 'U', itens: U.codigos.map((t) => ({ t, p: 1 })) }], Math.floor(U.ini / 12), S.cambio, O_.estender ? 'estimar' : 'redistribuir');
+  const H = preparar([{ nome: 'U', itens: U.codigos.map((t) => ({ t, p: 1 })) }], Math.floor(U.ini / 12), S.cambio, 'redistribuir');
   if (H.erro) return err(H.erro);
   err('');
   const i0 = Math.max(0, H.meses.findIndex((mi) => mi >= U.ini)), sel = (arr) => arr.slice(i0);
@@ -1826,18 +1889,24 @@ function rodarOtimizador() {
   const R = base.map((r) => Float64Array.from(sel(r), (x) => (isFinite(x) ? x : 0))), cdi = sel(H.cdi), meses = sel(H.meses), uni = H.uni;
   if (R[0].length < 6) return err('A base tem menos de 6 meses em comum para esses ativos.');
   const K = R.length, L = R[0].length, T = Math.min(36, Math.floor(L / 3)), rfm = media(cdi);
+  const gU = uni.map((t) => U.grupos[U.codigos.indexOf(t)] ?? -1);
   // universos muito grandes: pré-seleção (ativos usados por uma otimização rápida + os de melhor retorno por risco)
   let Rx = R, uniX = uni, pre = null;
   if (K > 300) {
-    const { mu, C } = estimarRobusto(R);
+    const { mu, C } = estimarRobusto(R, uni.map((t) => (t.startsWith('RF:') ? 'rf' : (TIPOS[info(t).tipo] || ['', info(t).tipo])[1])));
     const ordem = [...Array(K).keys()].sort((a, b) => (mu[b] - rfm) / Math.sqrt(C[b][b]) - (mu[a] - rfm) / Math.sqrt(C[a][a]));
     const minv = [...Array(K).keys()].sort((a, b) => C[a][a] - C[b][b]);
-    const ix = [...new Set([...ordem.slice(0, 200), ...minv.slice(0, 60)])].sort((a, b) => a - b);
+    const nG = new Set(gU.filter((x) => x >= 0)).size, porG = [];
+    if (nG > 1) for (const c of new Set(gU)) if (c >= 0) porG.push(...ordem.filter((k) => gU[k] === c).slice(0, 15), ...minv.filter((k) => gU[k] === c).slice(0, 5));
+    const ix = [...new Set([...ordem.slice(0, 200), ...minv.slice(0, 60), ...porG])].sort((a, b) => a - b);
     Rx = ix.map((k) => R[k]); uniX = ix.map((k) => uni[k]); pre = { de: K, para: ix.length };
   }
+  const gX = uniX.map((t) => gU[uni.indexOf(t)]);
+  const classeDe = (t) => (t.startsWith('RF:') ? 'rf' : (TIPOS[info(t).tipo] || ['', info(t).tipo])[1]);
+  const opW = { ...O_, grupos: gX, cadaClasse: O_.cadaClasse && O_.fonte !== 'cart', classe: uniX.map(classeDe) };
   $('btn-ot-label').textContent = 'Otimizando… (toque para parar)';
   const t0 = performance.now();
-  otimizarParalelo(Rx, O_, rfm, media(cdi.slice(0, L - T)), T, (f) => { $('btn-ot-label').textContent = `Otimizando… ${Math.round(f * 100)}% (toque para parar)`; })
+  otimizarParalelo(Rx, opW, rfm, media(cdi.slice(0, L - T)), T, (f) => { $('btn-ot-label').textContent = `Otimizando… ${Math.round(f * 100)}% (toque para parar)`; })
     .then((F) => {
       const KX = Rx.length, w = F.w;
       const rp = Rx[0].map((_, t) => Rx.reduce((acc, col, k) => acc + w[k] * col[t], 0));
@@ -1853,10 +1922,11 @@ function rodarOtimizador() {
         wf.meta = `treino ${rotulo(meses[0])}–${rotulo(meses[L - T - 1])} · teste ${rotulo(meses[L - T])}–${rotulo(meses[L - 1])}`;
       }
       let estRef = null;
-      if (wRef) { const e = estimarRobusto(Rx); estRef = estatPesos(wRef, e.mu, e.C, rfm); }
+      if (wRef) { const e = estimarRobusto(Rx, opW.classe); estRef = estatPesos(wRef, e.mu, e.C, rfm); }
       const isolados = F.isolados.map((x, k) => ({ t: uniX[k], ...x }));
       otUltimo = { semPremio: F.semPremio, w, uni: uniX, est: F.est, mh, fronteira: F.fronteira, isolados, wRef: estRef, refNome: ref.nome, wf, meses, delta: F.delta,
-        ms: performance.now() - t0, K: KX, L, pre, avisos: U.avisos, lim: limitesOt(O_), retLim: F.retLim, ddLim: F.ddLim };
+        ms: performance.now() - t0, K: KX, L, pre, avisos: U.avisos, lim: limitesOt(O_), retLim: F.retLim, ddLim: F.ddLim,
+        classes: opW.cadaClasse && O_.classes.length > 1 ? O_.classes.map((k, c) => ({ nome: OT_CLASSES.find((x) => x[0] === k)[1], n: w.filter((x, j) => x > 0 && gX[j] === c).length })) : null };
       desenharOtimizacao();
     })
     .catch((e) => { if (e.message !== 'cancelado') err(`Não foi possível otimizar: ${e.message}`); })
@@ -1868,6 +1938,7 @@ function desenharOtimizacao() {
   $('ot-runline').innerHTML = [['Objetivo', nomeObj + (O_.reamostra ? ' · reamostrado 50×' : '')], ['Universo', `${o.K} ativos`], ['Janela', `${rotulo(o.meses[0])}–${rotulo(o.meses[o.L - 1])} (${o.L} m)`],
     ['Limites', `peso ≤ ${num(O_.pesoMax, 0)}%${O_.maxAtivos ? `, até ${O_.maxAtivos} ativos` : ''}`], ['Encolhimento da covariância (Ledoit-Wolf)', pct(o.delta, 0)], ['Tempo', o.ms < 2000 ? `${Math.round(o.ms)} ms` : `${num(o.ms / 1000, 1)} s`]]
     .map(([k, v]) => `<span>${k}: <b>${v}</b></span>`).join('') +
+    (o.classes ? `<span style="display:block;margin-top:6px">Classes na carteira: ${o.classes.map((c) => `${esc(c.nome)} <b class="${c.n ? 'pos' : 'neg'}">${c.n ? `${c.n} ✓` : '0 ✗'}</b>`).join(' · ')}</span>` : '') +
     (o.pre ? `<span>Pré-seleção: <b>${o.pre.para} de ${o.pre.de} ativos</b> (melhor retorno por risco e menor risco)</span>` : '') +
     (o.avisos && o.avisos.length ? `<span class="stale" style="display:block;margin-top:6px">Ajustes automáticos: ${esc(o.avisos.join('; '))}.</span>` : '') +
     (() => { // restrições pedidas: atendidas ou o mais perto possível
@@ -1911,6 +1982,9 @@ function desenharOtimizacao() {
   if (o.wRef) svg += marca(o.wRef, 'var(--pB)', esc(o.refNome.slice(0, 14)));
   svg += marca(o.est, 'var(--amber)', 'Otimizada') + '</svg>';
   box.innerHTML = svg;
+  dicaPontos(box, W, [...dentro.map((p) => ({ x: x(p.vol), y: y(p.ret), html: dicaRV(`${esc(rotuloAtivo(p.t))} <span class="k">${esc(TIPOS[info(p.t).tipo][0])}</span>`, p, `<br><span class="k">${esc(info(p.t).n.slice(0, 40))}</span>`) })),
+    ...o.fronteira.map((p) => ({ x: x(p.vol), y: y(p.ret), html: dicaRV('Ponto da fronteira eficiente', p) })),
+    { x: x(o.est.vol), y: y(o.est.ret), html: dicaRV('Carteira otimizada', o.est, dicaPesos(o.w, o.uni)) }, ...(o.wRef ? [{ x: x(o.wRef.vol), y: y(o.wRef.ret), html: dicaRV(esc(o.refNome), o.wRef) }] : [])]);
   $('ot-leg').innerHTML = '<span><i class="ln" style="border-color:var(--accent)"></i>Fronteira eficiente</span><span><i style="background:var(--rule-2)"></i>Ativos isolados</span>' +
     `<span>Retornos estimados com encolhimento (James-Stein)${fora ? ` · ${fora} ${fora === 1 ? 'ativo' : 'ativos'} de risco muito alto fora da escala` : ''}</span>`;
   // fora da amostra
@@ -1930,12 +2004,553 @@ function salvarOtimizada(e) {
   b.textContent = 'Salva ✓ — veja em Simulação';
 }
 
+// ---------------------------------------------------------------- dicas que seguem o cursor (gráficos SVG)
+// pontos: [{ x, y, html }] em coordenadas do SVG. Mostra o mais próximo do cursor/dedo, com mira.
+function dicaPontos(box, W, pontos, raio = 22, soX = false) {
+  const svg = box.querySelector('svg'); if (!svg || !pontos.length) return;
+  box.classList.add('hov');
+  let tip = box.querySelector('.tip-svg'); if (!tip) { tip = document.createElement('div'); tip.className = 'tip-svg'; tip.hidden = true; box.appendChild(tip); }
+  const ns = 'http://www.w3.org/2000/svg', anel = document.createElementNS(ns, 'circle');
+  anel.setAttribute('r', 7); anel.setAttribute('fill', 'none'); anel.setAttribute('stroke', 'var(--ink)'); anel.setAttribute('stroke-width', 2); anel.setAttribute('opacity', 0); anel.classList.add('hov-line');
+  svg.appendChild(anel);
+  const mover = (e) => {
+    const r = svg.getBoundingClientRect(), k = W / r.width, px = (e.clientX - r.left) * k, py = (e.clientY - r.top) * k;
+    let m = null, dm = (raio * k) ** 2; for (const p of pontos) { const d = (p.x - px) ** 2 + (soX ? 0 : (p.y - py) ** 2); if (d < dm) { dm = d; m = p; } }
+    if (!m) { tip.hidden = true; anel.setAttribute('opacity', 0); return; }
+    anel.setAttribute('cx', m.x); anel.setAttribute('cy', m.y); anel.setAttribute('opacity', 0.9);
+    tip.innerHTML = m.html; tip.hidden = false;
+    const bx = box.getBoundingClientRect(), sx = m.x / k + (r.left - bx.left), sy = m.y / k + (r.top - bx.top);
+    let lx = sx + 12, ly = sy + 12; if (lx + tip.offsetWidth > bx.width - 4) lx = sx - tip.offsetWidth - 12; if (ly + tip.offsetHeight > bx.height) ly = sy - tip.offsetHeight - 12;
+    tip.style.left = `${Math.max(2, lx)}px`; tip.style.top = `${Math.max(2, ly)}px`;
+  };
+  svg.addEventListener('pointermove', mover); svg.addEventListener('pointerdown', mover);
+  svg.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') { tip.hidden = true; anel.setAttribute('opacity', 0); } });
+}
+const dicaRV = (titulo, p, extra = '') => `<b>${titulo}</b><br><span class="k">retorno</span> ${pct(p.ret)} · <span class="k">volat.</span> ${pct(p.vol)}${isFinite(p.sharpe) ? ` · <span class="k">Sharpe</span> ${num(p.sharpe)}` : ''}${extra}`;
+const dicaPesos = (ws, uni) => { const o = [...ws.keys()].filter((i) => ws[i] >= 0.01).sort((a, b) => ws[b] - ws[a]).slice(0, 4); return o.length ? `<br>${o.map((i) => `${esc(rotuloAtivo(uni[i]).slice(0, 9))} ${pct(ws[i], 0)}`).join(' · ')}` : ''; };
+
+// ---------------------------------------------------------------- montanha 3D de probabilidades (simulação)
+// Superfície feita das trajetórias simuladas guardadas: para cada ano, que fração dos cenários termina em
+// cada faixa de patrimônio. Arraste para girar; passe o cursor para ler a faixa.
+const MT = { rot: { yaw: -0.42, pitch: 0.62, zoom: 1 }, girar: false, malha: null, pronto: false, quadro: 0, hover: null, arr: false };
+function proj3d(W, H, rot, esc0 = 0.3) {
+  const cy = Math.cos(rot.yaw), sy = Math.sin(rot.yaw), cp = Math.cos(rot.pitch), sp = Math.sin(rot.pitch), f = Math.min(W, H * 1.25) * esc0 * rot.zoom, d = 3.6;
+  return (X, Y, Z) => { const x1 = X * cy - Z * sy, z1 = X * sy + Z * cy, y2 = Y * cp - z1 * sp, z2 = Y * sp + z1 * cp, s = f * d / (d + z2); return { x: W / 2 + x1 * s, y: H / 2 + 10 - y2 * s, z: z2 }; };
+}
+function montarMontanha() {
+  if (!ultimo) return null;
+  const { R } = ultimo, r = R.res[S.ver], Pn = R.Pn, nCam = R.nCam, cam = r.cam;
+  if (!nCam || Pn < 3) return null;
+  // fatias em anos inteiros (até 30), do ano 1 ao último
+  let ks = []; R.pontos.forEach((m, k) => { if (k > 0 && m % 12 === 0) ks.push(k); });
+  if (ks.length < 3) ks = Array.from({ length: Math.min(28, Pn - 1) }, (_, i) => 1 + Math.round(i * (Pn - 2) / Math.max(1, Math.min(28, Pn - 1) - 1)));
+  if (ks.length > 30) { const passo = ks.length / 30; ks = Array.from({ length: 30 }, (_, i) => ks[Math.min(ks.length - 1, Math.round(i * passo))]); ks[29] = R.pontos.length - 1; ks = [...new Set(ks)]; }
+  const T = ks.length;
+  const amostra = [];
+  for (const k of [ks[0], ks[Math.floor(T / 2)], ks[T - 1]]) for (let s = 0; s < nCam; s += Math.max(1, Math.floor(nCam / 3000))) { const v = cam[s * Pn + k]; if (v > 0) amostra.push(Math.log(v)); }
+  amostra.sort((a, b) => a - b);
+  if (amostra.length < 10) return null;
+  const lo = quantil(amostra, 0.01), hi = quantil(amostra, 0.99), B = 34, lg = (hi - lo) / B || 1;
+  const dens = ks.map((k) => {
+    const c = new Float64Array(B); let n = 0;
+    for (let s = 0; s < nCam; s++) { const v = cam[s * Pn + k]; n++; if (!(v > 0)) { c[0]++; continue; } const b = Math.floor((Math.log(v) - lo) / lg); c[Math.max(0, Math.min(B - 1, b))]++; }
+    const fr = Array.from(c, (x) => x / n), acum = []; let a = 0; for (const f of fr) { a += f; acum.push(a); }
+    // suavização leve só no desenho (a dica mostra a fração real de cada faixa)
+    const sm = fr.map((_, b) => { let s = 0, w = 0; for (let j = -2; j <= 2; j++) { const q = fr[b + j]; if (q === undefined) continue; const pe = [0.1, 0.2, 0.4, 0.2, 0.1][j + 2]; s += q * pe; w += pe; } return s / w; });
+    return { k, fr, sm, acum };
+  });
+  // altura: concentração em relação ao maior pico de todos os anos (raiz, para os primeiros anos não esconderem os últimos)
+  const gmax = Math.max(...dens.map((d) => Math.max(...d.sm))) || 1;
+  for (const d of dens) d.alt = d.sm.map((x) => Math.sqrt(x / gmax));
+  return { ks, dens, lo, hi, B, lg, nCam, mes: ks.map((k) => R.pontos[k]) };
+}
+function desenharMontanha() {
+  const cv = $('mt-canvas'); if (!cv || !ultimo) return;
+  if (!MT.pronto) {
+    MT.pronto = true;
+    const pos = (e) => { const r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+    let ini = null;
+    cv.addEventListener('pointerdown', (e) => { e.preventDefault(); cv.setPointerCapture(e.pointerId); ini = { ...pos(e), rot: { ...MT.rot }, mov: 0 }; });
+    cv.addEventListener('pointermove', (e) => {
+      const q = pos(e);
+      if (ini) { const dx = q.x - ini.x, dy = q.y - ini.y; ini.mov = Math.max(ini.mov, Math.abs(dx) + Math.abs(dy));
+        if (ini.mov > 4) { MT.arr = true; MT.rot.yaw = ini.rot.yaw + dx * 0.009; MT.rot.pitch = Math.max(0.05, Math.min(1.45, ini.rot.pitch + dy * 0.009)); $('mt-tip').hidden = true; MT.hover = null; pedirMontanha(); return; } }
+      MT.mouse = q; pedirMontanha();
+    });
+    const fim = () => { ini = null; MT.arr = false; pedirMontanha(); };
+    cv.addEventListener('pointerup', fim); cv.addEventListener('pointercancel', fim);
+    cv.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') { MT.mouse = null; MT.hover = null; $('mt-tip').hidden = true; pedirMontanha(); } });
+    cv.addEventListener('wheel', (e) => { e.preventDefault(); MT.rot.zoom = Math.max(0.5, Math.min(4, MT.rot.zoom * (e.deltaY > 0 ? 0.9 : 1.1))); pedirMontanha(); }, { passive: false });
+    $('mt-girar').addEventListener('click', () => { MT.girar = !MT.girar; $('mt-girar').classList.toggle('primary', MT.girar); if (MT.girar) girarMontanha(); });
+    new ResizeObserver(() => pedirMontanha()).observe(cv);
+  }
+  MT.malha = montarMontanha();
+  const r = ultimo.R.res[S.ver];
+  $('mt-meta').textContent = MT.malha ? `${MT.malha.nCam.toLocaleString('pt-BR')} trajetórias · ${esc(r.nome)}` : '';
+  $('mt-leg').innerHTML = `<span><i style="background:${CORES_CART[S.ver]}"></i>Concentração dos cenários (mais alto = mais cenários naquela faixa de patrimônio)</span><span><i class="ln" style="border-color:var(--amber)"></i>Meta</span><span><i class="ln" style="border-color:var(--muted);border-top-style:dotted"></i>Total aportado</span>`;
+  pedirMontanha();
+}
+function pedirMontanha() { if (MT.quadro) return; MT.quadro = requestAnimationFrame(() => { MT.quadro = 0; pintarMontanha(); }); }
+function girarMontanha() { if (!MT.girar || vista !== 'simulacao') return; if (!MT.arr) { MT.rot.yaw += 0.005; pintarMontanha(); } requestAnimationFrame(girarMontanha); }
+function pintarMontanha() {
+  const cv = $('mt-canvas'), M = MT.malha; if (!cv || vista !== 'simulacao') return;
+  const W = cv.clientWidth, H = cv.clientHeight, dpr = window.devicePixelRatio || 1; if (!W || !H) return;
+  if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+  const C = { ink: exCor('--ink'), muted: exCor('--muted'), rule: exCor('--rule'), rule2: exCor('--rule-2'), amber: exCor('--amber'), panel: exCor('--panel') };
+  if (!M) { ctx.fillStyle = C.muted; ctx.font = '12px "IBM Plex Sans", sans-serif'; ctx.fillText('Rode a simulação para ver a montanha.', 16, 28); return; }
+  const P = proj3d(W, H, MT.rot), T = M.ks.length, B = M.B;
+  const X = (t) => -1 + 2 * t / Math.max(1, T - 1), Z = (b) => -1 + 2 * b / (B - 1), Y = (h) => -1 + 1.7 * h;
+  const zVal = (v) => (v > 0 ? -1 + 2 * ((Math.log(v) - M.lo) / (M.hi - M.lo) * B - 0.5) / (B - 1) : -1);
+  // chão: grade, eixos e linhas de meta e aportado
+  ctx.strokeStyle = C.rule; ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) { const a = P(-1 + i / 2, -1, -1), b = P(-1 + i / 2, -1, 1), c = P(-1, -1, -1 + i / 2), d = P(1, -1, -1 + i / 2); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.moveTo(c.x, c.y); ctx.lineTo(d.x, d.y); ctx.stroke(); }
+  const linhaChao = (vals, cor, tracos) => { ctx.strokeStyle = cor; ctx.lineWidth = 1.6; ctx.setLineDash(tracos); ctx.beginPath(); vals.forEach((v, t) => { const z = Math.max(-1, Math.min(1, zVal(v))), q = P(X(t), -1, z); t ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y); }); ctx.stroke(); ctx.setLineDash([]); };
+  const o = ultimo.o, R = ultimo.R;
+  if (o.meta > 0 && Math.log(o.meta) > M.lo && Math.log(o.meta) < M.hi) linhaChao(M.ks.map(() => o.meta), C.amber, [6, 4]);
+  linhaChao(M.ks.map((k) => R.inv[k]), C.muted, [2, 4]);
+  ctx.fillStyle = C.muted; ctx.font = '10px "IBM Plex Mono", monospace'; ctx.textAlign = 'center';
+  const anosTot = M.mes[T - 1] / 12, pa = anosTot <= 10 ? 2 : anosTot <= 25 ? 5 : 10;
+  M.mes.forEach((m, t) => { if (m % (12 * pa) === 0 || t === T - 1) { const q = P(X(t), -1, 1.18); ctx.fillText(`ano ${Math.round(m / 12)}`, q.x, q.y + 4); } });
+  for (let i = 0; i <= 4; i++) { const v = Math.exp(M.lo + (M.hi - M.lo) * i / 4), q = P(-1.28, -1, -1 + i / 2); ctx.fillText(eixoBRL(v), q.x, q.y + 4); }
+  ctx.font = '600 11px "IBM Plex Sans", sans-serif'; ctx.fillStyle = C.ink;
+  { const a = P(0, -1, 1.42), b = P(-1.55, -1, 0); ctx.fillText('tempo →', a.x, a.y + 6); ctx.fillText('patrimônio →', b.x, b.y - 8); }
+  ctx.font = '10px "IBM Plex Mono", monospace'; ctx.fillStyle = C.muted;
+  // superfície: quadriláteros do fundo para a frente, cor pela altura e pela inclinação (luz)
+  const base = exCor(CORES_CART[S.ver].replace(/^var\((.*)\)$/, '$1')) || C.ink;
+  const quads = [];
+  for (let t = 0; t < T - 1; t++) for (let b = 0; b < B - 1; b++) {
+    const h = [M.dens[t].alt[b], M.dens[t + 1].alt[b], M.dens[t + 1].alt[b + 1], M.dens[t].alt[b + 1]];
+    const v = [P(X(t), Y(h[0]), Z(b)), P(X(t + 1), Y(h[1]), Z(b)), P(X(t + 1), Y(h[2]), Z(b + 1)), P(X(t), Y(h[3]), Z(b + 1))];
+    const hm = (h[0] + h[1] + h[2] + h[3]) / 4, luz = 0.55 + 0.45 * Math.max(0, Math.min(1, 0.5 + ((h[0] + h[3]) - (h[1] + h[2])) * 1.2 + ((h[0] + h[1]) - (h[2] + h[3])) * 0.6));
+    quads.push({ v, z: (v[0].z + v[1].z + v[2].z + v[3].z) / 4, hm, luz, t, b });
+  }
+  quads.sort((a, b) => b.z - a.z);
+  for (const q of quads) {
+    ctx.beginPath(); ctx.moveTo(q.v[0].x, q.v[0].y); for (let i = 1; i < 4; i++) ctx.lineTo(q.v[i].x, q.v[i].y); ctx.closePath();
+    ctx.globalAlpha = 0.18 + 0.82 * Math.min(1, q.hm * 1.4); ctx.fillStyle = base; ctx.fill();
+    ctx.globalAlpha = (1 - q.luz) * 0.55; ctx.fillStyle = '#000'; ctx.fill();
+    ctx.globalAlpha = 0.35; ctx.strokeStyle = C.panel; ctx.lineWidth = 0.6; ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  // cursor: a faixa (ano × patrimônio) mais próxima
+  if (MT.mouse && !MT.arr) {
+    let m = null, dm = 26 * 26;
+    for (let i = quads.length - 1; i >= 0; i--) { const q = quads[i], cx = (q.v[0].x + q.v[2].x) / 2, cy = (q.v[0].y + q.v[2].y) / 2, d = (cx - MT.mouse.x) ** 2 + (cy - MT.mouse.y) ** 2; if (d < dm) { dm = d; m = q; } }
+    const tip = $('mt-tip');
+    if (m) {
+      ctx.beginPath(); ctx.moveTo(m.v[0].x, m.v[0].y); for (let i = 1; i < 4; i++) ctx.lineTo(m.v[i].x, m.v[i].y); ctx.closePath(); ctx.strokeStyle = C.ink; ctx.lineWidth = 2; ctx.stroke();
+      const dd = M.dens[m.t], a = Math.exp(M.lo + m.b * M.lg), b2 = Math.exp(M.lo + (m.b + 1) * M.lg), mes = M.mes[m.t];
+      const txt = `<b>Ano ${num(mes / 12, mes % 12 ? 1 : 0)}</b><br><span class="k">entre</span> ${curto(a)} <span class="k">e</span> ${curto(b2)}: <b>${pct(dd.fr[m.b], 1)}</b> <span class="k">dos cenários</span><br><span class="k">abaixo de</span> ${curto(b2)}: ${pct(dd.acum[m.b], 0)} · <span class="k">acima:</span> ${pct(1 - dd.acum[m.b], 0)}`;
+      tip.innerHTML = txt; tip.hidden = false;
+      let lx = MT.mouse.x + 14, ly = MT.mouse.y + 14; if (lx + tip.offsetWidth > W - 4) lx = MT.mouse.x - tip.offsetWidth - 14; if (ly + tip.offsetHeight > H) ly = MT.mouse.y - tip.offsetHeight - 14;
+      tip.style.left = `${Math.max(4, lx)}px`; tip.style.top = `${Math.max(4, ly)}px`;
+      $('mt-read').innerHTML = txt.replace(/<br>/g, ' · ');
+    } else tip.hidden = true;
+  }
+  ctx.fillStyle = C.muted; ctx.font = '10.5px "IBM Plex Sans", sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText('Arraste para girar · role para aproximar', 10, H - 8);
+}
+
+// ---------------------------------------------------------------- EXPLORAR: mapa 2D, nuvem 3D e ranking de todos os ativos
+// Só dados reais: cada ponto usa os meses com cotação do ativo dentro da janela escolhida (em reais).
+const EX_MET = {
+  ret: ['Retorno ao ano', (v) => pct(v)], vol: ['Volatilidade ao ano', (v) => pct(v)], sharpe: ['Sharpe (retorno por risco)', (v) => num(v)],
+  dd: ['Queda máxima', (v) => pct(v, 0)], anos: ['Anos de histórico', (v) => num(v, 1)], ci: ['Correlação com Ibovespa', (v) => num(v)],
+  cs: ['Correlação com S&P 500', (v) => num(v)], pior: ['Pior mês', (v) => pct(v)], melhor: ['Melhor mês', (v) => pct(v)], pos: ['Meses positivos', (v) => pct(v, 0)],
+  tam: ['Tamanho (log₁₀ de valor de mercado, PL ou liquidez)', (v) => num(v, 1)],
+};
+const EX_PADRAO = { modo: '2d', x: 'vol', y: 'ret', z: 'dd', cor: 'classe', classes: [], janela: 10, min: 24, ordem: 'sharpe', desc: true };
+const EX = { stats: null, chave: '', vis: [], view: null, rot: { yaw: -0.65, pitch: 0.38, zoom: 1 }, girar: false, sel: null, hover: null, fixos: [], ocultas: new Set(),
+  proj: [], mouse: null, pronto: false, quadro: 0, faixas: null };
+function exCor(nome) { return getComputedStyle(document.documentElement).getPropertyValue(nome).trim() || '#888'; }
+function exCalcular() {
+  const E = S.ex, ini = E.janela >= 99 ? BASE : Math.max(BASE, FIM_DADOS - E.janela * 12 + 1), chave = `${ini}|${S.cambio}`;
+  if (EX.chave === chave && EX.stats) return EX.stats;
+  const cdi = serie('CDI'), fx = serie('USDBRL'), ib = serie('IBOV'), sp = serie('SPY'), spA = info('SPY');
+  const conv = (s, a, mi) => { const x = val(s, mi); if (isNaN(x)) return NaN; return a && a.moeda === 'USD' && S.cambio ? (1 + x) * (1 + val(fx, mi)) - 1 : x; };
+  const acum = (c, x, y) => { c[0]++; c[1] += x; c[2] += y; c[3] += x * x; c[4] += y * y; c[5] += x * y; };
+  const corr = (c) => { const n = c[0]; if (n < 6) return NaN; const vx = c[3] - c[1] * c[1] / n, vy = c[4] - c[2] * c[2] / n; return vx > 0 && vy > 0 ? (c[5] - c[1] * c[2] / n) / Math.sqrt(vx * vy) : NaN; };
+  const out = [];
+  for (const a of ATIVOS.values()) {
+    const s = serie(a.t); if (!s) continue;
+    const m0 = Math.max(ini, s.i0), m1 = Math.min(FIM_DADOS, s.i1);
+    let n = 0, sl = 0, sm = 0, sq = 0, slc = 0, nc = 0, nivel = 0, pico = 0, dd = 0, pior = Infinity, melhor = -Infinity, pos = 0, prim = null;
+    const ci = [0, 0, 0, 0, 0, 0], cs = [0, 0, 0, 0, 0, 0];
+    for (let mi = m0; mi <= m1; mi++) {
+      const x = conv(s, a, mi); if (!isFinite(x)) continue;
+      if (prim === null) prim = mi;
+      const l = Math.log1p(Math.max(x, -0.999)); n++; sl += l; sm += x; sq += x * x;
+      const c = val(cdi, mi); if (!isNaN(c)) { slc += Math.log1p(c); nc++; }
+      nivel += l; if (nivel > pico) pico = nivel; if (nivel - pico < dd) dd = nivel - pico;
+      if (x < pior) pior = x; if (x > melhor) melhor = x; if (x > 0) pos++;
+      const y1 = val(ib, mi); if (!isNaN(y1) && a.t !== 'IBOV') acum(ci, x, y1);
+      const y2 = conv(sp, spA, mi); if (isFinite(y2) && a.t !== 'SPY') acum(cs, x, y2);
+    }
+    if (n < 2) continue;
+    const ret = Math.exp(sl / n * 12) - 1, cdiA = nc ? Math.exp(slc / nc * 12) - 1 : 0, mm = sm / n;
+    const vol = Math.sqrt(Math.max(0, (sq - n * mm * mm) / (n - 1)) * 12);
+    out.push({ t: a.t, a, g: (TIPOS[a.tipo] || ['', 'indice'])[1], n, ret, vol, sharpe: vol > 0 ? (ret - cdiA) / vol : NaN, dd: Math.expm1(dd), anos: n / 12,
+      ci: a.t === 'IBOV' ? 1 : corr(ci), cs: a.t === 'SPY' ? 1 : corr(cs), pior, melhor, pos: pos / n, tam: a.tam > 0 ? Math.log10(a.tam) : NaN, ini: prim, txt: `${a.t} ${a.n} ${a.gestor || ''} ${a.setor || ''}`.toLowerCase() });
+  }
+  let lc = 0, nc = 0; for (let mi = ini; mi <= FIM_DADOS; mi++) { const c = val(cdi, mi); if (!isNaN(c)) { lc += Math.log1p(c); nc++; } }
+  EX.cdiRet = nc ? Math.exp(lc / nc * 12) - 1 : null;
+  EX.stats = out; EX.chave = chave; EX.view = null; EX.faixas = null;
+  return out;
+}
+function exFiltrar() {
+  const E = S.ex, st = exCalcular(), b = (S.ex.busca || '').trim().toLowerCase();
+  const partes = b ? b.split(/\s+/) : [];
+  EX.vis = st.filter((p) => p.n >= E.min && (!E.classes.length || E.classes.some((k) => noGrupo(p.a, k))) && !EX.ocultas.has(p.g));
+  for (const p of EX.vis) p.achou = partes.length > 0 && partes.every((w) => p.txt.includes(w));
+  EX.nAchou = partes.length ? EX.vis.filter((p) => p.achou).length : 0;
+  EX.faixas = null;
+}
+function exFaixa(k, q0 = 0.01, q1 = 0.99) { // faixa robusta do eixo (os extremos ficam na borda, contados)
+  const v = EX.vis.map((p) => p[k]).filter(isFinite).sort((a, b) => a - b);
+  if (!v.length) return [0, 1];
+  let lo = quantil(v, q0), hi = quantil(v, q1); if (hi - lo < 1e-9) { lo -= 0.5; hi += 0.5; }
+  const pad = (hi - lo) * 0.06; return [lo - pad, hi + pad];
+}
+function exCorDe(p, cores, escala) {
+  if (S.ex.cor === 'classe') return cores[p.g] || cores.indice;
+  const v = p[S.ex.cor]; if (!isFinite(v)) return 'rgba(140,140,140,.5)';
+  const f = Math.max(0, Math.min(1, (v - escala[0]) / (escala[1] - escala[0] || 1)));
+  const h = 215 - f * 175; return `hsl(${h} 70% ${48 + f * 6}%)`; // azul (baixo) → âmbar (alto)
+}
+function exPaleta() { const o = {}; for (const [k] of CLASSES) o[k] = exCor(`--c-${k}`); return o; }
+function abrirExplorador() {
+  if (!S.ex) S.ex = { ...EX_PADRAO };
+  S.ex = { ...EX_PADRAO, ...S.ex };
+  const E = S.ex;
+  if (!EX.pronto) {
+    EX.pronto = true;
+    const opts = Object.entries(EX_MET).map(([k, [n]]) => `<option value="${k}">${n}</option>`).join('');
+    for (const id of ['ex-x', 'ex-y', 'ex-z']) $(id).innerHTML = opts;
+    $('ex-cor').innerHTML = '<option value="classe">Classe do ativo</option>' + opts;
+    for (const [id, k] of [['ex-x', 'x'], ['ex-y', 'y'], ['ex-z', 'z'], ['ex-cor', 'cor']]) {
+      $(id).value = E[k]; $(id).addEventListener('change', () => { E[k] = $(id).value; salvar(); EX.view = null; EX.faixas = null; exAtualizar(); });
+    }
+    $('ex-classes').innerHTML = GRUPOS.filter(([k]) => k && k !== 'rf').map(([k, n]) => `<button type="button" class="chip" data-k="${k}">${n}</button>`).join('');
+    $('ex-classes').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; const k = b.dataset.k;
+      E.classes = E.classes.includes(k) ? E.classes.filter((x) => x !== k) : [...E.classes, k]; salvar(); EX.view = null; exFiltrar(); exAtualizar(); });
+    $('ex-busca').addEventListener('input', () => { E.busca = $('ex-busca').value; exFiltrar(); exAtualizar(); });
+    $('ex-busca').addEventListener('keydown', (e) => { if (e.key === 'Enter') { const p = EX.vis.find((x) => x.achou); if (p) exSelecionar(p.t); } });
+    $('ex-min').value = E.min; $('ex-min').addEventListener('input', () => { E.min = Math.max(2, Math.round(lerDec($('ex-min').value)) || 2); salvar(); exFiltrar(); exAtualizar(); });
+    ligarLivre('nj-ex-janela', { obter: () => E.janela, definir: (v) => { E.janela = v; salvar(); }, max: 99, cheio: ANOS_BASE, aoMudar: () => { exFiltrar(); exAtualizar(); } });
+    ligarSegEx();
+    $('ex-reset').addEventListener('click', () => { EX.view = null; EX.rot = { yaw: -0.65, pitch: 0.38, zoom: 1 }; exPedir(); });
+    $('ex-girar').addEventListener('click', () => { EX.girar = !EX.girar; $('ex-girar').classList.toggle('primary', EX.girar); if (EX.girar) exGirar(); });
+    $('ex-leg').addEventListener('click', (e) => { const b = e.target.closest('[data-g]'); if (!b) return; const g = b.dataset.g;
+      EX.ocultas.has(g) ? EX.ocultas.delete(g) : EX.ocultas.add(g); exFiltrar(); exAtualizar(); });
+    $('ex-rank').addEventListener('click', (e) => {
+      const th = e.target.closest('th[data-k]'); if (th) { const k = th.dataset.k; E.desc = E.ordem === k ? !E.desc : k !== 'vol' && k !== 'anos' ? true : k === 'anos'; E.ordem = k; salvar(); exRanking(); return; }
+      const ad = e.target.closest('[data-add]'); if (ad) { exAdicionar(ad.dataset.add, ad); return; }
+      const tr = e.target.closest('tr[data-t]'); if (tr) exSelecionar(tr.dataset.t, true);
+    });
+    exInteracao();
+    new ResizeObserver(() => { if (vista === 'explorar') exPedir(); }).observe($('ex-box'));
+  }
+  $('ex-busca').value = E.busca || '';
+  [...$('ex-classes').children].forEach((b) => { const on = E.classes.includes(b.dataset.k); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+  exFiltrar(); exAtualizar();
+}
+function ligarSegEx() {
+  $('seg-ex-modo').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; S.ex.modo = b.dataset.v; salvar(); exAtualizar(); if (S.ex.modo === '3d' && EX.girar) exGirar(); });
+}
+function exAtualizar() {
+  const E = S.ex;
+  [...$('seg-ex-modo').children].forEach((b) => { const on = b.dataset.v === E.modo; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+  [...$('ex-classes').children].forEach((b) => { const on = E.classes.includes(b.dataset.k); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+  $('f-ex-z').classList.toggle('dim', E.modo !== '3d'); $('ex-girar').hidden = E.modo !== '3d';
+  $('ex-box').hidden = E.modo === 'rank'; $('ex-leg').hidden = E.modo === 'rank';
+  $('ex-titulo').textContent = E.modo === '3d' ? 'Nuvem 3D' : E.modo === 'rank' ? 'Ranking' : 'Mapa';
+  const st = EX.stats || [];
+  $('ex-meta').textContent = `${st.length.toLocaleString('pt-BR')} ativos com dados`;
+  $('ex-conta').textContent = `${EX.vis.length.toLocaleString('pt-BR')} no ${E.modo === '3d' ? 'espaço' : 'mapa'}${EX.nAchou ? ` · ${EX.nAchou} achados` : ''}`;
+  const cores = exPaleta(), cont = {};
+  for (const p of st) if (p.n >= E.min && (!E.classes.length || E.classes.some((k) => noGrupo(p.a, k)))) cont[p.g] = (cont[p.g] || 0) + 1;
+  $('ex-leg').innerHTML = E.cor === 'classe' ? CLASSES.filter(([k]) => cont[k]).map(([k, n]) => `<button type="button" class="lg${EX.ocultas.has(k) ? ' off' : ''}" data-g="${k}"><i style="background:${cores[k]}"></i>${n} (${cont[k].toLocaleString('pt-BR')})</button>`).join('') + '<span>toque numa classe para esconder/mostrar</span>'
+    : `<span><i style="background:hsl(215 70% 48%)"></i>${EX_MET[E.cor][0]} baixo</span><span><i style="background:hsl(40 70% 54%)"></i>alto</span>`;
+  exRanking(); exPedir();
+}
+function exPedir() { if (EX.quadro) return; EX.quadro = requestAnimationFrame(() => { EX.quadro = 0; exDesenhar(); }); }
+function exGirar() {
+  if (!EX.girar || vista !== 'explorar' || S.ex.modo !== '3d') return;
+  if (!EX.arrastando) { EX.rot.yaw += 0.006; exDesenhar(); }
+  requestAnimationFrame(exGirar);
+}
+function exDesenhar() {
+  if (vista !== 'explorar' || S.ex.modo === 'rank') return;
+  const cv = $('ex-canvas'), W = cv.clientWidth, H = cv.clientHeight, dpr = window.devicePixelRatio || 1;
+  if (!W || !H) return;
+  if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+  const C = { ink: exCor('--ink'), muted: exCor('--muted'), rule: exCor('--rule'), rule2: exCor('--rule-2'), accent: exCor('--accent'), amber: exCor('--amber'), panel: exCor('--panel') };
+  const cores = exPaleta(), E = S.ex;
+  const escala = E.cor !== 'classe' ? (() => { const v = EX.vis.map((p) => p[E.cor]).filter(isFinite).sort((a, b) => a - b); return v.length ? [quantil(v, 0.05), quantil(v, 0.95)] : [0, 1]; })() : null;
+  ctx.font = '11px "IBM Plex Mono", monospace';
+  if (!EX.vis.length) { ctx.fillStyle = C.muted; ctx.fillText('Nenhum ativo com esses filtros.', 20, 30); return; }
+  if (E.modo === '3d') return exDesenhar3d(ctx, W, H, C, cores, escala);
+  const ml = 58, mr = 14, mt = 14, mb = 40, iw = W - ml - mr, ih = H - mt - mb;
+  if (!EX.view) { const fx = exFaixa(E.x), fy = exFaixa(E.y); EX.view = { x0: fx[0], x1: fx[1], y0: fy[0], y1: fy[1] }; }
+  const V = EX.view, sx = (v) => ml + (v - V.x0) / (V.x1 - V.x0) * iw, sy = (v) => mt + ih - (v - V.y0) / (V.y1 - V.y0) * ih;
+  EX.mapa = { ml, mt, iw, ih, sx, sy, V };
+  const fmt = (k, v) => EX_MET[k][1](v);
+  ctx.strokeStyle = C.rule; ctx.fillStyle = C.muted; ctx.lineWidth = 1;
+  const px = passoBonito(V.x1 - V.x0, 6), py = passoBonito(V.y1 - V.y0, 5);
+  ctx.textAlign = 'center';
+  for (let v = Math.ceil(V.x0 / px) * px; v <= V.x1; v += px) { const x = sx(v); ctx.beginPath(); ctx.moveTo(x, mt); ctx.lineTo(x, mt + ih); ctx.stroke(); ctx.fillText(fmt(E.x, v), x, mt + ih + 14); }
+  ctx.textAlign = 'right';
+  for (let v = Math.ceil(V.y0 / py) * py; v <= V.y1; v += py) { const y = sy(v); ctx.beginPath(); ctx.moveTo(ml, y); ctx.lineTo(ml + iw, y); ctx.stroke(); ctx.fillText(fmt(E.y, v), ml - 6, y + 4); }
+  ctx.strokeStyle = C.rule2; ctx.strokeRect(ml, mt, iw, ih);
+  ctx.fillStyle = C.ink; ctx.textAlign = 'center'; ctx.font = '600 11px "IBM Plex Sans", sans-serif';
+  ctx.fillText(`${EX_MET[E.x][0]} →`, ml + iw / 2, H - 6);
+  ctx.save(); ctx.translate(12, mt + ih / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(`${EX_MET[E.y][0]} →`, 0, 0); ctx.restore();
+  ctx.font = '11px "IBM Plex Mono", monospace';
+  // linha do CDI no eixo de retorno
+  if (E.y === 'ret' || E.x === 'ret') {
+    const c = EX.cdiRet;
+    if (c !== null && c > (E.y === 'ret' ? V.y0 : V.x0) && c < (E.y === 'ret' ? V.y1 : V.x1)) { ctx.setLineDash([4, 4]); ctx.strokeStyle = C.muted; ctx.beginPath(); if (E.y === 'ret') { ctx.moveTo(ml, sy(c)); ctx.lineTo(ml + iw, sy(c)); } else { ctx.moveTo(sx(c), mt); ctx.lineTo(sx(c), mt + ih); } ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = C.muted; ctx.textAlign = 'left'; if (E.y === 'ret') ctx.fillText('CDI', ml + 4, sy(c) - 4); else ctx.fillText('CDI', sx(c) + 4, mt + 12); }
+  }
+  ctx.save(); ctx.beginPath(); ctx.rect(ml, mt, iw, ih); ctx.clip();
+  const r = EX.vis.length > 3000 ? 2.1 : EX.vis.length > 600 ? 2.7 : 3.6, busca = EX.nAchou > 0;
+  EX.proj = []; let fora = 0;
+  const desenhaPonto = (p, x, y, rr, alfa) => { ctx.globalAlpha = alfa; ctx.fillStyle = exCorDe(p, cores, escala); ctx.beginPath(); ctx.arc(x, y, rr, 0, 7); ctx.fill(); };
+  const destaque = [];
+  for (const p of EX.vis) {
+    const vx = p[E.x], vy = p[E.y]; if (!isFinite(vx) || !isFinite(vy)) continue;
+    let x = sx(vx), y = sy(vy), borda = false;
+    if (x < ml || x > ml + iw || y < mt || y > mt + ih) { fora++; borda = true; x = Math.max(ml + 2, Math.min(ml + iw - 2, x)); y = Math.max(mt + 2, Math.min(mt + ih - 2, y)); }
+    EX.proj.push({ p, x, y });
+    if (p.achou || EX.fixos.includes(p.t) || p.t === EX.sel) { destaque.push({ p, x, y }); continue; }
+    desenhaPonto(p, x, y, borda ? r * 0.8 : r, busca ? 0.18 : borda ? 0.45 : 0.78);
+  }
+  ctx.globalAlpha = 1;
+  for (const d of destaque) { desenhaPonto(d.p, d.x, d.y, r + 2.4, 1); ctx.strokeStyle = C.panel; ctx.lineWidth = 1.5; ctx.stroke(); }
+  ctx.globalAlpha = 1; ctx.fillStyle = C.ink; ctx.textAlign = 'left'; ctx.font = '600 10.5px "IBM Plex Mono", monospace';
+  const rotular = destaque.length <= 60 ? destaque : destaque.slice(0, 60);
+  if (EX.proj.length <= 45) rotular.push(...EX.proj.filter((d) => !destaque.includes(d)));
+  for (const d of rotular) ctx.fillText(rotuloAtivo(d.p.t).slice(0, 10), d.x + 6, d.y - 5);
+  ctx.restore();
+  EX.fora = fora;
+  if (fora) { ctx.fillStyle = C.muted; ctx.textAlign = 'right'; ctx.font = '10.5px "IBM Plex Sans", sans-serif'; ctx.fillText(`${fora} na borda (fora da escala; arraste ou "Ver tudo")`, ml + iw - 4, mt + ih - 6); }
+  // retícula que segue o cursor, com os valores nos eixos
+  const m = EX.mouse;
+  if (m && m.x >= ml && m.x <= ml + iw && m.y >= mt && m.y <= mt + ih) {
+    ctx.strokeStyle = C.accent; ctx.globalAlpha = 0.55; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(m.x, mt); ctx.lineTo(m.x, mt + ih); ctx.moveTo(ml, m.y); ctx.lineTo(ml + iw, m.y); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+    const vx = V.x0 + (m.x - ml) / iw * (V.x1 - V.x0), vy = V.y0 + (mt + ih - m.y) / ih * (V.y1 - V.y0);
+    exEtiqueta(ctx, fmt(E.x, vx), m.x, mt + ih + 2, 'baixo', C); exEtiqueta(ctx, fmt(E.y, vy), ml - 2, m.y, 'esq', C);
+  }
+  exMarcaHover(ctx, C, r);
+}
+function exEtiqueta(ctx, txt, x, y, lado, C) {
+  ctx.font = '600 10.5px "IBM Plex Mono", monospace'; const w = ctx.measureText(txt).width + 8, h = 16;
+  const bx = lado === 'baixo' ? x - w / 2 : x - w, by = lado === 'baixo' ? y : y - h / 2;
+  ctx.fillStyle = C.accent; ctx.fillRect(bx, by, w, h); ctx.fillStyle = C.panel; ctx.textAlign = 'center'; ctx.fillText(txt, bx + w / 2, by + 11.5);
+}
+function exMarcaHover(ctx, C, r) {
+  const h = EX.hover; if (!h) return;
+  ctx.strokeStyle = C.ink; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(h.x, h.y, r + 5, 0, 7); ctx.stroke();
+}
+function exProjetar3d(W, H) {
+  const E = S.ex, { yaw, pitch, zoom } = EX.rot, cy = Math.cos(yaw), sy_ = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+  const f = Math.min(W, H) * 0.235 * zoom, d = 3.6, cx = W / 2, cyy = H / 2 + 18;
+  return (X, Y, Z) => { const x1 = X * cy - Z * sy_, z1 = X * sy_ + Z * cy, y2 = Y * cp - z1 * sp, z2 = Y * sp + z1 * cp, s = f * d / (d + z2); return { x: cx + x1 * s, y: cyy - y2 * s, z: z2, s }; };
+}
+function exDesenhar3d(ctx, W, H, C, cores, escala) {
+  const E = S.ex;
+  if (!EX.faixas) EX.faixas = { x: exFaixa(E.x, 0.02, 0.98), y: exFaixa(E.y, 0.02, 0.98), z: exFaixa(E.z, 0.02, 0.98) };
+  const F = EX.faixas, nrm = (k, v) => Math.max(-1.08, Math.min(1.08, ((v - F[k][0]) / (F[k][1] - F[k][0])) * 2 - 1));
+  const P = exProjetar3d(W, H);
+  // caixa, chão quadriculado e eixos
+  const cantos = []; for (const X of [-1, 1]) for (const Y of [-1, 1]) for (const Z of [-1, 1]) cantos.push([X, Y, Z]);
+  ctx.lineWidth = 1; ctx.strokeStyle = C.rule;
+  for (let i = -1; i <= 1.001; i += 0.5) { const a = P(i, -1, -1), b = P(i, -1, 1), c = P(-1, -1, i), e = P(1, -1, i); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.moveTo(c.x, c.y); ctx.lineTo(e.x, e.y); ctx.stroke(); }
+  ctx.strokeStyle = C.rule2;
+  for (let i = 0; i < 8; i++) for (let j = i + 1; j < 8; j++) { const a = cantos[i], b = cantos[j]; if (Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]) !== 2) continue; const pa = P(...a), pb = P(...b); ctx.beginPath(); ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y); ctx.stroke(); }
+  const fmt = (k, v) => EX_MET[k][1](v);
+  ctx.font = '10px "IBM Plex Mono", monospace'; ctx.fillStyle = C.muted; ctx.textAlign = 'center';
+  for (const t of [-1, 0, 1]) {
+    const vx = F.x[0] + (t + 1) / 2 * (F.x[1] - F.x[0]), vy = F.y[0] + (t + 1) / 2 * (F.y[1] - F.y[0]), vz = F.z[0] + (t + 1) / 2 * (F.z[1] - F.z[0]);
+    const a = P(t, -1, 1.12); ctx.fillText(fmt(E.x, vx), a.x, a.y + 4);
+    const b = P(-1.14, t, -1); ctx.fillText(fmt(E.y, vy), b.x, b.y + 3);
+    const c = P(1.14, -1, t); ctx.fillText(fmt(E.z, vz), c.x, c.y + 4);
+  }
+  ctx.font = '600 11px "IBM Plex Sans", sans-serif'; ctx.fillStyle = C.ink;
+  const lx = P(0, -1, 1.38), ly = P(-1.2, 1.2, -1), lz = P(1.42, -1, 0);
+  ctx.fillText(EX_MET[E.x][0], lx.x, lx.y + 6); ctx.fillText(EX_MET[E.y][0], ly.x, ly.y); ctx.fillText(EX_MET[E.z][0], lz.x, lz.y + 6);
+  // pontos: do mais longe para o mais perto, com neblina
+  const pts = [];
+  for (const p of EX.vis) { const vx = p[E.x], vy = p[E.y], vz = p[E.z]; if (!isFinite(vx) || !isFinite(vy) || !isFinite(vz)) continue;
+    const q = P(nrm('x', vx), nrm('y', vy), nrm('z', vz)); pts.push({ p, x: q.x, y: q.y, z: q.z, s: q.s, X: nrm('x', vx), Z: nrm('z', vz) }); }
+  pts.sort((a, b) => b.z - a.z);
+  const r0 = EX.vis.length > 3000 ? 1.9 : EX.vis.length > 600 ? 2.5 : 3.4, busca = EX.nAchou > 0;
+  for (const d of pts) {
+    const dest = d.p.achou || EX.fixos.includes(d.p.t) || d.p.t === EX.sel;
+    const nevoa = Math.max(0.18, Math.min(1, 0.75 - d.z * 0.35));
+    ctx.globalAlpha = dest ? 1 : busca ? nevoa * 0.25 : nevoa;
+    ctx.fillStyle = exCorDe(d.p, cores, escala);
+    ctx.beginPath(); ctx.arc(d.x, d.y, (dest ? r0 + 2.4 : r0) * d.s / (Math.min(W, H) * 0.235 * EX.rot.zoom), 0, 7); ctx.fill();
+    if (dest) { ctx.strokeStyle = C.panel; ctx.lineWidth = 1.5; ctx.stroke(); ctx.fillStyle = C.ink; ctx.font = '600 10.5px "IBM Plex Mono", monospace'; ctx.textAlign = 'left'; ctx.fillText(rotuloAtivo(d.p.t).slice(0, 10), d.x + 6, d.y - 5); }
+  }
+  ctx.globalAlpha = 1;
+  EX.proj = pts;
+  // ponto sob o cursor: linha até o chão (mostra a posição na profundidade)
+  const h = EX.hover;
+  if (h && h.X !== undefined) { const ch = P(h.X, -1, h.Z); ctx.strokeStyle = C.accent; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(h.x, h.y); ctx.lineTo(ch.x, ch.y); ctx.stroke(); ctx.setLineDash([]); ctx.beginPath(); ctx.arc(ch.x, ch.y, 3, 0, 7); ctx.fillStyle = C.accent; ctx.fill(); }
+  exMarcaHover(ctx, C, r0);
+  ctx.fillStyle = C.muted; ctx.font = '10.5px "IBM Plex Sans", sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText('Arraste para girar · role ou pince para aproximar', 10, H - 8);
+}
+function exMaisPerto(x, y, raio = 14) {
+  let melhor = null, dm = raio * raio;
+  for (let i = EX.proj.length - 1; i >= 0; i--) { const d = EX.proj[i], dd = (d.x - x) ** 2 + (d.y - y) ** 2; if (dd < dm) { dm = dd; melhor = d; } }
+  return melhor;
+}
+function exDica(d, x, y) {
+  const tip = $('ex-tip');
+  if (!d) { tip.hidden = true; return; }
+  const p = d.p, a = p.a, E = S.ex, ks = [...new Set([E.x, E.y, ...(E.modo === '3d' ? [E.z] : []), 'ret', 'vol', 'sharpe', 'dd'])];
+  tip.innerHTML = `<b>${esc(rotuloAtivo(p.t))}</b> · ${esc(TIPOS[a.tipo][0])}<span class="nm">${esc((a.tipo.startsWith('fundo') ? `${a.n} — ${a.gestor}` : a.n).slice(0, 70))}</span>` +
+    `<div class="g">${ks.map((k) => `<span>${EX_MET[k][0].replace(/ \(.*\)/, '')}</span><span>${EX_MET[k][1](p[k])}</span>`).join('')}<span>Dados desde</span><span>${rotulo(p.ini)} (${p.n} m)</span></div>`;
+  tip.hidden = false;
+  const box = $('ex-box').getBoundingClientRect(), tw = tip.offsetWidth, th = tip.offsetHeight;
+  let lx = x + 14, ly = y + 14; if (lx + tw > box.width - 4) lx = x - tw - 14; if (ly + th > box.height - 4) ly = y - th - 14;
+  tip.style.left = `${Math.max(4, lx)}px`; tip.style.top = `${Math.max(4, ly)}px`;
+}
+function exInteracao() {
+  const cv = $('ex-canvas'), ptrs = new Map();
+  let ini = null, pinca = null, ultimoToque = 0;
+  const pos = (e) => { const r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  cv.addEventListener('pointerdown', (e) => { e.preventDefault(); cv.setPointerCapture(e.pointerId); const q = pos(e); ptrs.set(e.pointerId, q); ini = { ...q, view: EX.view && { ...EX.view }, rot: { ...EX.rot }, mov: 0, tipo: e.pointerType };
+    if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinca = { d: Math.hypot(a.x - b.x, a.y - b.y), view: EX.view && { ...EX.view }, zoom: EX.rot.zoom, cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 }; } });
+  cv.addEventListener('pointermove', (e) => {
+    const q = pos(e);
+    if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, q);
+    if (pinca && ptrs.size === 2) { const [a, b] = [...ptrs.values()], f = Math.hypot(a.x - b.x, a.y - b.y) / (pinca.d || 1); exZoom(1 / f, pinca.cx, pinca.cy, pinca); return; }
+    if (ini && ptrs.size === 1) {
+      const dx = q.x - ini.x, dy = q.y - ini.y; ini.mov = Math.max(ini.mov, Math.abs(dx) + Math.abs(dy));
+      if (ini.mov > 4) {
+        EX.arrastando = true; $('ex-tip').hidden = true; EX.hover = null;
+        if (S.ex.modo === '3d') { EX.rot.yaw = ini.rot.yaw + dx * 0.009; EX.rot.pitch = Math.max(-1.45, Math.min(1.45, ini.rot.pitch + dy * 0.009)); }
+        else if (ini.view && EX.mapa) { const M = EX.mapa, ux = (ini.view.x1 - ini.view.x0) / M.iw, uy = (ini.view.y1 - ini.view.y0) / M.ih;
+          EX.view = { x0: ini.view.x0 - dx * ux, x1: ini.view.x1 - dx * ux, y0: ini.view.y0 + dy * uy, y1: ini.view.y1 + dy * uy }; }
+        exPedir(); return;
+      }
+    }
+    if (e.pointerType === 'mouse' || ini) { EX.mouse = q; const d = exMaisPerto(q.x, q.y); EX.hover = d; exDica(d, q.x, q.y); exPedir(); }
+  });
+  const fim = (e) => {
+    const q = pos(e); ptrs.delete(e.pointerId);
+    if (ptrs.size < 2) pinca = null;
+    if (ini && ini.mov <= 4 && ptrs.size === 0) { // toque/clique: abre o ativo
+      const d = exMaisPerto(q.x, q.y, e.pointerType === 'mouse' ? 14 : 22);
+      const agora = Date.now();
+      if (!d && agora - ultimoToque < 350) { EX.view = null; EX.rot = { yaw: -0.65, pitch: 0.38, zoom: 1 }; }
+      ultimoToque = agora;
+      if (d) { EX.hover = d; exDica(d, q.x, q.y); exSelecionar(d.p.t); }
+    }
+    if (ptrs.size === 0) { ini = null; EX.arrastando = false; }
+    exPedir();
+  };
+  cv.addEventListener('pointerup', fim); cv.addEventListener('pointercancel', fim);
+  cv.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') { EX.mouse = null; EX.hover = null; $('ex-tip').hidden = true; exPedir(); } });
+  cv.addEventListener('wheel', (e) => { e.preventDefault(); const q = pos(e); exZoom(e.deltaY > 0 ? 1.15 : 1 / 1.15, q.x, q.y); }, { passive: false });
+  cv.addEventListener('dblclick', () => { EX.view = null; EX.rot = { yaw: -0.65, pitch: 0.38, zoom: 1 }; exPedir(); });
+}
+function exZoom(f, x, y, base) {
+  if (S.ex.modo === '3d') { EX.rot.zoom = Math.max(0.4, Math.min(8, (base ? base.zoom : EX.rot.zoom) / f)); exPedir(); return; }
+  const V = base && base.view ? base.view : EX.view, M = EX.mapa; if (!V || !M) return;
+  const vx = V.x0 + (x - M.ml) / M.iw * (V.x1 - V.x0), vy = V.y0 + (M.mt + M.ih - y) / M.ih * (V.y1 - V.y0);
+  EX.view = { x0: vx - (vx - V.x0) * f, x1: vx + (V.x1 - vx) * f, y0: vy - (vy - V.y0) * f, y1: vy + (V.y1 - vy) * f };
+  exPedir();
+}
+function exRanking() {
+  const E = S.ex, k = E.ordem, lista = EX.vis.filter((p) => isFinite(p[k])).sort((a, b) => (E.desc ? b[k] - a[k] : a[k] - b[k]));
+  const achados = EX.nAchou ? lista.filter((p) => p.achou) : lista, top = achados.slice(0, 150);
+  $('ex-rank-t').textContent = `Ranking por ${EX_MET[k][0].toLowerCase()} (${top.length} de ${achados.length.toLocaleString('pt-BR')}; histórico ≥ ${E.min} meses)`;
+  const cols = [['ret', 'Retorno'], ['vol', 'Volat.'], ['sharpe', 'Sharpe'], ['dd', 'Queda máx.'], ['anos', 'Anos']];
+  $('ex-rank').innerHTML = `<thead><tr><th>#</th><th>Ativo</th><th class="hide-s">Classe</th>${cols.map(([c, n]) => `<th data-k="${c}" class="${c === k ? 'on' : ''}">${n}${c === k ? (E.desc ? ' ↓' : ' ↑') : ''}</th>`).join('')}<th></th></tr></thead><tbody>` +
+    top.map((p, i) => `<tr data-t="${esc(p.t)}"><td>${i + 1}</td><td class="t"><span class="tk">${esc(rotuloAtivo(p.t))}</span><span class="nm">${esc((p.a.tipo.startsWith('fundo') ? p.a.gestor : p.a.n).slice(0, 34))}</span></td>` +
+      `<td class="hide-s"><span class="cls"><i class="sw" style="background:${corClasse[p.g]}"></i>${TIPOS[p.a.tipo][0]}</span></td><td class="${p.ret < 0 ? 'neg' : ''}">${pct(p.ret)}</td><td>${pct(p.vol, 0)}</td><td>${num(p.sharpe)}</td><td>${pct(p.dd, 0)}</td><td>${num(p.anos, 1)}</td>` +
+      `<td><button type="button" class="btn" data-add="${esc(p.t)}" title="Adicionar à carteira ${esc(cartAtiva().nome)}">+</button></td></tr>`).join('') + '</tbody>';
+}
+function exAdicionar(t, botao) {
+  const it = cartAtiva().itens;
+  if (!it.some((i) => i.t === t)) it.push({ t, p: it.length ? 10 : 100 });
+  mudouCarteiras(); desenharCarteira();
+  if (botao) { const o = botao.textContent; botao.textContent = '✓'; setTimeout(() => { botao.textContent = o; }, 1200); }
+}
+function exSelecionar(t, rolar) {
+  EX.sel = t; exPedir(); exDetalhe(t);
+  if (rolar) $('ex-det-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function exDetalhe(t) {
+  const p = (EX.stats || []).find((x) => x.t === t); if (!p) return;
+  const a = p.a; $('ex-det-panel').hidden = false;
+  $('ex-det-t').textContent = `${rotuloAtivo(t)} · ${a.tipo.startsWith('fundo') ? a.n : a.n}`.slice(0, 80);
+  $('ex-det-m').textContent = `${TIPOS[a.tipo][0]}${a.setor ? ` · ${a.setor}` : ''} · dados desde ${rotulo(p.ini)}`;
+  const kpi = (k) => `<div class="kpi"><span class="k">${EX_MET[k][0].replace(/ \(.*\)/, '')}</span><span class="v ${(k === 'ret' || k === 'pior' || k === 'dd') && p[k] < 0 ? 'neg' : ''}">${EX_MET[k][1](p[k])}</span></div>`;
+  $('ex-det-kpis').innerHTML = ['ret', 'vol', 'sharpe', 'dd', 'pior', 'pos', 'ci', 'anos'].map(kpi).join('');
+  const fixado = EX.fixos.includes(t);
+  $('ex-det-btns').innerHTML = `<button type="button" class="btn primary" data-a="add">Adicionar à carteira ${esc(LETRAS[S.ativa])} (${esc(cartAtiva().nome.slice(0, 16))})</button>` +
+    `<button type="button" class="btn" data-a="fixar">${fixado ? 'Tirar da comparação' : 'Comparar no gráfico'}</button>` + (EX.fixos.length ? '<button type="button" class="btn" data-a="limpar">Limpar comparação</button>' : '');
+  $('ex-det-btns').onclick = (e) => { const b = e.target.closest('[data-a]'); if (!b) return;
+    if (b.dataset.a === 'add') exAdicionar(t, b);
+    if (b.dataset.a === 'fixar') { EX.fixos = fixado ? EX.fixos.filter((x) => x !== t) : [...EX.fixos, t].slice(-6); exDetalhe(t); exPedir(); }
+    if (b.dataset.a === 'limpar') { EX.fixos = []; exDetalhe(t); exPedir(); } };
+  exGraficoAtivos([...new Set([t, ...EX.fixos])]);
+}
+// crescimento de R$ 10 mil (em reais) de um ou mais ativos, com cursor que segue o mouse/dedo
+function exGraficoAtivos(lista) {
+  const E = S.ex, ini = E.janela >= 99 ? BASE : Math.max(BASE, FIM_DADOS - E.janela * 12 + 1), fx = serie('USDBRL');
+  const cores = ['var(--accent)', 'var(--pB)', 'var(--pC)', 'var(--bm1)', 'var(--bm3)', 'var(--bm4)', 'var(--bm2)'];
+  const linhas = lista.map((t, i) => {
+    const a = info(t), s = serie(t), m0 = Math.max(ini, s.i0), pts = []; let v = 10000, pico = 10000, comecou = false;
+    for (let mi = m0; mi <= Math.min(FIM_DADOS, s.i1); mi++) {
+      let x = val(s, mi); if (isNaN(x)) { if (comecou) pts.push({ mi, v, dd: v / pico - 1, sem: true }); continue; }
+      if (a.moeda === 'USD' && S.cambio) x = (1 + x) * (1 + val(fx, mi)) - 1;
+      if (!comecou) { comecou = true; pts.push({ mi: mi - 1, v: 10000, dd: 0 }); }
+      v *= 1 + x; pico = Math.max(pico, v); pts.push({ mi, v, dd: v / pico - 1 });
+    }
+    return { t, cor: cores[i % cores.length], pts };
+  }).filter((l) => l.pts.length > 1);
+  const box = $('ex-det-chart'); box.classList.add('hov');
+  if (!linhas.length) { box.innerHTML = '<p class="empty-note">Sem meses com cotação nesta janela.</p>'; return; }
+  const W = largura(box), H = 230, ml = 62, mr = 12, mt = 10, mb = 26, iw = W - ml - mr, ih = H - mt - mb;
+  const m0 = Math.min(...linhas.map((l) => l.pts[0].mi)), m1 = Math.max(...linhas.map((l) => l.pts[l.pts.length - 1].mi));
+  const vs = linhas.flatMap((l) => l.pts.map((q) => q.v)), lmin = Math.log(Math.min(...vs) * 0.95), lmax = Math.log(Math.max(...vs) * 1.05);
+  const x = (mi) => ml + (mi - m0) / Math.max(1, m1 - m0) * iw, y = (v) => mt + ih - (Math.log(v) - lmin) / (lmax - lmin || 1) * ih;
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Crescimento de R$ 10 mil">`;
+  for (const v of [2500, 5000, 10000, 20000, 40000, 80000, 160000, 320000, 640000, 1280000]) if (Math.log(v) > lmin && Math.log(v) < lmax) svg += `<line x1="${ml}" x2="${W - mr}" y1="${y(v)}" y2="${y(v)}" stroke="var(--rule)"/><text x="${ml - 6}" y="${y(v) + 4}" text-anchor="end">${brl(v)}</text>`;
+  const anos = Math.max(1, Math.round((m1 - m0) / 12 / 6));
+  for (let mi = Math.ceil(m0 / 12) * 12; mi <= m1; mi += 12 * anos) svg += `<text x="${x(mi)}" y="${H - 8}" text-anchor="middle">${Math.floor(mi / 12)}</text>`;
+  for (const l of linhas) svg += `<polyline points="${l.pts.map((q) => `${x(q.mi).toFixed(1)},${y(q.v).toFixed(1)}`).join(' ')}" fill="none" stroke="${l.cor}" stroke-width="${l === linhas[0] ? 2.2 : 1.6}"/>`;
+  svg += `<line class="hov-line" id="ex-cur" x1="0" x2="0" y1="${mt}" y2="${mt + ih}" stroke="var(--ink)" stroke-dasharray="3 3" opacity="0"/>` + linhas.map((l, i) => `<circle class="hov-line" id="ex-cur-${i}" r="4" fill="${l.cor}" stroke="var(--panel)" stroke-width="1.5" opacity="0"/>`).join('') + '</svg>';
+  box.innerHTML = svg;
+  $('ex-det-leg').innerHTML = linhas.map((l) => `<span><i class="ln" style="border-color:${l.cor}"></i>${esc(rotuloAtivo(l.t))}</span>`).join('') + '<span>R$ 10 mil investidos, em reais, escala log</span>';
+  const ler = (cx) => {
+    const mi = Math.round(m0 + (cx - ml) / iw * (m1 - m0)); if (mi < m0 || mi > m1) return;
+    const el = box.querySelector('#ex-cur'); el.setAttribute('x1', x(mi)); el.setAttribute('x2', x(mi)); el.setAttribute('opacity', 0.6);
+    const partes = linhas.map((l, i) => { const q = l.pts.find((z) => z.mi === mi), c = box.querySelector(`#ex-cur-${i}`);
+      if (!q) { c.setAttribute('opacity', 0); return ''; } c.setAttribute('cx', x(mi)); c.setAttribute('cy', y(q.v)); c.setAttribute('opacity', 1);
+      return `<b style="color:${l.cor}">${esc(rotuloAtivo(l.t))}</b> ${brl(q.v)} (${q.v >= 10000 ? '+' : ''}${pct(q.v / 10000 - 1, 0)}${q.dd < -0.005 ? `, ${pct(q.dd, 0)} do topo` : ''}${q.sem ? ', sem negociação' : ''})`; }).filter(Boolean);
+    $('ex-det-read').innerHTML = `<b>${rotulo(mi)}</b> · ${partes.join(' · ')}`;
+  };
+  const svgEl = box.querySelector('svg');
+  const mover = (e) => { const r = svgEl.getBoundingClientRect(); ler((e.clientX - r.left) * (W / r.width)); };
+  svgEl.addEventListener('pointermove', mover); svgEl.addEventListener('pointerdown', mover);
+  ler(ml + iw);
+}
+
 // ---------------------------------------------------------------- início
 let redim;
 window.addEventListener('resize', () => {
   clearTimeout(redim);
   redim = setTimeout(() => {
-    if (vista === 'simulacao' && ultimo) { desenharLeque(); desenharHistograma(); }
+    if (vista === 'simulacao' && ultimo) { desenharLeque(); desenharHistograma(); pedirMontanha(); }
     if (vista === 'historico') desenharHistorico();
     if (vista === 'analise') desenharAnalise();
     if (vista === 'otimizar') desenharOtimizacao();

@@ -50,7 +50,7 @@ class Config:
     cenarios: int = 100_000
     desde: int = 1995             # início máximo da janela histórica (dados desde 1995, Plano Real)
     janela_anos: int | None = None  # alternativa a `desde`: quantos anos de passado usar
-    curto: str = "redistribuir"   # ativos mais novos que a janela: redistribuir | cortar | estimar
+    curto: str = "redistribuir"   # ativos mais novos que a janela: redistribuir | cortar ("estimar" não existe mais: só dados reais)
     rebal: int = 1                # meses entre rebalanceamentos (0 = nunca)
     cambio: bool = True
     ajuste: float = 0.0           # p.p. (pontos percentuais) ao ano somados aos ativos de risco
@@ -173,7 +173,8 @@ class Janela:
     Rp: np.ndarray | None = None  # índice de referência da classe de cada ativo (meses × ativos)
     proxies: list = field(default_factory=list)  # (carteira, de, até, meses) cobertos por índice de classe
     trocou_modo: str | None = None
-    encerrados: list = field(default_factory=list)  # (ativo, último mês com dados): sai da carteira depois disso
+    encerrados: list = field(default_factory=list)
+    pulados: int = 0                 # meses fora da amostra (nenhum ativo de alguma carteira com cotação)  # (ativo, último mês com dados): sai da carteira depois disso
 
     @property
     def P(self) -> np.ndarray:    # retornos mensais das carteiras (rebalanceamento mensal, pesos redistribuídos)
@@ -215,7 +216,10 @@ def indice_classe(base, codigos: list, cambio: bool) -> pd.DataFrame:
 
 def preparar(base, carteiras: dict[str, dict[str, float]], desde: int = 1995, cambio: bool = True,
              estender: bool = False, semente: int = 7, modo: str | None = None) -> Janela:
-    modo = modo or ("estimar" if estender else "cortar")
+    # só dados reais: o antigo modo "estimar" (fatores) virou "redistribuir"; nada é estimado nem trocado por índice
+    modo = modo or "cortar"
+    if modo == "estimar" or estender:
+        modo = "redistribuir"
     nomes = list(carteiras)
     codigos = list(dict.fromkeys(c for cart in carteiras.values() for c, p in cart.items() if p > 0))
     R = base.retornos_brl(codigos, cambio)
@@ -242,12 +246,18 @@ def preparar(base, carteiras: dict[str, dict[str, float]], desde: int = 1995, ca
             ini_cart[n_] = ini_macro if any(c.startswith("RF:") for c in cods) else min(inicio[c] for c in cods)
         lim_cart = max(ini_cart, key=lambda k: ini_cart[k])
         ultimo = R.index[-1] if len(R.index) else pedido
-        # nunca menos de 3 anos: meses sem nenhum ativo da carteira usam o índice da classe
-        ini = max(pedido, ini_macro, min(ini_cart[lim_cart], ultimo - 35))
-        ini = max(min(ini, ultimo - 35), ini_macro)                 # janela de no mínimo 3 anos
+        ini = max(pedido, ini_macro, ini_cart[lim_cart])
         cods_lim = [c for c, p in carteiras[lim_cart].items() if p > 0 and not c.startswith("RF:")]
         lim = min(cods_lim, key=lambda c: inicio[c]) if cods_lim else None
         R = R.loc[ini:, codigos + list(macro.columns)].dropna(subset=list(macro.columns))
+        # meses em que alguma carteira não tem nenhum ativo com cotação ficam fora da amostra
+        tem = pd.Series(True, index=R.index)
+        for n_, cart in carteiras.items():
+            cods = [c for c, p in cart.items() if p > 0]
+            if not any(c.startswith("RF:") for c in cods):
+                tem &= R[cods].notna().any(axis=1)
+        pulados = int((~tem).sum())
+        R = R[tem]
     else:
         lim = max(inicio, key=lambda c: inicio[c])
         R = R.loc[pedido:, codigos + list(macro.columns)].dropna()
@@ -255,8 +265,8 @@ def preparar(base, carteiras: dict[str, dict[str, float]], desde: int = 1995, ca
             J = preparar(base, carteiras, desde, cambio, False, semente, "redistribuir")
             J.trocou_modo = modo
             return J
-    if len(R) < 2:
-        raise ValueError("A base de dados não tem meses suficientes. Atualize os dados.")
+    if len(R) < 1:
+        raise ValueError("Nenhum mês com cotação real para estes ativos na janela escolhida. Aumente a janela.")
     W = np.zeros((len(nomes), len(codigos)))
     for i, n in enumerate(nomes):
         tot = sum(p for p in carteiras[n].values() if p > 0)
@@ -267,17 +277,10 @@ def preparar(base, carteiras: dict[str, dict[str, float]], desde: int = 1995, ca
     fim_ativo = {c: R[c].last_valid_index() for c in codigos if not c.startswith("RF:")}
     encerrados = [(c, f) for c, f in fim_ativo.items() if f is not None and f < R.index[-1]] if modo == "redistribuir" else []
     Rp, proxies = None, []
-    if modo == "redistribuir":
-        Rp = indice_classe(base, codigos, cambio).reindex(R.index).to_numpy()
-        ok = (~np.isnan(R[codigos].to_numpy())).astype(float) @ W.T
-        for i, n in enumerate(nomes):
-            sem = np.flatnonzero(ok[:, i] == 0)
-            if len(sem):
-                proxies.append((n, R.index[sem[0]], R.index[sem[-1]], len(sem)))
     jovens.sort(key=lambda x: x[1], reverse=True)
     lim = lim if R.index[0] > pedido else None
     return Janela(codigos, R[codigos], W, nomes, R["CDI_m"].to_numpy(), R["IPCA_m"].to_numpy(), R.index, lim,
-                  estimados, jovens, modo, pedido, Rp, proxies, None, encerrados)
+                  estimados, jovens, modo, pedido, Rp, proxies, None, encerrados, pulados if modo == "redistribuir" else 0)
 
 
 # ---------------------------------------------------------------- resultado
