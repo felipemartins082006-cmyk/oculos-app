@@ -141,6 +141,14 @@ def _n(x, c=2, pct=False):
     return f"{x * 100:.{c}f}%".replace(".", ",") if pct else f"{x:,.{c}f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+def _int(x) -> str:
+    return f"{int(x):,}".replace(",", ".")
+
+
+def _pc(x) -> str:   # número de parâmetro (alvo, stop) com vírgula decimal
+    return f"{x:g}".replace(".", ",")
+
+
 def _tabela(df: pd.DataFrame) -> str:
     cab = "".join(f"<th>{html.escape(str(c))}</th>" for c in df.columns)
     lin = "".join("<tr>" + "".join(f"<td>{html.escape(str(v))}</td>" for v in row) + "</tr>" for row in df.itertuples(index=False))
@@ -159,8 +167,8 @@ def secao_ativo(r: dict, cfg, n: int) -> tuple[str, dict]:
     corte = int(D * cfg.fracoes[0]) if cfg.validacao == "temporal" else int(D * 0.5)
     partes = [f'<section id="ativo-{n}"><h2>{html.escape(r["base"]["simbolo"])}</h2>',
               f'<p class="sub">Fonte: {"Binance Data Vision (arquivos oficiais, com saldo de agressão)" if b["fonte"] == "binance" else "TradingView (sem agressão; volume financeiro = volume × preço típico)"} · '
-              f'{q["inicio"][:10]} a {q["fim"][:10]} ({q["meses_obtidos"]} meses) · {q["limpos"]:,} candles de 15 min · {q["lacunas"]} lacunas ({q["candles_faltando"]} candles faltando, não preenchidos) · '
-              f'{q["duplicados"]} duplicados e {q["inconsistentes"]} inconsistentes removidos.</p>'.replace(",", ".")]
+              f'{q["inicio"][:10]} a {q["fim"][:10]} ({_n(q["meses_obtidos"], 1)} meses) · {_int(q["limpos"])} candles de 15 min · {_int(q["lacunas"])} lacunas ({_int(q["candles_faltando"])} candles faltando, não preenchidos) · '
+              f'{_int(q["duplicados"])} duplicados e {_int(q["inconsistentes"])} inconsistentes removidos.</p>']
     if q["meses_obtidos"] < cfg.meses * 0.9:
         partes.append(f'<p class="aviso">A fonte só tem {q["meses_obtidos"]} meses de candles de 15 min para este ativo (pedido: {cfg.meses}). A análise seguiu com o que existe; para {cfg.meses} meses é preciso um feed com histórico intradiário maior.</p>')
     s = t["sim"]; c = t["cls"]; sm = t["sem_modelo"]
@@ -176,7 +184,7 @@ def secao_ativo(r: dict, cfg, n: int) -> tuple[str, dict]:
     if not (np.isfinite(v["sim"]["sharpe_liquido"]) and v["sim"]["sharpe_liquido"] > 0):
         partes.append(f'<p class="aviso">Nenhuma configuração testada teve Sharpe líquido positivo na validação: com custo de {_n(cfg.custo)}% por operação, o sinal ainda não paga os custos neste ativo. O modelo separa bem os cenários (AUC acima de 0,5 indica poder de ordenação), mas o ganho por operação é pequeno. Caminhos: alvos maiores ou horizontes mais longos (lista em --alvo/--horizonte), custo menor (corretagem/maker) ou outro ativo (--ativos auto).</p>')
     blocos = r.get("blocos")
-    desc = (f'Configuração escolhida na validação: alvo <b>{r["alvo"]}%</b>, stop <b>{r["stop"]}%</b>, horizonte <b>{r["horizonte"]} min</b>, lado <b>{cfg.lado}</b>, '
+    desc = (f'Configuração escolhida na validação: alvo <b>{_pc(r["alvo"])}%</b>, stop <b>{_pc(r["stop"])}%</b>, horizonte <b>{r["horizonte"]} min</b>, lado <b>{cfg.lado}</b>, '
             f'modelo <b>{r["tipo"]}</b> {html.escape(json.dumps(r["hiper"]))}, limiar de probabilidade <b>{_n(r["limiar"], 3)}</b>. ')
     if blocos:
         desc += "Blocos (sem embaralhar, com embargo do horizonte): " + "; ".join(f'{k} {a[:10]} a {b_[:10]} ({m:,} candles)'.replace(",", ".") for k, (a, b_, m) in blocos.items()) + "."
@@ -235,7 +243,7 @@ def gerar(res: dict, destino: Path, plotly: str = "inline", completo: bool = Tru
     nomes = ", ".join(m["ativo"] for m in metricas) or "—"
     resumo = ""
     if len(metricas) > 1:
-        resumo = '<section><h2>Comparação entre ativos (teste fora da amostra)</h2>' + _tabela(pd.DataFrame([[m["ativo"], m["modelo"], f'{m["alvo"]}% / {m["stop"]}% / {m["horizonte"]} min', _n(m["teste"]["sharpe_bruto"]), _n(m["teste"]["sharpe_liquido"]), _n(m["teste"]["precisao"], 1, True), _n(m["teste"]["recall"], 1, True), m["teste"]["n"]] for m in metricas],
+        resumo = '<section><h2>Comparação entre ativos (teste fora da amostra)</h2>' + _tabela(pd.DataFrame([[m["ativo"], m["modelo"], f'{_pc(m["alvo"])}% / {_pc(m["stop"])}% / {m["horizonte"]} min', _n(m["teste"]["sharpe_bruto"]), _n(m["teste"]["sharpe_liquido"]), _n(m["teste"]["precisao"], 1, True), _n(m["teste"]["recall"], 1, True), m["teste"]["n"]] for m in metricas],
                    columns=["Ativo", "Modelo", "Alvo/stop/horizonte", "Sharpe bruto", "Sharpe líquido", "Precisão", "Recall", "Operações"])) + "</section>"
     if res.get("ranking") is not None and len(res["ranking"]):
         resumo += '<section><h2>Escolha automática do ativo (só validação)</h2><p class="sub">Cada candidato foi avaliado com a configuração pedida; vence o maior Sharpe líquido na validação. O teste do vencedor está abaixo.</p>' + _tabela(res["ranking"].round(3)) + "</section>"
@@ -252,7 +260,7 @@ def gerar(res: dict, destino: Path, plotly: str = "inline", completo: bool = Tru
     fontes = '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600;700&display=swap">'
     corpo = (f'<title>Superfícies Intradiárias</title>\n<meta name="claude:viewport-fit-sides" content="cover">\n{fontes}\n<style>{CSS}</style>\n'
              f'<main><header><h3>Pipeline de superfícies 3D · fase 1 (MVP)</h3><h1>Predição intradiária: {html.escape(nomes)}</h1>'
-             f'<p class="sub">Candles de 15 min · alvo {", ".join(map(str, cfg.alvo))}% · stop {", ".join(map(str, cfg.stop))}% · horizonte {", ".join(map(str, cfg.horizonte))} min · lado {cfg.lado} · {cfg.meses} meses pedidos · {"temporal 70/15/15" if cfg.validacao == "temporal" else "walk-forward"} · modelos {", ".join(cfg.modelos)}.</p>'
+             f'<p class="sub">Candles de 15 min · alvo {"; ".join(map(_pc, cfg.alvo))}% · stop {"; ".join(map(_pc, cfg.stop))}% · horizonte {", ".join(map(str, cfg.horizonte))} min · lado {cfg.lado} · {cfg.meses} meses pedidos · {"temporal 70/15/15" if cfg.validacao == "temporal" else "walk-forward"} · modelos {", ".join(cfg.modelos)}.</p>'
              f'</header>{resumo}{"".join(secoes)}{metodo}</main>\n{plotly_tag}\n<script>{JS.replace("%PRESETS%", json.dumps(PRESETS))}</script>')
     if completo:   # arquivo para abrir direto no navegador
         corpo = '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"></head><body>' + corpo + "</body></html>"
