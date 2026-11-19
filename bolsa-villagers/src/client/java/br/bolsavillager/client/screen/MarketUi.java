@@ -9,7 +9,7 @@ import net.minecraft.network.chat.Component;
 
 import java.util.Locale;
 
-/** Peças de desenho compartilhadas entre o terminal e o painel do villager. */
+/** Peças de desenho compartilhadas entre a tela da bolsa e o painel do villager. */
 public final class MarketUi {
 	public static final int BG = 0xF0101820;
 	public static final int BG_SOFT = 0xFF18242E;
