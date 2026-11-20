@@ -28,7 +28,7 @@ No iPhone o app funciona como app web instalável (não precisa de App Store nem
 Diferenças em relação ao Android:
 - **Salvar backup** e **Exportar tudo** abrem a folha de compartilhar do iPhone: dá para escolher
   "Salvar em Arquivos", Google Drive, WhatsApp, e-mail etc.
-- O **backup automático semanal** vira um **lembrete semanal** (o iPhone não deixa um app web gravar
+- O **backup automático a cada 12 horas** vira um **lembrete semanal** (o iPhone não deixa um app web gravar
   sozinho numa pasta).
 - Use sempre pelo ícone da Tela de Início: no Safari comum, o iOS pode apagar dados de sites que você
   não abre há 7 dias. Mesmo assim, faça backup.
@@ -127,9 +127,10 @@ Diferenças em relação ao Android:
   zero. Cada painel tem suas próprias contas, lançamentos e gráficos (ex.: um para você, outro para a
   namorada). Dá para renomear e excluir.
 - **Backup**: "Salvar backup agora" gera um arquivo com tudo (lançamentos manuais e importados, contas
-  e todos os painéis). "Restaurar um backup" volta tudo num celular novo. Com o **backup automático
-  semanal** ligado, no APK você escolhe uma pasta uma vez e o app grava um backup novo nela a cada 7
-  dias (ao abrir o app). No navegador, ele lembra de salvar a cada 7 dias. Sem backup há mais de 7
+  e todos os painéis). "Restaurar um backup" volta tudo num celular novo. Com o **backup automático**
+  ligado, no APK você escolhe uma pasta uma vez e o próprio Android grava um backup novo nela a cada
+  12 horas, mesmo com o app fechado (WorkManager; a página deixa com o Android uma cópia atualizada
+  sempre que algo muda). Ficam os 30 automáticos mais recentes; os manuais nunca são apagados. No navegador, ele lembra de salvar a cada 7 dias. Sem backup há mais de 7
   dias, aparece um aviso no Início.
 - **Mais**: contas (nome, tipo, saldo inicial), backup, restaurar, CSV simples, apagar tudo.
 

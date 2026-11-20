@@ -187,6 +187,7 @@
     dataVer++;
     try { localStorage.setItem(spaceKey(spaces.active), JSON.stringify(db)); }
     catch (e) { toast('Não consegui salvar. Faça um backup em Mais.'); }
+    scheduleStash();
   }
   const bankById = id => db.banks.find(b => b.id === id);
   const instOf = b => INST[b?.inst] || INST.outro;
@@ -2316,6 +2317,8 @@
   });
 
   /* =================== backup =================== */
+  var stashT = 0;
+  function scheduleStash() { if (!window.Android?.stashBackup) return; clearTimeout(stashT); stashT = setTimeout(() => stashNow(), 4000); }
   const BK_KEY = STORE_KEY + ':backup';
   let bk = {};
   try { bk = JSON.parse(localStorage.getItem(BK_KEY)) || {}; } catch (e) { /* */ }
@@ -2326,12 +2329,20 @@
   const totalTxs = () => spaces.list.reduce((n, s) => n + (s.id === spaces.active ? db : load(s.id)).txs.length, 0);
   function backupPayload() {
     save();
+    return buildPayload();
+  }
+  function buildPayload() {
     return {
       app: 'financas-martins', version: 3, exportedAt: new Date().toISOString(), active: spaces.active,
       spaces: spaces.list.map(s => ({ id: s.id, name: s.name, color: s.color, data: s.id === spaces.active ? db : load(s.id), theme: readTheme(s.id), wall: wallCache[s.id] || null })),
     };
   }
-  const backupName = () => `financas-backup-${todayStr()}.json`;
+  const backupName = () => `financas-backup-${todayStr()}-${nowTime().replace(':', 'h')}.json`;
+  function nextAutoText() {
+    const h = AUTO_H - hoursSince(bk.lastAuto);
+    if (!isFinite(h) || h <= 0.5) return 'em instantes';
+    return h < 1.5 ? 'em cerca de 1 hora' : `em cerca de ${Math.round(h)} horas`;
+  }
   let markOnSave = false;
   function backupNow() {
     markOnSave = !!window.Android;
@@ -2340,15 +2351,35 @@
       p.then(ok => { if (ok === false) { toast('Backup cancelado'); return; } bk.last = new Date().toISOString(); saveBk(); toast('Backup salvo'); render(); });
     }
   }
-  // grava sozinho na pasta escolhida (só no app Android), uma vez a cada 7 dias
+  // Android: o próprio sistema grava um backup novo na pasta escolhida a cada 12 horas, mesmo com o app fechado.
+  // Para isso a página deixa com o Android uma cópia atualizada dos dados sempre que algo muda.
+  const AUTO_H = 12;
+  const hoursSince = iso => iso ? (Date.now() - new Date(iso)) / 3600000 : Infinity;
+  const sysAuto = () => !!(window.Android?.setAutoBackup && window.Android?.stashBackup);
+  const autoOn = () => !!(bk.auto && bk.folder && canAutoFolder());
+  function stashNow() {
+    stashT = 0;
+    if (!autoOn() || !sysAuto() || !totalTxs()) return;
+    try { window.Android.stashBackup(JSON.stringify(buildPayload())); } catch (e) { /* */ }
+  }
+  function syncNativeAuto() {
+    try {
+      const ms = window.Android?.lastAutoBackup ? +window.Android.lastAutoBackup() : 0;
+      if (ms && (!bk.lastAuto || ms > new Date(bk.lastAuto).getTime() + 1000)) { bk.lastAuto = new Date(ms).toISOString(); if (!bk.last || ms > new Date(bk.last).getTime()) bk.last = bk.lastAuto; saveBk(); }
+    } catch (e) { /* */ }
+  }
   function runAutoBackup(force) {
-    if (!bk.auto || !bk.folder || !canAutoFolder() || !totalTxs()) return;
-    if (!force && daysSince(bk.lastAuto) < 7) return;
+    syncNativeAuto();
+    if (!autoOn() || !totalTxs()) return;
+    if (sysAuto()) { try { window.Android.setAutoBackup(true); } catch (e) { /* */ } stashNow(); }
+    if (!force && hoursSince(bk.lastAuto) < AUTO_H) return;
     let ok = false;
     try { ok = window.Android.writeBackup(backupName(), JSON.stringify(backupPayload())); } catch (e) { ok = false; }
-    if (ok) { bk.lastAuto = bk.last = new Date().toISOString(); saveBk(); toast(`Backup semanal salvo em “${bk.folder}”`); }
-    else { bk.folder = null; saveBk(); toast('Não consegui gravar o backup na pasta. Escolha a pasta de novo em Mais.'); }
+    if (ok) { bk.lastAuto = bk.last = new Date().toISOString(); saveBk(); if (force) toast(`Backup salvo em “${bk.folder}”. Os próximos são automáticos, a cada ${AUTO_H} horas`); }
+    else { bk.folder = null; saveBk(); if (sysAuto()) try { window.Android.setAutoBackup(false); } catch (e) { /* */ } toast('Não consegui gravar o backup na pasta. Escolha a pasta de novo em Mais.'); }
+    render();
   }
+  document.addEventListener('visibilitychange', () => { if (document.hidden) stashNow(); else { syncNativeAuto(); renderBackup(); } });
   function enableAuto() {
     if (canAutoFolder()) { window.Android.pickBackupFolder(); return; } // resposta chega em appFolderPicked
     bk.auto = true; saveBk(); toast('Pronto: vou te lembrar de salvar o backup a cada 7 dias'); render();
@@ -2372,12 +2403,13 @@
   function renderBackup() {
     const autoOk = bk.auto && (bk.folder || !canAutoFolder());
     $('#bk-status').innerHTML = bk.last
-      ? `<span class="bk-dot ${daysSince(bk.last) < 7 ? 'ok' : 'late'}"></span>Último backup: <b>${fmtWhen(bk.last)}</b>${autoOk && bk.folder ? `<br><small>Próximo automático: em ${Math.max(0, 7 - daysSince(bk.lastAuto))} dia(s)</small>` : ''}`
+      ? `<span class="bk-dot ${daysSince(bk.last) < 7 ? 'ok' : 'late'}"></span>Último backup: <b>${fmtWhen(bk.last)}</b>${autoOk && bk.folder ? `<br><small>Próximo automático: ${nextAutoText()}</small>` : ''}`
       : `<span class="bk-dot late"></span>Nenhum backup salvo ainda`;
     const t = $('#auto-toggle');
     t.classList.toggle('on', !!autoOk); t.setAttribute('aria-checked', String(!!autoOk));
+    $('#auto-title').textContent = canAutoFolder() ? `Backup automático a cada ${AUTO_H} horas` : 'Lembrete de backup toda semana';
     $('#auto-desc').textContent = canAutoFolder()
-      ? (autoOk ? `Salvando sozinho a cada 7 dias na pasta “${bk.folder}”.` : 'Escolha uma pasta uma vez e o app grava um backup novo nela a cada 7 dias.')
+      ? (autoOk ? `O celular grava sozinho um backup novo na pasta “${bk.folder}” a cada ${AUTO_H} horas, mesmo com o app fechado. Ficam guardados os 30 mais recentes.` : `Escolha uma pasta uma vez e o celular grava um backup novo nela a cada ${AUTO_H} horas, mesmo com o app fechado.`)
       : (autoOk ? 'Ligado: vou te lembrar a cada 7 dias de salvar o backup.' : 'Te lembro a cada 7 dias de salvar o backup.');
     $('#auto-folder').classList.toggle('hidden', !(canAutoFolder() && autoOk));
   }
@@ -2386,7 +2418,7 @@
   $('#nag-auto').addEventListener('click', enableAuto);
   $('#nag-x').addEventListener('click', () => { bk.snooze = new Date().toISOString(); saveBk(); renderNag(); });
   $('#auto-toggle').addEventListener('click', () => {
-    if (bk.auto && (bk.folder || !canAutoFolder())) { bk.auto = false; saveBk(); toast('Backup automático desligado'); render(); }
+    if (bk.auto && (bk.folder || !canAutoFolder())) { bk.auto = false; saveBk(); if (sysAuto()) try { window.Android.setAutoBackup(false); } catch (e) { /* */ } toast('Backup automático desligado'); render(); }
     else enableAuto();
   });
   $('#auto-folder').addEventListener('click', () => window.Android?.pickBackupFolder());

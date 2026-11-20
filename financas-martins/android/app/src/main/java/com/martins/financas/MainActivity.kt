@@ -187,6 +187,9 @@ class MainActivity : ComponentActivity() {
           }
         })
 
+    // garante que o backup de 12 em 12 horas continua agendado
+    if (prefs.getBoolean("auto", false) && prefs.getString("tree", null) != null) BackupWorker.schedule(this)
+
     handleOpenIntent(intent)
     if (savedInstanceState != null) web.restoreState(savedInstanceState)
     else web.loadUrl("https://${WebViewAssetLoader.DEFAULT_DOMAIN}/assets/web/index.html")
@@ -271,15 +274,29 @@ class MainActivity : ComponentActivity() {
 
     // Grava um arquivo novo na pasta escolhida. Devolve false se a pasta sumiu ou perdeu a permissão.
     @JavascriptInterface
-    fun writeBackup(name: String, content: String): Boolean =
-        runCatching {
-              val tree = Uri.parse(prefs.getString("tree", null) ?: return false)
-              val parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
-              val file = DocumentsContract.createDocument(contentResolver, parent, "application/json", name) ?: return false
-              contentResolver.openOutputStream(file)!!.use { it.write(content.toByteArray(Charsets.UTF_8)) }
-              true
-            }
-            .getOrDefault(false)
+    fun writeBackup(name: String, content: String): Boolean = BackupWorker.write(this@MainActivity, content)
+
+    // Cópia atualizada dos dados, para o backup de 12 em 12 horas funcionar com o app fechado
+    @JavascriptInterface
+    fun stashBackup(content: String) {
+      runCatching {
+        val f = BackupWorker.snapshot(this@MainActivity)
+        val tmp = java.io.File(f.parentFile, f.name + ".tmp")
+        tmp.writeText(content, Charsets.UTF_8)
+        tmp.renameTo(f)
+      }
+    }
+
+    // Liga/desliga o backup automático feito pelo sistema (a cada 12 horas)
+    @JavascriptInterface
+    fun setAutoBackup(on: Boolean) {
+      prefs.edit().putBoolean("auto", on).apply()
+      if (on) BackupWorker.schedule(this@MainActivity) else BackupWorker.cancel(this@MainActivity)
+    }
+
+    // Quando foi o último backup automático (milissegundos; 0 = nunca)
+    @JavascriptInterface
+    fun lastAutoBackup(): Double = prefs.getLong("lastAuto", 0L).toDouble()
 
     private fun save(name: String, mime: String, bytes: ByteArray) {
       runOnUiThread {
