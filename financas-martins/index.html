@@ -69,8 +69,8 @@
         <div class="hero-value" id="hero-value"></div>
         <div class="hero-spark"><canvas id="chart-spark" aria-label="Evolução do patrimônio"></canvas></div>
         <div class="hero-row">
-          <div><span class="dot in"></span><small>Entrou</small><b id="hero-in"></b></div>
-          <div><span class="dot out"></span><small>Saiu</small><b id="hero-out"></b></div>
+          <div class="tapable" data-herogo="in" role="button" tabindex="0"><span class="dot in"></span><small>Entrou</small><b id="hero-in"></b></div>
+          <div class="tapable" data-herogo="out" role="button" tabindex="0"><span class="dot out"></span><small>Saiu</small><b id="hero-out"></b></div>
           <div><span class="dot net"></span><small>Sobrou</small><b id="hero-net"></b></div>
         </div>
         <p class="hero-vr hidden" id="hero-vr"></p>
@@ -399,7 +399,7 @@
   <label class="lbl hidden" id="bulk-pockets-lbl">Mudar o saldo de onde sai</label>
   <div class="pick-grid" id="bulk-pockets"></div>
   <label class="lbl">Mudar data</label>
-  <input type="date" id="bulk-date" aria-label="Nova data">
+  <input type="hidden" id="bulk-date"><button type="button" class="field-btn" data-pick="date" data-for="bulk-date" data-empty="Escolher a nova data" data-title="Nova data"></button>
   <button type="button" class="ghost" id="bulk-flip">Inverter entrada ⇄ saída</button>
 </div>
 
@@ -444,8 +444,8 @@
         <button type="button" class="link" id="when-edit">alterar</button>
       </div>
       <div class="when-inputs hidden" id="when-inputs">
-        <input type="date" id="tx-date" aria-label="Data">
-        <input type="time" id="tx-time" aria-label="Hora">
+        <input type="hidden" id="tx-date"><button type="button" class="field-btn" data-pick="date" data-for="tx-date" data-empty="Data" data-title="Data do lançamento"></button>
+        <input type="hidden" id="tx-time"><button type="button" class="field-btn" data-pick="time" data-for="tx-time" data-empty="Sem hora"></button>
       </div>
       <div class="pocket-pick hidden" id="pocket-pick"><span class="fs-lbl" id="pocket-pick-lbl">Sai do saldo</span><div class="pick-row one" id="pocket-picker"></div></div>
     </div>
@@ -516,8 +516,8 @@
     <div class="more-body">
       <label class="flbl">Cai em qual conta<select id="inc-bank"></select></label>
       <div class="inc-dates">
-        <label class="flbl">Começa em<input type="date" id="inc-start"></label>
-        <label class="flbl">Termina em (opcional)<input type="date" id="inc-end"></label>
+        <div class="flbl">Começa em<input type="hidden" id="inc-start"><button type="button" class="field-btn" data-pick="date" data-for="inc-start" data-empty="Escolher" data-title="Começa em"></button></div>
+        <div class="flbl">Termina em (opcional)<input type="hidden" id="inc-end"><button type="button" class="field-btn" data-pick="date" data-for="inc-end" data-empty="Sem data final" data-clear="1" data-title="Termina em"></button></div>
       </div>
     </div>
   </details>
@@ -554,7 +554,7 @@
   <div id="inv-var-box" class="hidden">
     <div class="fs">
       <span class="fs-lbl">Quanto rendeu em cada mês</span>
-      <div class="prov-add"><input type="month" id="prov-month" aria-label="Mês"><input id="prov-value" inputmode="decimal" placeholder="R$ do mês" aria-label="Valor"><button type="button" class="ghost" id="prov-add">Lançar</button></div>
+      <div class="prov-add"><input type="hidden" id="prov-month"><button type="button" class="field-btn" data-pick="month" data-for="prov-month" data-empty="Mês"></button><input id="prov-value" inputmode="decimal" placeholder="R$ do mês" aria-label="Valor"><button type="button" class="ghost" id="prov-add">Lançar</button></div>
       <div class="avg-box hidden" id="avg-box"></div>
       <div class="prov-list" id="prov-list"></div>
     </div>
@@ -579,6 +579,24 @@
     <input id="space-new-name" placeholder="Nome do novo painel (ex.: Namorada)" maxlength="40">
     <button class="cta" type="submit">Criar</button>
   </form>
+</div>
+
+<!-- Ficha de informação (toque num lançamento ou numa conta) -->
+<div class="backdrop hidden" id="info-backdrop"></div>
+<div class="sheet hidden" id="info-sheet">
+  <div class="grip"></div>
+  <div class="info-head" id="info-head"></div>
+  <div class="info-rows" id="info-rows"></div>
+  <div class="info-actions" id="info-actions"></div>
+</div>
+
+<!-- Seletor no visual do app (data, hora, mês, opções) -->
+<div class="backdrop hidden pick-backdrop" id="pick-backdrop"></div>
+<div class="sheet hidden picker" id="pick-sheet">
+  <div class="grip"></div>
+  <div class="sheet-top"><h3 class="sheet-title grow" id="pick-title"></h3>
+    <button type="button" class="icon-x" id="pick-close" aria-label="Fechar"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <div id="pick-body"></div>
 </div>
 
 <!-- Período -->

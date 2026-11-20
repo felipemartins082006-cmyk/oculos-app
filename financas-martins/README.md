@@ -56,6 +56,12 @@ Diferenças em relação ao Android:
   - Fatura de cartão: as compras viram saídas automaticamente. Extrato com coluna "Tipo"
     (Débito/Crédito) também é entendido. Quando o extrato traz saldo, o saldo da conta já vem certo.
   - Tela de conferência antes de salvar, com lançamentos repetidos desmarcados.
+- **Tocar para ver e editar**: tocar num lançamento abre uma ficha com nome, valor, data, hora,
+  categoria, conta ou forma de pagamento, itens, anotação e origem. Cada linha se edita ali mesmo
+  (a anotação também entra na busca). Tocar numa conta do Início mostra saldo, movimento e permite
+  mudar nome, tipo, banco e saldo inicial. Tocar em "Entrou"/"Saiu" abre o extrato já filtrado.
+- **Data e hora no visual do app** (sem a roda do Android): atalhos Hoje/Ontem/Anteontem e
+  calendário do mês; hora em grade (hora + minutos de 5 em 5, ajuste de 1 minuto, "Agora").
 - **Registro manual** com teclado numérico próprio: valor, descrição, categoria e conta. Dia e hora
   são anotados sozinhos.
 - **Início**: patrimônio total, cartões de cada conta (toque para filtrar), destaques, e gráficos:

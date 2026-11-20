@@ -32,6 +32,10 @@
     sliders: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
     pix: '<path d="M12 3l9 9-9 9-9-9z"/><path d="M8.5 12h7"/>',
     receipt: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
+    cal: '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    note: '<path d="M5 4h10l4 4v12H5z"/><path d="M15 4v4h4M8 12h8M8 16h5"/>',
+    tag: '<path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.5"/>',
     trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
   };
   const IS_IOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -751,10 +755,10 @@
       <div class="a-top"><span class="mono" style="background:var(--bg-4)">${svg('dots')}</span><div class="a-name">Todas</div></div>
       <div><div class="a-type">${db.banks.length} conta${db.banks.length === 1 ? '' : 's'}</div><div class="a-val">Visão geral</div></div></button>` + cards;
     strip.querySelectorAll('.acct').forEach(el => el.addEventListener('click', () => {
-      ui.bank = ui.bank === el.dataset.bank ? '' : el.dataset.bank;
-      renderDashboard();
+      if (!el.dataset.bank) { ui.bank = ''; renderDashboard(); return; }
+      openAcctInfo(el.dataset.bank);
     }));
-    $('#acct-note').textContent = ui.bank ? 'Toque de novo para ver todas' : 'Toque para filtrar';
+    $('#acct-note').textContent = ui.bank ? `Mostrando só ${acctLabel(bankById(ui.bank))}` : 'Toque para ver e editar';
   }
 
   function findRecurring(all) {
@@ -858,7 +862,7 @@
       if (grouped && t.date !== last) { last = t.date; html += `<div class="day-head"><span>${dayLabel(t.date)}</span><span>${fmt(dayTot[t.date])}</span></div>`; }
       const c = CAT[t.cat] || CAT.outros; const b = bankById(t.bank);
       html += `<div class="tx ${t.off ? 'off' : ''} ${t.virtual ? 'auto' : ''} ${sel.ids.has(t.id) ? 'sel' : ''}" data-id="${t.id}" role="button" tabindex="0"><span class="check">${svg('ok')}</span>${tile(t.cat)}
-        <div class="t"><div class="d">${t.off ? '<span class="off-tag">desligado</span>' : ''}${t.virtual ? '<span class="auto-tag">automática</span>' : ''}${esc(t.desc)}</div><div class="m">${grouped ? '' : shortDate(t.date) + ' · '}${t.time ? t.time + ' · ' : ''}${t.items?.length ? `${t.items.length} ${t.items.length === 1 ? 'item' : 'itens'} · ` : ''}${esc(c.name)}${t.method && methodById(t.method) ? ' · ' + esc(methodById(t.method).name) + (b ? ' ' + esc(b.name) : '') : b ? ' · ' + esc(acctLabel(b)) : ''}</div></div>
+        <div class="t"><div class="d">${t.off ? '<span class="off-tag">desligado</span>' : ''}${t.virtual ? '<span class="auto-tag">automática</span>' : ''}${esc(t.desc)}</div><div class="m">${grouped ? '' : shortDate(t.date) + ' · '}${t.time ? t.time + ' · ' : ''}${t.items?.length ? `${t.items.length} ${t.items.length === 1 ? 'item' : 'itens'} · ` : ''}${t.note ? 'anotação · ' : ''}${esc(c.name)}${t.method && methodById(t.method) ? ' · ' + esc(methodById(t.method).name) + (b ? ' ' + esc(b.name) : '') : b ? ' · ' + esc(acctLabel(b)) : ''}</div></div>
         <span class="a ${t.amount > 0 ? 'in' : ''}">${t.amount > 0 ? '+' : '−'} ${fmt(Math.abs(t.amount))}</span></div>`;
     }
     return html || `<p class="empty-note" style="padding:20px 4px">Nenhum lançamento encontrado.</p>`;
@@ -896,7 +900,7 @@
       if (longFired) { longFired = false; return; }
       if (el.dataset.id.startsWith('inc:')) { if (!sel.on) { const sid = el.dataset.id.split(':')[1]; if (sid === '__inv') go('invest'); else openInc(incomes().find(s => s.id === sid)); } return; }
       if (root.dataset.sel && sel.on) { toggleSel(el.dataset.id); return; }
-      closeDrill(); openTxSheet(db.txs.find(t => t.id === el.dataset.id));
+      closeDrill(); openTxInfo(el.dataset.id);
     });
   }
 
@@ -980,7 +984,7 @@
   $('#bulk-pockets').addEventListener('click', e => { const b = e.target.closest('button'); if (b) applyBulk(t => { t.pocket = b.dataset.pocket; }, `Saldo “${incomes().find(s => s.id === b.dataset.pocket)?.name}” aplicado`); });
   $('#bulk-accts').addEventListener('click', e => { const b = e.target.closest('button'); if (b) applyBulk(t => { t.bank = b.dataset.bank; }, `Conta “${acctLabel(bankById(b.dataset.bank))}” aplicada`); });
   $('#bulk-flip').addEventListener('click', () => applyBulk(t => { t.amount = -t.amount; }, 'Entrada e saída invertidas'));
-  $('#bulk-date').addEventListener('change', e => { if (e.target.value) applyBulk(t => { t.date = e.target.value; }, 'Data alterada'); e.target.value = ''; });
+  $('#bulk-date').addEventListener('change', e => { const v = e.target.value; e.target.value = ''; syncFieldBtns(); if (v) applyBulk(t => { t.date = v; }, 'Data alterada'); });
   function renderList() {
     const L = ui.list;
     const chip = (key, val, label, extra = '') => `<button class="chip ${L[key] === val ? 'on' : ''}" data-k="${key}" data-v="${esc(val)}">${extra}${esc(label)}</button>`;
@@ -999,7 +1003,7 @@
       (!L.bank || t.bank === L.bank) && (!L.cat || t.cat === L.cat) &&
       (!L.type || (L.type === 'in' ? t.amount > 0 : t.amount < 0)) &&
       (!L.merchant || merchant(t.desc) === L.merchant) &&
-      (!q || norm(t.desc).includes(q) || (t.items || []).some(it => norm(it.name).includes(q)) || norm(CAT[t.cat]?.name).includes(q) || String(Math.abs(t.amount)).includes(q.replace(',', '.')))
+      (!q || norm(t.desc).includes(q) || norm(t.note).includes(q) || (t.items || []).some(it => norm(it.name).includes(q)) || norm(CAT[t.cat]?.name).includes(q) || String(Math.abs(t.amount)).includes(q.replace(',', '.')))
     ).sort((a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || '')));
     const T = totals(list);
     $('#list-summary').innerHTML = `<div><small>Entradas</small><b style="color:var(--in)">${fmt(T.inc)}</b></div><div><small>Saídas</small><b style="color:var(--out)">${fmt(T.out)}</b></div>`;
@@ -1097,6 +1101,7 @@
     renderItems();
     $('#tx-date').value = tx ? tx.date : todayStr();
     $('#tx-time').value = tx ? (tx.time || '') : nowTime();
+    syncFieldBtns();
     $('#when-inputs').classList.add('hidden');
     $('#tx-delete').classList.toggle('hidden', !tx);
     $('#tx-off').classList.toggle('hidden', !tx);
@@ -1799,6 +1804,7 @@
     const first = todayStr().slice(0, 8) + '01';
     $('#inc-start').value = src?.start || first;
     $('#inc-end').value = src?.end || '';
+    syncFieldBtns();
     const pref = inc.type === 'vr' ? db.banks.find(b => b.type === 'vr' || b.type === 'va') : db.banks.find(b => b.type === 'conta');
     $('#inc-bank').innerHTML = `<option value="">Nenhuma (conta só no total)</option>` + db.banks.map(b => `<option value="${b.id}">${esc(acctLabel(b))}</option>`).join('');
     $('#inc-bank').value = src ? (src.bank || '') : (pref?.id || '');
@@ -2185,6 +2191,7 @@
     $('#inv-rate').value = h?.rate != null ? String(h.rate).replace('.', ',') : String(INDEXES[invEd.index].def);
     $('#inv-avg').value = money(h?.avg);
     const d = new Date(); $('#prov-month').value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; $('#prov-value').value = '';
+    syncFieldBtns();
     $('#inv-delete').classList.toggle('hidden', !h);
     syncInv();
     $('#inv-sheet').classList.remove('hidden'); $('#inv-backdrop').classList.remove('hidden');
@@ -2490,6 +2497,8 @@
     if (!$('#period-sheet').classList.contains('hidden')) { closePeriod(); return true; }
     if (ui.view === 'importar' && !$('#import-step2').classList.contains('hidden')) { $('#review-back').click(); return true; }
     if (ui.view === 'panorama' && (ui.monthPick || ui.bank)) { ui.monthPick = null; ui.bank = ''; renderDashboard(); return true; }
+    if (pickDone) { pickDone(null); return true; }
+    if (!$('#info-sheet').classList.contains('hidden')) { closeInfo(); return true; }
     if (!$('#inc-sheet').classList.contains('hidden')) { closeInc(); return true; }
     if (!$('#inv-sheet').classList.contains('hidden')) { closeInv(); return true; }
     if (!$('#pocket-sheet').classList.contains('hidden')) { closePocket(); return true; }
@@ -2679,6 +2688,226 @@
   liveCtl($('#wall-dim'), 'dim', '#dim-val', '%');
   liveCtl($('#wall-blur'), 'blur', '#blur-val', 'px');
 
+  /* =================== seletores no visual do app (data, hora, mês, opções) =================== */
+  const cap = s => s ? s[0].toUpperCase() + s.slice(1) : s;
+  let pickDone = null;
+  function openPicker(title, build) {
+    if (pickDone) pickDone(null);
+    $('#pick-title').textContent = title;
+    const body = $('#pick-body'); body.onclick = null; body.innerHTML = '';
+    $('#pick-sheet').classList.remove('hidden'); $('#pick-backdrop').classList.remove('hidden');
+    return new Promise(res => {
+      pickDone = v => { pickDone = null; $('#pick-sheet').classList.add('hidden'); $('#pick-backdrop').classList.add('hidden'); res(v); };
+      build(body, v => pickDone && pickDone(v));
+    });
+  }
+  $('#pick-close').addEventListener('click', () => pickDone && pickDone(null));
+  $('#pick-backdrop').addEventListener('click', () => pickDone && pickDone(null));
+
+  // Data: atalhos + calendário do mês. Devolve 'AAAA-MM-DD', '' (sem data) ou null (cancelou)
+  function pickDate(value, { title = 'Escolha a data', allowEmpty = false } = {}) {
+    const base = value || todayStr();
+    let view = new Date(+base.slice(0, 4), +base.slice(5, 7) - 1, 1);
+    return openPicker(title, (body, done) => {
+      const draw = () => {
+        const y = view.getFullYear(), m = view.getMonth(), first = new Date(y, m, 1).getDay(), dim = new Date(y, m + 1, 0).getDate(), today = todayStr();
+        const quick = [['Hoje', today], ['Ontem', addDays(today, -1)], ['Anteontem', addDays(today, -2)]];
+        body.innerHTML = `<div class="pk-quick">${quick.map(([l, d]) => `<button type="button" class="chip ${value === d ? 'on' : ''}" data-d="${d}">${l}</button>`).join('')}${allowEmpty ? `<button type="button" class="chip ${!value ? 'on' : ''}" data-d="">Sem data</button>` : ''}</div>
+          <div class="cal-head"><button type="button" class="cal-nav" data-nav="-1" aria-label="Mês anterior">‹</button><b>${cap(MES_LONGO[m])} de ${y}</b><button type="button" class="cal-nav" data-nav="1" aria-label="Próximo mês">›</button></div>
+          <div class="cal-grid">${['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map(w => `<span class="cal-w">${w}</span>`).join('')}${'<span></span>'.repeat(first)}${Array.from({ length: dim }, (_, i) => { const d = `${y}-${pad(m + 1)}-${pad(i + 1)}`; return `<button type="button" class="cal-d ${d === value ? 'sel' : ''} ${d === today ? 'today' : ''}" data-d="${d}">${i + 1}</button>`; }).join('')}</div>`;
+      };
+      draw();
+      body.onclick = e => {
+        const n = e.target.closest('[data-nav]'); if (n) { view = new Date(view.getFullYear(), view.getMonth() + +n.dataset.nav, 1); draw(); return; }
+        const d = e.target.closest('[data-d]'); if (d) done(d.dataset.d);
+      };
+    });
+  }
+  // Hora: toque na hora e nos minutos (de 5 em 5), com ajuste fino de 1 minuto
+  function pickTime(value) {
+    let [h, m] = (value || nowTime()).split(':').map(Number);
+    return openPicker('Escolha o horário', (body, done) => {
+      const draw = () => {
+        body.innerHTML = `<div class="tp-show"><button type="button" class="tp-adj" data-adj="-1">−1 min</button><b>${pad(h)}:${pad(m)}</b><button type="button" class="tp-adj" data-adj="1">+1 min</button></div>
+          <div class="pk-quick"><button type="button" class="chip" data-now="1">Agora (${nowTime()})</button><button type="button" class="chip" data-set="08:00">Manhã</button><button type="button" class="chip" data-set="12:30">Almoço</button><button type="button" class="chip" data-set="20:00">Noite</button></div>
+          <span class="fs-lbl">Hora</span>
+          <div class="tp-grid">${Array.from({ length: 24 }, (_, i) => `<button type="button" class="tp-c ${i === h ? 'sel' : ''}" data-h="${i}">${pad(i)}</button>`).join('')}</div>
+          <span class="fs-lbl">Minutos</span>
+          <div class="tp-grid">${Array.from({ length: 12 }, (_, i) => i * 5).map(x => `<button type="button" class="tp-c ${x === m ? 'sel' : ''}" data-m="${x}">${pad(x)}</button>`).join('')}</div>
+          <button type="button" class="cta" data-ok="1">Usar ${pad(h)}:${pad(m)}</button>`;
+      };
+      draw();
+      body.onclick = e => {
+        const b = e.target.closest('button'); if (!b) return;
+        if ('ok' in b.dataset) { done(`${pad(h)}:${pad(m)}`); return; }
+        if ('now' in b.dataset) { [h, m] = nowTime().split(':').map(Number); }
+        else if ('set' in b.dataset) { [h, m] = b.dataset.set.split(':').map(Number); }
+        else if ('h' in b.dataset) h = +b.dataset.h;
+        else if ('m' in b.dataset) m = +b.dataset.m;
+        else if ('adj' in b.dataset) { let t = h * 60 + m + +b.dataset.adj; t = (t + 1440) % 1440; h = Math.floor(t / 60); m = t % 60; }
+        draw();
+      };
+    });
+  }
+  // Mês: grade com os 12 meses
+  function pickMonth(value) {
+    let y = +(value || todayStr()).slice(0, 4);
+    return openPicker('Escolha o mês', (body, done) => {
+      const draw = () => {
+        body.innerHTML = `<div class="cal-head"><button type="button" class="cal-nav" data-nav="-1">‹</button><b>${y}</b><button type="button" class="cal-nav" data-nav="1">›</button></div>
+          <div class="mo-grid">${MES_LONGO.map((nm, i) => { const k = `${y}-${pad(i + 1)}`; return `<button type="button" class="mo-c ${k === value ? 'sel' : ''} ${k === todayStr().slice(0, 7) ? 'today' : ''}" data-mo="${k}">${cap(nm)}</button>`; }).join('')}</div>`;
+      };
+      draw();
+      body.onclick = e => {
+        const n = e.target.closest('[data-nav]'); if (n) { y += +n.dataset.nav; draw(); return; }
+        const b = e.target.closest('[data-mo]'); if (b) done(b.dataset.mo);
+      };
+    });
+  }
+  // Opções em grade (categoria, conta, tipo…). opts: [{ id, label, html? }]
+  function pickChoice(title, opts, current) {
+    return openPicker(title, (body, done) => {
+      body.innerHTML = `<div class="choice-grid">${opts.map(o => `<button type="button" class="pick ${o.id === current ? 'on' : ''}" data-c="${esc(o.id)}">${o.html || ''}<span>${esc(o.label)}</span></button>`).join('')}</div>`;
+      body.onclick = e => { const b = e.target.closest('[data-c]'); if (b) done(b.dataset.c); };
+    });
+  }
+  // botões que substituem os campos de data/hora/mês
+  function fieldLabel(kind, v, empty) {
+    if (!v) return empty;
+    if (kind === 'date') return `${dayLabel(v)}${v.slice(0, 4) === String(new Date().getFullYear()) ? '' : ''}`;
+    if (kind === 'month') return `${cap(MES_LONGO[+v.slice(5, 7) - 1])} de ${v.slice(0, 4)}`;
+    return v;
+  }
+  function syncFieldBtns() {
+    $$('.field-btn').forEach(b => {
+      const inp = document.getElementById(b.dataset.for); if (!inp) return;
+      b.innerHTML = `${svg(b.dataset.pick === 'time' ? 'clock' : 'cal')}<span>${esc(fieldLabel(b.dataset.pick, inp.value, b.dataset.empty || 'Escolher'))}</span>`;
+      b.classList.toggle('empty', !inp.value);
+    });
+  }
+  document.addEventListener('click', async e => {
+    const b = e.target.closest('.field-btn'); if (!b) return;
+    const inp = document.getElementById(b.dataset.for), k = b.dataset.pick;
+    const v = k === 'date' ? await pickDate(inp.value, { title: b.dataset.title || 'Escolha a data', allowEmpty: b.dataset.clear === '1' })
+      : k === 'time' ? await pickTime(inp.value) : await pickMonth(inp.value);
+    if (v === null) return;
+    inp.value = v;
+    syncFieldBtns();
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+    inp.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+
+  /* =================== fichas: tocar para ver e editar =================== */
+  let infoRefresh = null;
+  function renderInfo({ head, rows, actions }) {
+    $('#info-head').innerHTML = head;
+    $('#info-rows').innerHTML = rows.filter(Boolean).map((r, i) => `
+      <${r.edit ? 'button type="button"' : 'div'} class="info-row ${r.edit ? 'ed' : ''}" data-i="${i}">
+        <span class="ir-ic">${svg(r.ic || 'dots')}</span>
+        <span class="grow"><small>${esc(r.label)}</small><b class="${r.muted ? 'muted' : ''}">${r.valueHtml || esc(r.value)}</b>${r.hint ? `<em>${esc(r.hint)}</em>` : ''}</span>
+        ${r.edit ? `<span class="ir-ed">${svg('edit')}</span>` : ''}
+      </${r.edit ? 'button' : 'div'}>`).join('');
+    const live = rows.filter(Boolean);
+    $$('#info-rows .info-row.ed').forEach(el => el.addEventListener('click', async () => {
+      const r = live[+el.dataset.i];
+      const changed = await r.edit();
+      if (changed) { save(); render(); }
+      if (infoRefresh && !$('#info-sheet').classList.contains('hidden')) infoRefresh();
+    }));
+    $('#info-actions').innerHTML = actions.map((a, i) => `<button type="button" class="${a.cls || 'ghost'}" data-a="${i}">${a.label}</button>`).join('');
+    $$('#info-actions [data-a]').forEach(b => b.addEventListener('click', () => actions[+b.dataset.a].fn()));
+    $('#info-sheet').classList.remove('hidden'); $('#info-backdrop').classList.remove('hidden');
+  }
+  const closeInfo = () => { infoRefresh = null; $('#info-sheet').classList.add('hidden'); $('#info-backdrop').classList.add('hidden'); };
+  $('#info-backdrop').addEventListener('click', closeInfo);
+
+  // ficha do lançamento
+  function openTxInfo(id) {
+    const t = db.txs.find(x => x.id === id); if (!t) return;
+    infoRefresh = () => openTxInfo(id);
+    const c = CAT[t.cat] || CAT.outros, b = bankById(t.bank), m = methodById(t.method);
+    const isIn = t.amount > 0;
+    const pks = pocketSources(), pk = pks.length ? pocketOf(t, pks) : null, pkName = pk ? incomeSources().find(s => s.id === pk)?.name : '';
+    const itemsTxt = t.items?.length ? t.items.map(it => `${it.name} ${fmt(it.v)}`).join(' · ') : '';
+    const origin = t.source === 'manual' ? `Registrado por você${t.createdAt ? ` em ${shortDate(ds(new Date(t.createdAt)))} às ${new Date(t.createdAt).toTimeString().slice(0, 5)}` : ''}` : `Importado do extrato${t.file ? ` (${t.file})` : ''}`;
+    const catOpts = CATS.filter(x => isIn ? (x.income || x.neutral || x.id === 'pessoas') : !x.income).map(x => ({ id: x.id, label: x.name, html: tile(x.id) }));
+    renderInfo({
+      head: `${tile(t.cat, 'big')}<div class="grow"><small>${isIn ? 'Entrada' : 'Gasto'}${t.off ? ' · desligado' : ''}</small><h3>${esc(t.desc)}</h3></div><b class="ih-amt ${isIn ? 'in' : ''}">${isIn ? '+' : '−'} ${fmt(Math.abs(t.amount))}</b>
+        <button type="button" class="icon-x" id="info-close" aria-label="Fechar"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>`,
+      rows: [
+        { ic: 'edit', label: 'Nome', value: t.desc, edit: async () => { const v = await askText({ title: 'Nome do lançamento', ok: 'Salvar', input: { value: t.desc, placeholder: 'O que foi' } }); if (!v) return false; t.desc = v.slice(0, 140); return true; } },
+        { ic: 'wallet', label: 'Valor', value: `${isIn ? '+' : '−'} ${fmt(Math.abs(t.amount))}`, hint: t.items?.length ? 'É a soma dos itens: toque para editar os itens' : '', edit: async () => {
+          if (t.items?.length) { closeInfo(); openTxSheet(t); return false; }
+          const v = await askText({ title: 'Valor', icon: 'wallet', ok: 'Salvar', input: { value: Math.abs(t.amount).toFixed(2).replace('.', ','), placeholder: '0,00', mode: 'decimal' } });
+          const n = v ? Math.abs(Parsers.parseAmount(v)) : NaN; if (!n || !isFinite(n)) return false;
+          t.amount = isIn ? n : -n; return true; } },
+        { ic: 'cal', label: 'Data', value: dayLabel(t.date), edit: async () => { const v = await pickDate(t.date, { title: 'Data do lançamento' }); if (!v) return false; t.date = v; return true; } },
+        { ic: 'clock', label: 'Hora', value: t.time || 'Sem hora', muted: !t.time, edit: async () => { const v = await pickTime(t.time); if (!v) return false; t.time = v; return true; } },
+        { ic: CAT[t.cat]?.ic || 'tag', label: 'Categoria', value: c.name, edit: async () => {
+          const v = await pickChoice('Categoria', catOpts, t.cat); if (!v || v === t.cat) return false;
+          t.cat = v; db.rules[norm(merchant(t.desc))] = v; return true; } },
+        { ic: m?.ic || 'card', label: m ? 'Forma de pagamento' : 'Conta', value: m ? `${m.name}${b ? ' · ' + b.name : ''}` : (b ? acctLabel(b) : 'Sem conta'), muted: !m && !b,
+          edit: m ? async () => { closeInfo(); openTxSheet(t); return false; } : async () => {
+            const v = await pickChoice('Conta', db.banks.map(x => ({ id: x.id, label: acctLabel(x), html: mono(x) })), t.bank); if (!v) return false; t.bank = v; return true; } },
+        pks.length && !isIn ? { ic: 'wallet', label: 'Sai do saldo', value: pkName || '—', edit: async () => {
+          const v = await pickChoice('Sai de qual saldo do dia', pks.map(s => ({ id: s.id, label: s.name, html: incTile(s.type) })), pk); if (!v) return false; t.pocket = v; return true; } } : null,
+        t.items?.length ? { ic: 'cart', label: `${t.items.length} ${t.items.length === 1 ? 'item' : 'itens'}`, value: itemsTxt, edit: async () => { closeInfo(); openTxSheet(t); return false; } } : null,
+        { ic: 'note', label: 'Anotação', value: t.note || 'Toque para escrever uma anotação', muted: !t.note, edit: async () => {
+          const v = await openDlg({ title: 'Anotação', icon: 'note', ok: 'Salvar', input: { value: t.note || '', placeholder: 'ex.: dividido com a Ana, nota fiscal no e-mail…', allowEmpty: true } });
+          if (v === null || v === true) return false; const s = String(v).trim(); if (s) t.note = s.slice(0, 300); else delete t.note; return true; } },
+        { ic: 'file', label: 'Origem', value: origin },
+      ],
+      actions: [
+        { label: 'Editar tudo', cls: 'cta', fn: () => { closeInfo(); openTxSheet(t); } },
+        { label: t.off ? 'Ligar' : 'Desligar', fn: () => { if (t.off) delete t.off; else t.off = true; save(); render(); toast(t.off ? 'Lançamento desligado: fica salvo, mas fora das contas' : 'Lançamento ligado de novo'); openTxInfo(id); } },
+        { label: 'Excluir', cls: 'ghost danger', fn: async () => {
+          if (!(await ask({ title: 'Excluir este lançamento?', text: `${t.desc} · ${fmt(Math.abs(t.amount))}. Não dá para desfazer.`, ok: 'Excluir', danger: true }))) return;
+          db.txs = db.txs.filter(x => x.id !== id); save(); closeInfo(); render(); toast('Lançamento excluído'); } },
+      ],
+    });
+    $('#info-close').onclick = closeInfo;
+  }
+
+  // ficha da conta / cartão
+  function openAcctInfo(id) {
+    const b = bankById(id); if (!b) return;
+    infoRefresh = () => openAcctInfo(id);
+    const bt = active().filter(t => t.bank === id);
+    const now = (+b.initial || 0) + bt.reduce((s, t) => s + t.amount, 0);
+    const r = getRange(), T = totals(bt.filter(t => inRange(t, r)));
+    const isCard = b.type === 'credito';
+    renderInfo({
+      head: `${mono(b, 'big')}<div class="grow"><small>${TYPES[b.type]?.name || ''}</small><h3>${esc(b.name)}</h3></div><b class="ih-amt">${fmt(isCard ? Math.max(0, -now) : now)}</b>
+        <button type="button" class="icon-x" id="info-close" aria-label="Fechar"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>`,
+      rows: [
+        { ic: 'wallet', label: isCard ? 'Fatura em aberto' : 'Saldo agora', value: fmt(isCard ? Math.max(0, -now) : now) },
+        { ic: 'trend', label: `Movimento (${PERIODS[ui.period] || 'período'})`, value: `entrou ${fmt(T.inc)} · saiu ${fmt(T.out)}`, hint: `${bt.length} lançamento${bt.length === 1 ? '' : 's'} no total` },
+        { ic: 'edit', label: 'Nome', value: b.name, edit: async () => { const v = await askText({ title: 'Nome da conta', ok: 'Salvar', input: { value: b.name } }); if (!v) return false; b.name = v.slice(0, 40); return true; } },
+        { ic: TYPES[b.type]?.ic || 'bank', label: 'Tipo', value: TYPES[b.type]?.name || '', edit: async () => {
+          const v = await pickChoice('Tipo de conta', Object.entries(TYPES).map(([k, x]) => ({ id: k, label: x.name, html: `<span class="tile" style="background:var(--bg-4);color:var(--text-2)">${svg(x.ic)}</span>` })), b.type); if (!v) return false; b.type = v; return true; } },
+        { ic: 'bank', label: 'Banco ou benefício', value: instOf(b).id === 'outro' ? 'Outro' : instOf(b).name, edit: async () => {
+          const v = await pickChoice('Banco ou benefício', INSTS.map(i => ({ id: i.id, label: i.name, html: `<span class="mono" style="background:${i.color}">${esc(i.mono)}</span>` })), b.inst); if (!v) return false; b.inst = v; return true; } },
+        { ic: 'cash', label: 'Saldo inicial', value: fmt(+b.initial || 0), hint: 'Quanto havia antes do primeiro lançamento', edit: async () => {
+          const v = await askText({ title: 'Saldo inicial', icon: 'cash', ok: 'Salvar', input: { value: (+b.initial || 0).toFixed(2).replace('.', ','), mode: 'decimal' } });
+          if (v === null) return false; const n = Parsers.parseAmount(v); if (!isFinite(n)) return false; b.initial = n; return true; } },
+      ],
+      actions: [
+        { label: ui.bank === id ? 'Mostrar todas as contas' : 'Mostrar só esta no Início', cls: 'cta', fn: () => { ui.bank = ui.bank === id ? '' : id; closeInfo(); renderDashboard(); } },
+        { label: 'Ver lançamentos', fn: () => { ui.list = { q: '', cat: '', type: '', bank: id, merchant: null, limit: 80 }; closeInfo(); go('lancamentos'); } },
+        { label: 'Excluir conta', cls: 'ghost danger', fn: async () => {
+          const n = db.txs.filter(t => t.bank === id).length;
+          if (!(await ask({ title: `Excluir “${acctLabel(b)}”?`, text: n ? `Os ${n} lançamentos dessa conta também serão apagados. Não dá para desfazer.` : 'Não dá para desfazer.', ok: 'Excluir', danger: true }))) return;
+          db.txs = db.txs.filter(t => t.bank !== id); db.banks = db.banks.filter(x => x.id !== id); incomes().forEach(s => { if (s.bank === id) s.bank = null; });
+          if (ui.bank === id) ui.bank = '';
+          save(); closeInfo(); render(); toast('Conta excluída'); } },
+      ],
+    });
+    $('#info-close').onclick = closeInfo;
+  }
+  // Entrou / Saiu do cartão principal → extrato filtrado
+  $$('[data-herogo]').forEach(el => el.addEventListener('click', () => { ui.list = { q: '', cat: '', type: el.dataset.herogo, bank: ui.bank || '', merchant: null, limit: 80 }; go('lancamentos'); }));
+  syncFieldBtns();
+
   /* =================== janelas de confirmação =================== */
   let dlgDone = null;
   function openDlg({ title, text = '', ok = 'OK', cancel = 'Cancelar', danger = false, icon = danger ? 'trash' : 'ok', input = null }) {
@@ -2695,7 +2924,8 @@
     inp.classList.toggle('hidden', !input);
     if (input) {
       inp.type = input.type || 'text'; inp.value = input.value || ''; inp.placeholder = input.placeholder || '';
-      inp.setAttribute('inputmode', input.type === 'password' ? 'text' : 'text');
+      inp.setAttribute('inputmode', input.mode || 'text');
+      inp.dataset.empty = input.allowEmpty ? '1' : '';
     }
     $('#dlg').classList.remove('hidden'); $('#dlg-backdrop').classList.remove('hidden');
     if (input) setTimeout(() => { inp.focus(); inp.select(); }, 80);
@@ -2707,7 +2937,7 @@
     e.preventDefault();
     if (!dlgDone) return;
     const inp = $('#dlg-input');
-    if (!inp.classList.contains('hidden')) { if (!inp.value.trim()) { inp.focus(); return; } dlgDone(inp.value); }
+    if (!inp.classList.contains('hidden')) { if (!inp.value.trim() && !inp.dataset.empty) { inp.focus(); return; } dlgDone(inp.value); }
     else dlgDone(true);
   });
   $('#dlg-cancel').addEventListener('click', () => dlgDone && dlgDone(null));
