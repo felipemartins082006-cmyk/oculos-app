@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#0b1220">
+<meta name="color-scheme" content="dark">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Mundo">
+<title>Mundo Martins</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<!-- modo deus -->
+<div id="hud">
+  <header class="top">
+    <div class="chips">
+      <div class="chip" id="info-ano">☀️ Ano 0</div>
+      <div class="chip" id="info-pop">🧑 0</div>
+    </div>
+    <div class="right">
+      <div class="speed" id="speed"><button data-s="0" aria-label="Pausar">❚❚</button><button data-s="1" class="on">1×</button><button data-s="3">3×</button><button data-s="10">10×</button></div>
+      <button class="ico" id="btn-eras" aria-label="Povos e eras">📜</button>
+      <button class="ico" id="btn-cfg" aria-label="Ajustes">⚙️</button>
+    </div>
+  </header>
+  <div id="dica"></div>
+  <section id="painel" class="painel hidden"></section>
+  <nav id="tools"></nav>
+</div>
+<div id="toasts"></div>
+<div id="fps" class="hidden"></div>
+
+<!-- primeira pessoa -->
+<div id="fp-hud" class="hidden">
+  <div class="fp-top"><div id="fp-card" class="card"></div><button id="fp-sair">🌍 Ser deus</button></div>
+  <div class="mira"></div>
+  <div id="fp-msg"></div>
+  <div id="joy" class="joy hidden"><div class="knob"></div></div>
+  <div class="fp-dica" id="fp-dica">Arraste do lado esquerdo para andar · do lado direito para olhar</div>
+  <div class="fp-btns">
+    <button id="fp-trocar" class="sm" aria-label="Trocar de pessoa">🔄</button>
+    <button id="fp-pular" class="sm" aria-label="Pular">⤒</button>
+    <button id="fp-acao" class="acao off" disabled>…</button>
+  </div>
+</div>
+
+<div id="sheet" class="sheet hidden"><div class="sheet-card" id="sheet-card"></div></div>
+<div id="erro" class="hidden"></div>
+
+<script src="js/world.js"></script>
+<script src="js/render.js"></script>
+<script src="js/meshes.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
