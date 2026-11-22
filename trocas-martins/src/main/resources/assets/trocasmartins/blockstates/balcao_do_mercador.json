@@ -1,0 +1,19 @@
+{
+  "variants": {
+    "facing=north": {
+      "model": "trocasmartins:block/balcao_do_mercador"
+    },
+    "facing=east": {
+      "model": "trocasmartins:block/balcao_do_mercador",
+      "y": 90
+    },
+    "facing=south": {
+      "model": "trocasmartins:block/balcao_do_mercador",
+      "y": 180
+    },
+    "facing=west": {
+      "model": "trocasmartins:block/balcao_do_mercador",
+      "y": 270
+    }
+  }
+}

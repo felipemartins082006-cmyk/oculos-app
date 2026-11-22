@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "trocasmartins",
+  "version": "${version}",
+  "name": "Trocas Martins",
+  "description": "Novas trocas para todas as profissões de aldeão e o Mercador, um aldeão que compra qualquer item por esmeraldas.",
+  "authors": [
+    "Felipe Martins"
+  ],
+  "icon": "assets/trocasmartins/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "com.martins.trocas.TrocasMartins"
+    ],
+    "client": [
+      "com.martins.trocas.client.TrocasMartinsClient"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.1",
+    "java": ">=21",
+    "fabric-api": "*"
+  },
+  "mixins": [
+    "trocasmartins.mixins.json"
+  ]
+}

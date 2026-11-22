@@ -1,0 +1,32 @@
+{
+  "parent": "minecraft:recipes/root",
+  "criteria": {
+    "tem_esmeralda": {
+      "trigger": "minecraft:inventory_changed",
+      "conditions": {
+        "items": [
+          {
+            "items": "minecraft:emerald"
+          }
+        ]
+      }
+    },
+    "tem_receita": {
+      "trigger": "minecraft:recipe_unlocked",
+      "conditions": {
+        "recipe": "trocasmartins:balcao_do_mercador"
+      }
+    }
+  },
+  "requirements": [
+    [
+      "tem_esmeralda",
+      "tem_receita"
+    ]
+  ],
+  "rewards": {
+    "recipes": [
+      "trocasmartins:balcao_do_mercador"
+    ]
+  }
+}

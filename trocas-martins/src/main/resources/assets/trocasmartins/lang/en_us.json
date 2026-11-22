@@ -1,0 +1,17 @@
+{
+  "block.trocasmartins.balcao_do_mercador": "Merchant's Counter",
+  "entity.minecraft.villager.mercador": "Merchant",
+  "entity.minecraft.villager.trocasmartins.mercador": "Merchant",
+  "gui.trocasmartins.vazio": "Place the items you want to sell",
+  "gui.trocasmartins.vazio2": "The Merchant buys almost anything!",
+  "gui.trocasmartins.misturado": "Use only one kind of item",
+  "gui.trocasmartins.misturado2": "Remove the different items",
+  "gui.trocasmartins.nao_compra": "The Merchant won't buy this item",
+  "gui.trocasmartins.nao_compra2": "Try another item",
+  "gui.trocasmartins.insuficiente": "%s items aren't worth 1 emerald",
+  "gui.trocasmartins.oferta": "Buys %s items for %s emerald(s)",
+  "gui.trocasmartins.faltam": "Missing: %s",
+  "gui.trocasmartins.proxima": "+1: %s more",
+  "gui.trocasmartins.faltam_longo": "%s more items for 1 emerald",
+  "gui.trocasmartins.impossivel": "Trade not possible"
+}

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "trocasmartins-gametest",
+  "version": "1.0.0",
+  "name": "Trocas Martins - testes",
+  "environment": "*",
+  "entrypoints": {
+    "fabric-gametest": ["com.martins.trocas.teste.TestesMercador"],
+    "client": ["com.martins.trocas.teste.FotosCliente"]
+  },
+  "depends": { "trocasmartins": "*" }
+}
