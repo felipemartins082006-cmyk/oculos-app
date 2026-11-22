@@ -41,6 +41,11 @@ public final class NovasTrocas {
 	private NovasTrocas() {
 	}
 
+	/** Todas as trocas novas, por profissão e nível (o Mercador usa para conhecer os preços). */
+	public static Map<VillagerProfession, Map<Integer, List<TradeOffers.Factory>>> todas() {
+		return TROCAS;
+	}
+
 	// ------------------------------------------------------------------ fábricas de troca
 
 	/** O aldeão VENDE {@code qtd} de {@code item} por {@code preco} esmeraldas. */

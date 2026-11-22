@@ -27,9 +27,6 @@ public final class MercadorConfig {
 		public String _ajuda = "precos: valor em esmeraldas de UM item (ex.: 0.01 = 100 itens por esmeralda; 0 = não compra). "
 			+ "Use '#namespace:tag' para grupos de itens. multiplicador_global ajusta todos os preços do Mercador.";
 		public double multiplicador_global = 1.0;
-		public double bonus_por_nivel = 0.04;
-		public boolean bonus_por_reputacao = true;
-		public double bonus_maximo = 0.20;
 		public int max_esmeraldas_por_item = 64;
 		public int trocas_novas_por_nivel = 1;
 		public Map<String, Double> precos = new LinkedHashMap<>();

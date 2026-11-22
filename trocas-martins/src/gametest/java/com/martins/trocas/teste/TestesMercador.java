@@ -3,6 +3,9 @@ package com.martins.trocas.teste;
 import com.martins.trocas.ModRegistro;
 import com.martins.trocas.TrocasMartins;
 import com.martins.trocas.mercador.Cotacao;
+import com.martins.trocas.mercador.LojaMercador;
+import com.martins.trocas.mercador.Taxa;
+import com.martins.trocas.mercador.TrocasAldeoes;
 import com.martins.trocas.mercador.MercadorScreenHandler;
 import com.martins.trocas.mercador.PrecoMercador;
 import net.fabricmc.fabric.api.entity.FakePlayer;
@@ -39,25 +42,56 @@ public class TestesMercador implements FabricGameTest {
 	public void precos(TestContext ctx) {
 		ctx.assertTrue(ctx.getWorld().getRecipeManager().get(TrocasMartins.id("balcao_do_mercador")).isPresent(),
 			"a receita do Balcão do Mercador deveria existir");
-		igual(ctx, 8, PrecoMercador.valorUnitario(new ItemStack(Items.DIRT)), "terra");
-		igual(ctx, 9, PrecoMercador.valorUnitario(new ItemStack(Items.OAK_PLANKS)), "tábua de carvalho (receita)");
-		igual(ctx, 2430, PrecoMercador.valorUnitario(new ItemStack(Items.IRON_BLOCK)), "bloco de ferro (receita)");
-		igual(ctx, 135, PrecoMercador.valorUnitario(new ItemStack(Items.BREAD)), "pão (receita)");
-		igual(ctx, 5405, PrecoMercador.valorUnitario(new ItemStack(Items.DIAMOND_SWORD)), "espada de diamante");
-		igual(ctx, 28805, PrecoMercador.valorUnitario(new ItemStack(Items.NETHERITE_SWORD)), "espada de netherite");
 
-		Cotacao c = PrecoMercador.cotar(List.of(new ItemStack(Items.DIRT, 1)), 1.0);
-		ctx.assertTrue(c.status() == Cotacao.Status.INSUFICIENTE, "1 terra deveria ser insuficiente: " + c);
-		igual(ctx, 124, c.faltam(), "faltam para 1 terra");
+		// igual aos aldeões: flecheiro compra 32 gravetos, fazendeiro 20 trigos, armeiro 1 diamante por 1 esmeralda
+		Cotacao c = PrecoMercador.cotar(List.of(new ItemStack(Items.STICK, 32)), 1.0);
+		ctx.assertTrue(c.ok() && c.esmeraldas() == 1, "32 gravetos = 1 esmeralda, veio " + c);
+		c = PrecoMercador.cotar(List.of(new ItemStack(Items.STICK, 31)), 1.0);
+		ctx.assertTrue(c.status() == Cotacao.Status.INSUFICIENTE && c.faltam() == 1, "31 gravetos: falta 1, veio " + c);
+		c = PrecoMercador.cotar(List.of(new ItemStack(Items.WHEAT, 20)), 1.0);
+		ctx.assertTrue(c.ok() && c.esmeraldas() == 1, "20 trigos = 1 esmeralda, veio " + c);
+		igual(ctx, 1000, Math.round(PrecoMercador.valorUnitario(new ItemStack(Items.DIAMOND))), "diamante (armeiro paga 1)");
+		igual(ctx, 250, Math.round(PrecoMercador.valorUnitario(new ItemStack(Items.IRON_INGOT))), "ferro (armeiro paga 1 por 4)");
 
-		c = PrecoMercador.cotar(List.of(new ItemStack(Items.DIRT, 64), new ItemStack(Items.DIRT, 64)), 1.0);
-		ctx.assertTrue(c.ok(), "128 terras deveriam valer 1 esmeralda: " + c);
-		igual(ctx, 1, c.esmeraldas(), "esmeraldas por 128 terras");
-		igual(ctx, 125, c.usados(), "terras usadas");
-		igual(ctx, 122, c.faltam(), "faltam para a 2a esmeralda");
+		// tronco: 1 tronco = 4 tábuas = 8 gravetos = 0,25 esmeralda no flecheiro; o Mercador paga um pouco menos
+		double tronco = PrecoMercador.valorUnitario(new ItemStack(Items.OAK_LOG));
+		ctx.assertTrue(tronco > 200 && tronco < 250, "tronco deveria valer entre 0,2 e 0,25 esmeralda, veio " + tronco);
+		double tabua = PrecoMercador.valorUnitario(new ItemStack(Items.OAK_PLANKS));
+		ctx.assertTrue(tabua * 4 <= 250 && tronco <= tabua * 4, "tábuas e tronco coerentes: " + tabua + " / " + tronco);
 
-		c = PrecoMercador.cotar(List.of(new ItemStack(Items.DIAMOND, 2)), 1.0);
-		igual(ctx, 6, c.esmeraldas(), "2 diamantes");
+		// nenhum aldeão vende algo mais barato do que o Mercador paga (não dá lucro)
+		for (var e : TrocasAldeoes.VENDEM.entrySet()) {
+			double pago = PrecoMercador.valorUnitario(new ItemStack(e.getKey()));
+			ctx.assertTrue(pago <= e.getValue().porItem() * 1000 * 0.9 + 1,
+				"lucro possível com " + e.getKey() + ": aldeão vende a " + e.getValue() + ", Mercador paga " + pago);
+		}
+		// o que aldeões compram, o Mercador paga igual (ou um pouco menos, se der lucro)
+		for (var e : TrocasAldeoes.COMPRAM.entrySet()) {
+			double pago = PrecoMercador.valorUnitario(new ItemStack(e.getKey()));
+			ctx.assertTrue(pago <= e.getValue().porItem() * 1000 + 0.01,
+				e.getKey() + ": aldeão paga " + e.getValue() + ", Mercador paga mais: " + pago);
+		}
+		// o que o Mercador vende não dá para revender com lucro (nem para ele, nem para aldeões)
+		ctx.assertTrue(!LojaMercador.ofertas().isEmpty(), "a loja do Mercador está vazia");
+		for (LojaMercador.Oferta o : LojaMercador.ofertas()) {
+			double custoPorItem = o.esmeraldas() * 1000.0 / o.resultado().getCount();
+			double revenda = PrecoMercador.valorUnitario(o.resultado());
+			ctx.assertTrue(revenda <= custoPorItem + 1e-6, "revender " + o.resultado() + " dá lucro: " + custoPorItem + " < " + revenda);
+			var compram = TrocasAldeoes.COMPRAM.get(o.resultado().getItem());
+			if (compram != null) ctx.assertTrue(compram.porItem() * 1000 <= custoPorItem + 0.01,
+				"revender " + o.resultado() + " a um aldeão dá lucro");
+			ctx.assertFalse(o.resultado().isOf(Items.ELYTRA) || o.resultado().isOf(Items.TOTEM_OF_UNDYING), "item apelão na loja");
+		}
+		// itens raros com preço absurdo
+		for (LojaMercador.Oferta o : LojaMercador.ofertas()) {
+			if (o.resultado().isOf(Items.DIAMOND)) ctx.assertTrue(o.esmeraldas() >= 100, "diamante barato demais");
+			if (o.resultado().isOf(Items.NETHERITE_INGOT)) ctx.assertTrue(o.esmeraldas() >= 500, "netherite barato demais");
+			// mesmo preço do aldeão quando algum aldeão vende
+			var vendem = TrocasAldeoes.VENDEM.get(o.resultado().getItem());
+			if (vendem != null && vendem.esmeraldas() <= 64)
+				ctx.assertTrue(o.esmeraldas() == vendem.esmeraldas() && o.resultado().getCount() == vendem.itens(),
+					o.resultado() + ": deveria ser a mesma troca dos aldeões " + vendem);
+		}
 
 		c = PrecoMercador.cotar(List.of(new ItemStack(Items.DIRT, 5), new ItemStack(Items.STONE, 5)), 1.0);
 		ctx.assertTrue(c.status() == Cotacao.Status.MISTURADO, "misturado: " + c);
@@ -66,21 +100,21 @@ public class TestesMercador implements FabricGameTest {
 		c = PrecoMercador.cotar(List.of(new ItemStack(Items.BEDROCK, 1)), 1.0);
 		ctx.assertTrue(c.status() == Cotacao.Status.NAO_COMPRA, "bedrock: " + c);
 
-		igual(ctx, 77, PrecoMercador.valorUnitario(new ItemStack(Items.COOKED_BEEF)), "bife (forno)");
 		TradeOffer oferta = new TradeOffer(new TradedItem(Items.EMERALD, 1), new ItemStack(Items.DIAMOND_CHESTPLATE), 1, 1, 0f);
-		igual(ctx, 500, PrecoMercador.valorUnitario(oferta.copySellItem()), "peitoral comprado de aldeão por 1 esmeralda");
-
+		ctx.assertTrue(PrecoMercador.valorUnitario(oferta.copySellItem()) <= 500, "peitoral comprado de aldeão por 1 esmeralda");
 		ItemStack picaretaGasta = new ItemStack(Items.IRON_PICKAXE);
 		picaretaGasta.setDamage(picaretaGasta.getMaxDamage() / 2);
 		ctx.assertTrue(PrecoMercador.valorUnitario(picaretaGasta) < PrecoMercador.valorUnitario(new ItemStack(Items.IRON_PICKAXE)),
 			"picareta gasta deveria valer menos");
 
-		for (var item : List.of(Items.DIRT, Items.COBBLESTONE, Items.OAK_LOG, Items.WHEAT, Items.BREAD, Items.TORCH, Items.IRON_INGOT,
-			Items.GOLD_BLOCK, Items.DIAMOND, Items.DIAMOND_PICKAXE, Items.ENCHANTING_TABLE, Items.BEACON, Items.CAKE, Items.GLASS,
-			Items.STONE_BRICKS, Items.RED_BED, Items.ROTTEN_FLESH, Items.NETHERITE_INGOT, Items.ELYTRA, Items.MUSIC_DISC_CAT)) {
-			Cotacao q = PrecoMercador.cotar(List.of(new ItemStack(item, 64)), 1.0);
-			TrocasMartins.LOGGER.info("[preço] {} = {} milésimos | 64 un. -> {} esmeraldas ({} usados)", item,
-				PrecoMercador.valorUnitario(new ItemStack(item)), q.esmeraldas(), q.usados());
+		for (var item : List.of(Items.STICK, Items.OAK_LOG, Items.OAK_PLANKS, Items.DIRT, Items.COBBLESTONE, Items.WHEAT, Items.BREAD,
+			Items.IRON_INGOT, Items.IRON_BLOCK, Items.RAW_IRON, Items.DIAMOND, Items.DIAMOND_PICKAXE, Items.ROTTEN_FLESH, Items.PAPER,
+			Items.BOOK, Items.BOOKSHELF, Items.ARROW, Items.GLASS, Items.TORCH, Items.STRING, Items.WHITE_WOOL)) {
+			Cotacao q = PrecoMercador.cotar(List.of(new ItemStack(item)), 1.0);
+			TrocasMartins.LOGGER.info("[preço] {} -> {}", item, Taxa.descrever(q));
+		}
+		for (LojaMercador.Oferta o : LojaMercador.ofertas()) {
+			TrocasMartins.LOGGER.info("[loja] {} + {} -> {}", o.custoA(), o.custoB(), o.resultado());
 		}
 		ctx.complete();
 	}
@@ -134,7 +168,7 @@ public class TestesMercador implements FabricGameTest {
 			"oferta da terra: " + o);
 
 		// clicar na troca enche os espaços; shift-clique vende tudo o que dá
-		h.escolherOferta(0);
+		h.escolherVenda(new ItemStack(Items.DIRT));
 		igual(ctx, 128, h.getSlot(0).getStack().getCount() + h.getSlot(1).getStack().getCount(), "espaços cheios ao escolher");
 		h.onSlotClick(saida, 0, SlotActionType.QUICK_MOVE, p);
 		igual(ctx, 2, p.getInventory().count(Items.EMERALD), "esmeraldas depois do shift-clique");
@@ -144,6 +178,29 @@ public class TestesMercador implements FabricGameTest {
 		h.getSlot(0).setStack(new ItemStack(Items.STONE, 3));
 		h.getSlot(1).setStack(new ItemStack(Items.DIRT, 3));
 		ctx.assertTrue(h.cotacaoCliente().status() == Cotacao.Status.MISTURADO, "itens misturados");
+
+		// comprar: escolher pão na loja coloca as esmeraldas no pagamento e o pão no resultado
+		h.getSlot(0).setStack(ItemStack.EMPTY);
+		h.getSlot(1).setStack(ItemStack.EMPTY);
+		p.getInventory().clear();
+		p.getInventory().insertStack(new ItemStack(Items.EMERALD, 10));
+		int pao = -1;
+		for (int i = 0; i < h.getLoja().size(); i++) if (h.getLoja().get(i).resultado().isOf(Items.BREAD)) pao = i;
+		ctx.assertTrue(pao >= 0, "a loja deveria vender pão");
+		LojaMercador.Oferta oferta = h.getLoja().get(pao);
+		h.escolherCompra(pao);
+		ctx.assertTrue(h.cotacaoCliente().status() == Cotacao.Status.COMPRA_OK, "compra de pão: " + h.cotacaoCliente());
+		ctx.assertTrue(h.getSlot(saida).getStack().isOf(Items.BREAD), "resultado = pão");
+		h.onSlotClick(saida, 0, SlotActionType.PICKUP, p);
+		ctx.assertTrue(h.getCursorStack().isOf(Items.BREAD), "pegou o pão");
+		igual(ctx, 10 - oferta.esmeraldas(), p.getInventory().count(Items.EMERALD) + h.getSlot(0).getStack().getCount(), "esmeraldas depois da compra");
+		h.setCursorStack(ItemStack.EMPTY);
+		// diamante custa blocos de esmeralda: sem eles, X e "faltam N esmeraldas"
+		int diamante = -1;
+		for (int i = 0; i < h.getLoja().size(); i++) if (h.getLoja().get(i).resultado().isOf(Items.DIAMOND)) diamante = i;
+		h.escolherCompra(diamante);
+		ctx.assertTrue(h.cotacaoCliente().status() == Cotacao.Status.COMPRA_FALTA && h.cotacaoCliente().faltam() > 90,
+			"diamante sem dinheiro: " + h.cotacaoCliente());
 
 		h.onClosed(p);
 		ctx.assertTrue(v.getCustomer() == null, "o Mercador deveria ficar livre ao fechar");

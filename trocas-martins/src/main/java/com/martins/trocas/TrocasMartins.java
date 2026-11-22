@@ -6,6 +6,7 @@ import com.martins.trocas.mercador.MercadorConfig;
 import com.martins.trocas.mercador.PrecoMercador;
 import com.martins.trocas.trocas.NovasTrocas;
 import com.martins.trocas.mercador.MercadorScreenHandler;
+import com.martins.trocas.rede.CatalogoPayload;
 import com.martins.trocas.rede.EscolherOfertaPayload;
 import com.martins.trocas.rede.OfertasPayload;
 import net.fabricmc.api.ModInitializer;
@@ -33,10 +34,12 @@ public class TrocasMartins implements ModInitializer {
 		NovasTrocas.registrar();
 
 		PayloadTypeRegistry.playS2C().register(OfertasPayload.ID, OfertasPayload.CODEC);
+		PayloadTypeRegistry.playS2C().register(CatalogoPayload.ID, CatalogoPayload.CODEC);
 		PayloadTypeRegistry.playC2S().register(EscolherOfertaPayload.ID, EscolherOfertaPayload.CODEC);
 		ServerPlayNetworking.registerGlobalReceiver(EscolherOfertaPayload.ID, (payload, ctx) -> {
 			if (ctx.player().currentScreenHandler instanceof MercadorScreenHandler h) {
-				h.escolherOferta(payload.indice());
+				if (payload.comprar()) h.escolherCompra(payload.indice());
+				else h.escolherVenda(payload.item());
 			}
 		});
 

@@ -62,7 +62,7 @@ public final class ComandoMercador {
 		};
 		ctx.getSource().sendFeedback(() -> msg, false);
 		ctx.getSource().sendFeedback(() -> Text.literal(Taxa.descrever(c)).formatted(Formatting.GRAY), false);
-		ctx.getSource().sendFeedback(() -> Text.literal("(preço de um Mercador Novato; Mercadores experientes pagam mais)").formatted(Formatting.DARK_GRAY), false);
+		ctx.getSource().sendFeedback(() -> Text.literal("(mesmo preço que os aldeões pagam, quando algum aldeão compra esse item)").formatted(Formatting.DARK_GRAY), false);
 		return c.esmeraldas();
 	}
 }

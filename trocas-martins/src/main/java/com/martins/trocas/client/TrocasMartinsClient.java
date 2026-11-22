@@ -2,6 +2,7 @@ package com.martins.trocas.client;
 
 import com.martins.trocas.ModRegistro;
 import com.martins.trocas.mercador.MercadorScreenHandler;
+import com.martins.trocas.rede.CatalogoPayload;
 import com.martins.trocas.rede.OfertasPayload;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -15,6 +16,12 @@ public class TrocasMartinsClient implements ClientModInitializer {
 			if (ctx.player() != null && ctx.player().currentScreenHandler instanceof MercadorScreenHandler h
 				&& h.syncId == payload.syncId()) {
 				h.setOfertas(payload.ofertas());
+			}
+		});
+		ClientPlayNetworking.registerGlobalReceiver(CatalogoPayload.ID, (payload, ctx) -> {
+			if (ctx.player() != null && ctx.player().currentScreenHandler instanceof MercadorScreenHandler h
+				&& h.syncId == payload.syncId()) {
+				h.setCatalogo(payload.compra(), payload.venda());
 			}
 		});
 	}

@@ -136,12 +136,12 @@ public class FotosCliente implements ClientModInitializer {
 					p.getInventory().clear();
 					p.getInventory().setStack(0, new ItemStack(Items.DIRT, 64));
 					p.getInventory().setStack(1, new ItemStack(Items.DIRT, 36));
-					p.getInventory().setStack(2, new ItemStack(Items.DIAMOND, 5));
+					p.getInventory().setStack(2, new ItemStack(Items.STICK, 40));
 					p.getInventory().setStack(3, new ItemStack(Items.WHEAT, 40));
 					p.getInventory().setStack(4, new ItemStack(Items.IRON_INGOT, 20));
-					p.getInventory().setStack(5, new ItemStack(Items.ROTTEN_FLESH, 23));
-					p.getInventory().setStack(6, new ItemStack(Items.OAK_LOG, 64));
-					p.getInventory().setStack(7, new ItemStack(Items.BREAD, 16));
+					p.getInventory().setStack(5, new ItemStack(Items.OAK_LOG, 12));
+					p.getInventory().setStack(6, new ItemStack(Items.EMERALD, 30));
+					p.getInventory().setStack(7, new ItemStack(Items.EMERALD_BLOCK, 3));
 					InteracaoMercador.aoInteragir(p, p.getWorld(), Hand.MAIN_HAND, mercador, null);
 				});
 				etapa = 4;
@@ -150,41 +150,58 @@ public class FotosCliente implements ClientModInitializer {
 			case 4 -> {
 				ServerPlayerEntity p = server.getPlayerManager().getPlayer(c.player.getUuid());
 				server.execute(() -> {
-					if (p.currentScreenHandler instanceof MercadorScreenHandler h) {
-						h.sendContentUpdates();
-						h.escolherOferta(0); // terra: 100 de 112
-					}
+					if (p.currentScreenHandler instanceof MercadorScreenHandler h) h.escolherVenda(new ItemStack(Items.DIRT));
 				});
 				int x = (c.getWindow().getScaledWidth() - 276) / 2, y = (c.getWindow().getScaledHeight() - 166) / 2;
-				mouse(c, x + 64, y + 24);
+				mouse(c, x + 197, y + 45);
 				etapa = 5;
 				espera = 20;
 			}
 			case 5 -> {
-				foto(c, "2_faltam");
+				foto(c, "2_vender_faltam");
 				ServerPlayerEntity p = server.getPlayerManager().getPlayer(c.player.getUuid());
 				server.execute(() -> {
-					if (p.currentScreenHandler instanceof MercadorScreenHandler h) {
-						for (int i = 0; i < h.getOfertas().size(); i++)
-							if (h.getOfertas().get(i).item().isOf(Items.DIAMOND)) h.escolherOferta(i);
-					}
+					if (p.currentScreenHandler instanceof MercadorScreenHandler h) h.escolherVenda(new ItemStack(Items.STICK));
 				});
 				mouse(c, 1, 1);
 				etapa = 6;
 				espera = 20;
 			}
 			case 6 -> {
-				foto(c, "3_proposta");
+				foto(c, "3_vender_gravetos");
+				tela(c, "pesquisa", "ferro");
+				etapa = 7;
+				espera = 10;
+			}
+			case 7 -> {
+				foto(c, "4_pesquisa");
+				tela(c, "pesquisa", "");
+				chamar(c, "trocarModo", true);
 				ServerPlayerEntity p = server.getPlayerManager().getPlayer(c.player.getUuid());
 				server.execute(() -> {
-					p.closeHandledScreen();
-					bibliotecario.interactMob(p, Hand.MAIN_HAND);
+					if (p.currentScreenHandler instanceof MercadorScreenHandler h) {
+						for (int i = 0; i < h.getLoja().size(); i++)
+							if (h.getLoja().get(i).resultado().isOf(Items.BREAD)) h.escolherCompra(i);
+					}
 				});
+				etapa = 8;
+				espera = 20;
+			}
+			case 8 -> {
+				foto(c, "5_comprar");
+				ServerPlayerEntity p = server.getPlayerManager().getPlayer(c.player.getUuid());
+				server.execute(() -> {
+					if (p.currentScreenHandler instanceof MercadorScreenHandler h) {
+						for (int i = 0; i < h.getLoja().size(); i++)
+							if (h.getLoja().get(i).resultado().isOf(Items.DIAMOND)) h.escolherCompra(i);
+					}
+				});
+				chamarRolar(c, 200);
 				etapa = 9;
-				espera = 30;
+				espera = 20;
 			}
 			case 9 -> {
-				foto(c, "4_bibliotecario");
+				foto(c, "6_comprar_diamante");
 				etapa = 10;
 				espera = 10;
 			}
@@ -195,6 +212,30 @@ public class FotosCliente implements ClientModInitializer {
 			default -> {
 			}
 		}
+	}
+
+	private static void tela(MinecraftClient c, String campo, String texto) {
+		try {
+			var f = com.martins.trocas.client.MercadorScreen.class.getDeclaredField(campo);
+			f.setAccessible(true);
+			((net.minecraft.client.gui.widget.TextFieldWidget) f.get(c.currentScreen)).setText(texto);
+		} catch (ReflectiveOperationException e) {
+			throw new RuntimeException(e);
+		}
+	}
+
+	private static void chamar(MinecraftClient c, String metodo, boolean arg) {
+		try {
+			var m = com.martins.trocas.client.MercadorScreen.class.getDeclaredMethod(metodo, boolean.class);
+			m.setAccessible(true);
+			m.invoke(c.currentScreen, arg);
+		} catch (ReflectiveOperationException e) {
+			throw new RuntimeException(e);
+		}
+	}
+
+	private static void chamarRolar(MinecraftClient c, int linhas) {
+		c.currentScreen.mouseScrolled(0, 0, 0, -linhas);
 	}
 
 	private static void subirNivel(VillagerEntity v) {

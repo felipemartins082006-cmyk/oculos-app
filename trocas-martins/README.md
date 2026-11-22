@@ -4,9 +4,9 @@ Mod para **Minecraft Java 1.21.1** (Fabric) que:
 
 1. **Adiciona trocas novas para todas as profissões de aldeão** (e para o mascate).
 2. **Cria uma profissão nova, o Mercador**, com um bloco de trabalho craftável, o **Balcão do Mercador**.
-   O Mercador **compra qualquer item**: você coloca o item e a quantidade e ele diz quantas esmeraldas paga.
-   Se não der para fechar nem 1 esmeralda, aparece o **X vermelho** de troca impossível e um campo
-   mostrando **quantos itens ainda faltam**.
+   O Mercador **compra praticamente qualquer item do jogo** pelo mesmo preço que os outros aldeões pagam,
+   e também **vende** uma lista de itens variados. Se não der para fechar a troca, aparece o
+   **X vermelho** de troca impossível e quantos itens (ou esmeraldas) ainda faltam.
 
 ![Mercador e o Balcão do Mercador no mundo](docs/1_mundo.png)
 
@@ -34,42 +34,77 @@ Coloque o Balcão perto de um aldeão desempregado e ele vira **Mercador** (chap
 igual acontece com a mesa de cartografia, o atril etc. O Balcão é um armário de abeto com pano verde,
 esmeraldas e moedas de ouro em cima, e fica na aba "Blocos funcionais" do criativo.
 
-### Como vender
+### A tela do Mercador
 
-Clique com o botão direito no Mercador. Abre a **mesma tela de trocas dos aldeões**:
+Clique com o botão direito no Mercador. Abre a **mesma tela de trocas dos aldeões**, com duas abas em cima:
+**Vender** e **Comprar**, e um campo de **pesquisa** no lugar do título "Trocas".
 
-- **À esquerda, a lista de trocas**: um item de cada tipo que você tem no inventário e que o Mercador
-  compra, com a quantidade que ele pede e as esmeraldas que paga (ex.: 64 + 48 terras → 1 esmeralda).
-  Se você não tem o suficiente, a seta vira o **X vermelho**; passe o mouse nele para ver
-  **quantos itens faltam**.
-- **Clicar numa troca** coloca os itens nos 2 espaços de pagamento, como numa troca normal.
-  Você também pode arrastar os itens para lá com a mão.
-- **No resultado** aparecem as esmeraldas. Ele usa só os itens necessários e o resto fica no pagamento.
-- Se o que está no pagamento não fecha 1 esmeralda, aparece o **X vermelho grande** (o mesmo das trocas
-  esgotadas) e, embaixo dele, o aviso **"Faltam N itens"**. Também avisa se você misturar itens
-  diferentes ou colocar algo que ele não compra.
-- **Shift + clique** nas esmeraldas vende tudo daquele item que estiver no seu inventário.
-- A barra de experiência do aldeão funciona como nas trocas normais: vender sobe o nível do Mercador.
+#### Vender
 
-| Faltam itens | Proposta aceita |
+- A lista mostra **tudo o que o Mercador compra** (praticamente todos os itens do jogo).
+  Os itens que você tem no inventário aparecem primeiro; o resto aparece depois, e dá para **pesquisar**
+  pelo nome (ex.: "ferro", "tronco").
+- Cada linha mostra quanto ele pede e quanto paga (ex.: 32 gravetos → 1 esmeralda). Se você não tem o
+  suficiente, a seta vira **X vermelho**; passe o mouse nele para ver **quantos itens faltam**.
+- **Clicar numa linha** coloca os itens nos 2 espaços de pagamento, como numa troca normal.
+  Ou simplesmente **coloque qualquer item** no pagamento com a mão: ele avalia na hora.
+- Se fecha, as esmeraldas aparecem no resultado (ele usa só os itens necessários; o resto fica).
+  Se não fecha, aparece o **X grande** e o aviso **"Faltam N itens"**.
+- **Shift + clique** nas esmeraldas vende tudo daquele item que estiver no inventário.
+
+| Faltam itens | 32 gravetos = 1 esmeralda | Pesquisa |
+|---|---|---|
+| ![Faltam itens](docs/2_vender_faltam.png) | ![Gravetos](docs/3_vender_gravetos.png) | ![Pesquisa](docs/4_pesquisa.png) |
+
+#### Comprar
+
+- A lista mostra o que o Mercador vende. Clique numa linha e ele coloca as esmeraldas no pagamento;
+  o item aparece no resultado. Se faltar dinheiro: X vermelho e **"Faltam N esmeraldas"**.
+- **Shift + clique** compra várias vezes seguidas.
+
+| Comprar pão | Diamante (preço absurdo, em blocos de esmeralda) |
 |---|---|
-| ![Faltam itens](docs/2_faltam.png) | ![Proposta](docs/3_proposta.png) |
+| ![Comprar](docs/5_comprar.png) | ![Diamante](docs/6_comprar_diamante.png) |
 
-### Como o preço é calculado
+### Preços justos (sem lucro, sem prejuízo absurdo)
 
-- **Matérias-primas** têm um preço base (ex.: terra 125 por esmeralda, trigo 20 por esmeralda,
-  lingote de ferro 0,3, diamante 3 esmeraldas).
-- **Itens fabricados** valem a soma dos ingredientes da receita × 90%. Isso funciona sozinho para
-  todos os itens do jogo, **inclusive itens de outros mods** que tenham receita.
-- Itens sem receita e sem preço usam um valor pela raridade.
-- Nada vale menos que 1 esmeralda a cada 125 itens, para sempre caber nos 2 espaços de pagamento.
-- **Durabilidade**: ferramenta gasta vale menos. **Encantamentos** aumentam o valor
-  (maldições não contam). **Caixas de shulker** contam o que tem dentro.
+O Mercador lê, quando o mundo abre, **todas as trocas de todos os aldeões** (as do Minecraft, as do
+mascate, as deste mod e as de outros mods) e segue estas regras:
+
+**Quando você vende:**
+1. Se algum aldeão compra o item, o Mercador paga **exatamente o mesmo**.
+   Ex.: o flecheiro compra 32 gravetos por 1 esmeralda, então o Mercador também. Trigo: 20. Papel: 24.
+   Lingote de ferro: 4. Diamante: 1 (igual ao armeiro).
+2. Matéria-prima que vira um desses itens vale **95% do que ela rende**. Ex.: 1 tronco = 4 tábuas =
+   8 gravetos = 0,25 esmeralda no flecheiro, então o Mercador paga 1 esmeralda a cada **5 troncos**.
+   Você perde só um pouquinho por não fazer os gravetos.
+3. Item fabricado vale **95% da soma dos ingredientes**.
+4. O que sobrar usa uma tabela de matérias-primas (ex.: terra: 125 por esmeralda).
+5. **Trava contra lucro**: o Mercador nunca paga mais que 90% do que custa comprar o item
+   (ou os ingredientes dele) de qualquer aldeão.
+
+**Quando você compra:**
+1. Se algum aldeão ou o mascate vende o item, o Mercador cobra **a mesma troca**
+   (ex.: muda de árvore 5 esmeraldas, como o mascate; pão 6 por 1, como o fazendeiro).
+2. Se ninguém vende, cobra **25% a mais** do que ele mesmo pagaria. Comprar e revender sempre dá prejuízo.
+3. **Diamante e netherite** existem, mas com preço absurdo de propósito: diamante = 12 blocos de
+   esmeralda (108), fragmento de netherite = 32 blocos (288), lingote de netherite = 64 blocos + 64 esmeraldas (640).
+4. Nada de élitro, totem, estrela do Nether e afins.
+
+A loja tem madeiras, pedras, areia, argila, gelo, obsidiana, mudas, plantas, sementes, comida,
+carvão, ferro, cobre, ouro, redstone, lápis, quartzo, linha, couro, penas, ossos, pólvora, slime,
+papel, livros, pérolas do Ender, frascos de experiência, tochas, lanternas, baldes, tesoura, bússola,
+relógio, mapas, flechas, laço, sela, etiqueta e sino.
+
+Os testes automáticos conferem essas regras para **todos** os itens do jogo a cada versão.
+
+Mais detalhes:
+- **Durabilidade**: ferramenta gasta vale menos. **Encantamentos** aumentam o valor.
+  **Caixas de shulker** contam o que tem dentro.
 - O Mercador paga no máximo **64 esmeraldas por item**.
-- **Mercador experiente paga mais**: +4% por nível, mais um bônus pela sua reputação na vila e pelo
-  efeito Herói da Vila (total limitado a +20%). Vender para ele dá experiência e ele sobe de nível.
 - Itens únicos (armaduras, ferramentas...) comprados de outros aldeões: o Mercador paga no máximo
-  **metade do que você pagou**, para não dar para "fabricar" esmeraldas com descontos.
+  **metade do que você pagou**.
+- Vender e comprar dá experiência ao Mercador e ele sobe de nível (o preço não muda com o nível).
 
 ### Comandos
 
@@ -84,9 +119,6 @@ O arquivo `config/trocasmartins.json` é criado na primeira vez que o jogo abre 
 ```json
 {
   "multiplicador_global": 1.0,
-  "bonus_por_nivel": 0.04,
-  "bonus_por_reputacao": true,
-  "bonus_maximo": 0.2,
   "max_esmeraldas_por_item": 64,
   "trocas_novas_por_nivel": 1,
   "precos": {
@@ -96,7 +128,7 @@ O arquivo `config/trocasmartins.json` é criado na primeira vez que o jogo abre 
 }
 ```
 
-Em `precos`, o valor é **em esmeraldas por UM item** (`0.01` = 100 itens por esmeralda; `0` = não compra).
+Em `precos` você fixa quanto o Mercador paga, **em esmeraldas por UM item** (`0.01` = 100 itens por esmeralda; `0` = não compra).
 Use `#tag` para grupos de itens. Datapacks podem adicionar itens à tag `trocasmartins:nao_compra`.
 
 ## Trocas novas das profissões
@@ -139,6 +171,8 @@ python3 tools/gerar_texturas.py   # recria a roupa do Mercador
 Código principal em `src/main/java/com/martins/trocas`:
 
 - `mercador/PrecoMercador.java` — cálculo dos preços e da proposta.
-- `mercador/TabelaPrecos.java` — preços-base das matérias-primas.
+- `mercador/TrocasAldeoes.java` — lê as trocas de todos os aldeões.
+- `mercador/LojaMercador.java` — o que o Mercador vende.
+- `mercador/TabelaPrecos.java` — preços-base das matérias-primas sem relação com aldeões.
 - `mercador/MercadorScreenHandler.java` / `client/MercadorScreen.java` — a tela de trocas do Mercador.
 - `trocas/NovasTrocas.java` — as trocas novas de cada profissão.

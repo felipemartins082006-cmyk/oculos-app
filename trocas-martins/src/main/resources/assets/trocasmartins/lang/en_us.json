@@ -5,5 +5,11 @@
   "gui.trocasmartins.faltam_itens": "%s more items needed",
   "gui.trocasmartins.misturado": "Only one kind of item",
   "gui.trocasmartins.nao_compra": "I don't buy that",
-  "gui.trocasmartins.impossivel": "Trade not possible"
+  "gui.trocasmartins.impossivel": "Trade not possible",
+  "gui.trocasmartins.vender": "Sell",
+  "gui.trocasmartins.comprar": "Buy",
+  "gui.trocasmartins.pesquisar": "Search...",
+  "gui.trocasmartins.faltam_esmeraldas": "%s more emeralds needed",
+  "gui.trocasmartins.nada": "Nothing to sell",
+  "gui.trocasmartins.nada_encontrado": "Nothing found"
 }
