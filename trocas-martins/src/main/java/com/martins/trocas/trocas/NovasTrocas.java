@@ -146,11 +146,11 @@ public final class NovasTrocas {
 		add(P, 2, vende(Items.WOLF_ARMOR, 1, 8, 4, 5), compra(Items.ARMADILLO_SCUTE, 3, 1, 12, 10));
 		add(P, 3, vendeEncantado(Items.IRON_CHESTPLATE, 14, 3, 15, en(Enchantments.PROTECTION, 3)),
 			vendeEncantado(Items.IRON_BOOTS, 10, 3, 15, en(Enchantments.FEATHER_FALLING, 3)));
-		add(P, 4, vendeEncantado(Items.DIAMOND_HELMET, 30, 3, 20, en(Enchantments.RESPIRATION, 3), en(Enchantments.AQUA_AFFINITY, 1)),
+		add(P, 4, vendeEncantado(Items.IRON_HELMET, 12, 3, 20, en(Enchantments.RESPIRATION, 1)),
 			vendeUmDe(1, 20, 2, 20, Items.SENTRY_ARMOR_TRIM_SMITHING_TEMPLATE, Items.DUNE_ARMOR_TRIM_SMITHING_TEMPLATE,
 				Items.COAST_ARMOR_TRIM_SMITHING_TEMPLATE, Items.WILD_ARMOR_TRIM_SMITHING_TEMPLATE, Items.VEX_ARMOR_TRIM_SMITHING_TEMPLATE));
-		add(P, 5, vendeCom(Items.NETHERITE_UPGRADE_SMITHING_TEMPLATE, 1, 48, Items.DIAMOND, 4, 2, 30),
-			vendeEncantado(Items.DIAMOND_CHESTPLATE, 48, 2, 30, en(Enchantments.PROTECTION, 4), en(Enchantments.UNBREAKING, 3)));
+		add(P, 5, vende(Items.ANVIL, 1, 12, 3, 30),
+			vendeEncantado(Items.DIAMOND_CHESTPLATE, 32, 2, 30, en(Enchantments.PROTECTION, 2)));
 
 		// AÇOUGUEIRO
 		P = VillagerProfession.BUTCHER;
@@ -166,8 +166,8 @@ public final class NovasTrocas {
 		add(P, 2, vende(Items.SPYGLASS, 1, 6, 6, 5), vende(Items.GLOW_ITEM_FRAME, 4, 3, 12, 5));
 		add(P, 3, vendeUmDe(1, 8, 4, 10, Items.FLOWER_BANNER_PATTERN, Items.CREEPER_BANNER_PATTERN, Items.SKULL_BANNER_PATTERN,
 			Items.FLOW_BANNER_PATTERN, Items.GUSTER_BANNER_PATTERN), vende(Items.LODESTONE, 1, 24, 2, 10));
-		add(P, 4, vende(Items.ECHO_SHARD, 1, 16, 4, 15), vende(Items.MAP, 4, 2, 12, 15));
-		add(P, 5, vende(Items.RECOVERY_COMPASS, 1, 30, 2, 30), vende(Items.MOJANG_BANNER_PATTERN, 1, 32, 2, 30));
+		add(P, 4, vende(Items.ITEM_FRAME, 4, 2, 12, 15), vende(Items.MAP, 4, 2, 12, 15));
+		add(P, 5, vende(Items.CLOCK, 1, 6, 6, 30), vende(Items.MOJANG_BANNER_PATTERN, 1, 32, 2, 30));
 
 		// CLÉRIGO
 		P = VillagerProfession.CLERIC;
@@ -175,8 +175,8 @@ public final class NovasTrocas {
 		add(P, 2, vendePocao(Items.POTION, Potions.HEALING, 5, 5), vende(Items.GLOWSTONE_DUST, 8, 2, 12, 5));
 		add(P, 3, vende(Items.GHAST_TEAR, 1, 8, 6, 10), vende(Items.PHANTOM_MEMBRANE, 2, 6, 8, 10));
 		add(P, 4, vendePocao(Items.POTION, Potions.REGENERATION, 8, 15), vendePocao(Items.POTION, Potions.FIRE_RESISTANCE, 6, 15),
-			vende(Items.DRAGON_BREATH, 1, 10, 4, 15));
-		add(P, 5, vendeCom(Items.TOTEM_OF_UNDYING, 1, 64, Items.DIAMOND, 4, 1, 30),
+			vende(Items.MAGMA_CREAM, 2, 4, 8, 15));
+		add(P, 5, vende(Items.BREWING_STAND, 1, 8, 4, 30),
 			vendePocao(Items.SPLASH_POTION, Potions.STRONG_HEALING, 12, 30));
 
 		// FAZENDEIRO
@@ -185,7 +185,7 @@ public final class NovasTrocas {
 		add(P, 2, vende(Items.COCOA_BEANS, 4, 1, 16, 5), vende(Items.BAMBOO, 8, 1, 16, 5), compra(Items.CACTUS, 16, 1, 16, 10));
 		add(P, 3, vende(Items.MOSS_BLOCK, 4, 2, 12, 10), vende(Items.CHERRY_SAPLING, 1, 2, 8, 10), vende(Items.FLOWERING_AZALEA, 1, 2, 8, 10));
 		add(P, 4, vende(Items.TORCHFLOWER_SEEDS, 1, 6, 4, 15), vende(Items.PITCHER_POD, 1, 6, 4, 15));
-		add(P, 5, vende(Items.SNIFFER_EGG, 1, 32, 1, 30), vende(Items.GOLDEN_CARROT, 8, 5, 8, 30));
+		add(P, 5, vende(Items.MELON, 2, 3, 8, 30), vende(Items.GOLDEN_CARROT, 8, 5, 8, 30));
 
 		// PESCADOR
 		P = VillagerProfession.FISHERMAN;
@@ -193,17 +193,17 @@ public final class NovasTrocas {
 		add(P, 2, vende(Items.PRISMARINE_SHARD, 8, 2, 12, 5), vende(Items.PRISMARINE_CRYSTALS, 4, 3, 12, 5));
 		add(P, 3, vende(Items.SPONGE, 1, 6, 6, 10), vende(Items.AXOLOTL_BUCKET, 1, 8, 4, 10));
 		add(P, 4, vende(Items.NAUTILUS_SHELL, 1, 8, 4, 15),
-			vendeEncantado(Items.FISHING_ROD, 20, 3, 15, en(Enchantments.LUCK_OF_THE_SEA, 3), en(Enchantments.LURE, 3)));
-		add(P, 5, vende(Items.HEART_OF_THE_SEA, 1, 40, 1, 30), vende(Items.TRIDENT, 1, 60, 1, 30));
+			vendeEncantado(Items.FISHING_ROD, 12, 3, 15, en(Enchantments.LURE, 2)));
+		add(P, 5, vende(Items.SEA_LANTERN, 4, 6, 8, 30), vende(Items.TURTLE_SCUTE, 1, 8, 4, 30));
 
 		// FLECHEIRO
 		P = VillagerProfession.FLETCHER;
 		add(P, 1, vende(Items.SPECTRAL_ARROW, 8, 3, 12, 2), compra(Items.FEATHER, 24, 1, 16, 2));
 		add(P, 2, vende(Items.WIND_CHARGE, 6, 4, 12, 5), vendeFlechas(Potions.SLOWNESS, 8, 3, 5));
 		add(P, 3, vendeEncantado(Items.BOW, 12, 3, 10, en(Enchantments.POWER, 3)), vendeFlechas(Potions.POISON, 8, 4, 10));
-		add(P, 4, vendeEncantado(Items.CROSSBOW, 18, 3, 15, en(Enchantments.MULTISHOT, 1), en(Enchantments.QUICK_CHARGE, 2)),
+		add(P, 4, vendeEncantado(Items.CROSSBOW, 12, 3, 15, en(Enchantments.QUICK_CHARGE, 1)),
 			vendeFlechas(Potions.HARMING, 8, 6, 15));
-		add(P, 5, vendeEncantado(Items.BOW, 30, 2, 30, en(Enchantments.INFINITY, 1), en(Enchantments.POWER, 4)),
+		add(P, 5, vendeEncantado(Items.BOW, 15, 2, 30, en(Enchantments.POWER, 2)),
 			vende(Items.SPECTRAL_ARROW, 16, 6, 12, 30));
 
 		// CURTIDOR
@@ -212,8 +212,8 @@ public final class NovasTrocas {
 		add(P, 2, vende(Items.IRON_HORSE_ARMOR, 1, 6, 6, 5), vende(Items.ITEM_FRAME, 2, 2, 12, 5));
 		add(P, 3, vende(Items.NAME_TAG, 1, 6, 6, 10), vende(Items.GOLDEN_HORSE_ARMOR, 1, 8, 6, 10));
 		add(P, 4, vende(Items.DIAMOND_HORSE_ARMOR, 1, 16, 3, 15), vende(Items.WOLF_ARMOR, 1, 10, 4, 15));
-		add(P, 5, vende(Items.TURTLE_HELMET, 1, 20, 2, 30), vendeEncantado(Items.LEATHER_BOOTS, 24, 2, 30,
-			en(Enchantments.DEPTH_STRIDER, 3), en(Enchantments.FEATHER_FALLING, 4)));
+		add(P, 5, vende(Items.TURTLE_HELMET, 1, 20, 2, 30), vendeEncantado(Items.LEATHER_BOOTS, 16, 2, 30,
+			en(Enchantments.DEPTH_STRIDER, 2)));
 
 		// BIBLIOTECÁRIO
 		P = VillagerProfession.LIBRARIAN;
@@ -223,8 +223,8 @@ public final class NovasTrocas {
 			vendeLivro(Enchantments.SHARPNESS, 4, 22, 10));
 		add(P, 4, vendeLivro(Enchantments.UNBREAKING, 3, 26, 15), vendeLivro(Enchantments.FORTUNE, 3, 32, 15),
 			vendeLivro(Enchantments.LOOTING, 3, 32, 15));
-		add(P, 5, vendeLivro(Enchantments.MENDING, 1, 40, 30), vendeLivro(Enchantments.SILK_TOUCH, 1, 30, 30),
-			vendeLivro(Enchantments.SWIFT_SNEAK, 3, 48, 30));
+		add(P, 5, vendeLivro(Enchantments.MENDING, 1, 48, 30), vendeLivro(Enchantments.SILK_TOUCH, 1, 30, 30),
+			vendeLivro(Enchantments.FEATHER_FALLING, 4, 20, 30));
 
 		// PEDREIRO
 		P = VillagerProfession.MASON;
@@ -254,19 +254,19 @@ public final class NovasTrocas {
 		add(P, 2, vende(Items.SPYGLASS, 1, 5, 8, 5), vende(Items.SHEARS, 1, 2, 12, 5));
 		add(P, 3, vendeEncantado(Items.IRON_PICKAXE, 10, 3, 10, en(Enchantments.EFFICIENCY, 3)),
 			vendeEncantado(Items.IRON_SHOVEL, 6, 3, 10, en(Enchantments.EFFICIENCY, 3), en(Enchantments.UNBREAKING, 2)));
-		add(P, 4, vendeEncantado(Items.DIAMOND_PICKAXE, 30, 3, 15, en(Enchantments.FORTUNE, 3)),
-			vendeEncantado(Items.DIAMOND_AXE, 22, 3, 15, en(Enchantments.EFFICIENCY, 4)));
-		add(P, 5, vendeEncantado(Items.DIAMOND_PICKAXE, 48, 2, 30, en(Enchantments.EFFICIENCY, 5), en(Enchantments.UNBREAKING, 3)),
-			vendeCom(Items.NETHERITE_SCRAP, 1, 40, Items.GOLD_INGOT, 4, 2, 30));
+		add(P, 4, vendeEncantado(Items.IRON_PICKAXE, 16, 3, 15, en(Enchantments.FORTUNE, 1)),
+			vendeEncantado(Items.IRON_AXE, 12, 3, 15, en(Enchantments.EFFICIENCY, 2)));
+		add(P, 5, vendeEncantado(Items.DIAMOND_PICKAXE, 30, 2, 30, en(Enchantments.EFFICIENCY, 3)),
+			vende(Items.GRINDSTONE, 1, 4, 6, 30));
 
 		// ARMEIRO DE ARMAS (ferreiro de armas)
 		P = VillagerProfession.WEAPONSMITH;
 		add(P, 1, vende(Items.SHIELD, 1, 5, 8, 2), compra(Items.IRON_INGOT, 5, 1, 16, 2));
 		add(P, 2, vendeEncantado(Items.IRON_SWORD, 8, 3, 5, en(Enchantments.SHARPNESS, 2)), vende(Items.WIND_CHARGE, 4, 3, 12, 5));
-		add(P, 3, vendeEncantado(Items.IRON_AXE, 12, 3, 10, en(Enchantments.SHARPNESS, 3)), vende(Items.BREEZE_ROD, 1, 6, 6, 10));
-		add(P, 4, vendeEncantado(Items.DIAMOND_SWORD, 30, 3, 15, en(Enchantments.SHARPNESS, 4), en(Enchantments.LOOTING, 2)));
-		add(P, 5, vende(Items.HEAVY_CORE, 1, 48, 1, 30),
-			vendeEncantado(Items.DIAMOND_SWORD, 50, 2, 30, en(Enchantments.SHARPNESS, 5), en(Enchantments.FIRE_ASPECT, 2)));
+		add(P, 3, vendeEncantado(Items.IRON_AXE, 12, 3, 10, en(Enchantments.SHARPNESS, 3)), vende(Items.FLINT_AND_STEEL, 1, 3, 8, 10));
+		add(P, 4, vendeEncantado(Items.IRON_SWORD, 14, 3, 15, en(Enchantments.SHARPNESS, 3)));
+		add(P, 5, vende(Items.SMITHING_TABLE, 1, 4, 6, 30),
+			vendeEncantado(Items.DIAMOND_SWORD, 28, 2, 30, en(Enchantments.SHARPNESS, 2)));
 
 		// MASCATE (comerciante ambulante)
 		TradeOfferHelper.registerWanderingTraderOffers(1, l -> {
@@ -278,7 +278,6 @@ public final class NovasTrocas {
 			l.add(vendeUmDe(1, 6, 3, 1, Items.ANGLER_POTTERY_SHERD, Items.ARCHER_POTTERY_SHERD, Items.HEART_POTTERY_SHERD,
 				Items.PRIZE_POTTERY_SHERD, Items.SKULL_POTTERY_SHERD, Items.SNORT_POTTERY_SHERD, Items.BURN_POTTERY_SHERD));
 			l.add(vende(Items.NAME_TAG, 1, 10, 2, 1));
-			l.add(vende(Items.SNIFFER_EGG, 1, 24, 1, 1));
 		});
 	}
 }
