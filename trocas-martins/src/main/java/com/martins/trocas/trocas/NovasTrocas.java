@@ -82,6 +82,19 @@ public final class NovasTrocas {
 		};
 	}
 
+	/** Item encantado por esmeraldas + um item extra (ex.: blocos de esmeralda, lingote de netherite). */
+	static TradeOffers.Factory vendeEncantadoCom(Item item, int preco, ItemConvertible extra, int qtdExtra, int usos, int xp, Ench... encs) {
+		return (e, r) -> {
+			ItemStack s = new ItemStack(item);
+			for (Ench en : encs) {
+				RegistryEntry<Enchantment> entry = ench(e, en.chave());
+				if (entry == null) return null;
+				s.addEnchantment(entry, en.nivel());
+			}
+			return new TradeOffer(new TradedItem(Items.EMERALD, preco), Optional.of(new TradedItem(extra, qtdExtra)), s, usos, xp, 0.05f);
+		};
+	}
+
 	static TradeOffers.Factory vendeLivro(RegistryKey<Enchantment> chave, int nivel, int preco, int xp) {
 		return (e, r) -> {
 			RegistryEntry<Enchantment> entry = ench(e, chave);

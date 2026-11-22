@@ -249,6 +249,21 @@ public class TestesMercador implements FabricGameTest {
 		for (int n = 1; n <= 40; n++) ctx.assertTrue(com.martins.trocas.trocas.NiveisExtras.xpPara(n + 1) > com.martins.trocas.trocas.NiveisExtras.xpPara(n), "níveis cada vez mais difíceis");
 		mestre.discard();
 
+		// fase 2: depois de entregar todos os itens fortes, alterna otimizar (mais barato) e inovar (troca nova)
+		var lista = com.martins.trocas.trocas.NiveisExtras.todas().get(VillagerProfession.LIBRARIAN);
+		VillagerEntity sabio = ctx.spawnEntity(EntityType.VILLAGER, new BlockPos(3, 1, 3));
+		sabio.setVillagerData(sabio.getVillagerData().withProfession(VillagerProfession.LIBRARIAN).withLevel(5));
+		int base = sabio.getOffers().size();
+		sabio.setExperience(com.martins.trocas.trocas.NiveisExtras.xpPara(lista.size()));
+		com.martins.trocas.trocas.NiveisExtras.verificar(sabio);
+		igual(ctx, base + lista.size(), sabio.getOffers().size(), "fase 1 entrega todos os itens fortes");
+		int precoAntes = sabio.getOffers().get(base).getOriginalFirstBuyItem().getCount();
+		sabio.setExperience(com.martins.trocas.trocas.NiveisExtras.xpPara(lista.size() + 2));
+		com.martins.trocas.trocas.NiveisExtras.verificar(sabio);
+		igual(ctx, base + lista.size() + 1, sabio.getOffers().size(), "otimizar não cria troca, inovar cria uma");
+		ctx.assertTrue(sabio.getOffers().get(base).getOriginalFirstBuyItem().getCount() < precoAntes, "a primeira troca forte deveria ficar mais barata");
+		sabio.discard();
+
 		VillagerEntity m = ctx.spawnEntity(EntityType.VILLAGER, new BlockPos(3, 1, 3));
 		m.setVillagerData(m.getVillagerData().withProfession(ModRegistro.MERCADOR));
 		ctx.assertTrue(m.getOffers().isEmpty(), "o Mercador não usa a tela de trocas normal");

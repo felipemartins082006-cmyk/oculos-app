@@ -161,22 +161,30 @@ Depois de **Mestre**, os aldeões continuam evoluindo: **Mestre II, Mestre III, 
 
 | Profissão | Trocas dos níveis Mestre II em diante (em ordem) |
 |---|---|
-| **Armeiro** | capacete de diamante Proteção IV + Respiração III; calças Proteção IV + Inquebrável III; botas Queda Suave IV + Passos Profundos III; molde de netherite; peitoral Proteção IV + Inquebrável III + Remendo; lingote de netherite |
+| **Armeiro** | capacete de diamante Proteção IV + Respiração III; calças Proteção IV + Inquebrável III; botas Queda Suave IV + Passos Profundos III; molde de netherite; peitoral Proteção IV + Inquebrável III + Remendo; lingote de netherite; moldes Silêncio e Torre; **armadura de netherite completa** (capacete, peitoral, calças e botas com tudo no máximo + Remendo) |
 | **Açougueiro** | 3 maçãs douradas; 16 cenouras douradas; 4 pés de coelho; maçã dourada encantada |
 | **Cartógrafo** | bússola de recuperação; fragmentos de eco; magnetitas; **élitro** |
-| **Clérigo** | 16 frascos de experiência; olhos do Ender; sopro do dragão; **totem**; cascos de shulker; **estrela do Nether** |
+| **Clérigo** | 16 frascos de experiência; olhos do Ender; sopro do dragão; **totem**; cascos de shulker; **estrela do Nether**; caveira de wither esqueleto; cristais do End; **ovo do dragão** |
 | **Fazendeiro** | melancias reluzentes; ovo de farejador; 32 cenouras douradas; maçã dourada encantada |
-| **Pescador** | conchas de náutilo; vara Sorte do Mar III + Isca III + Remendo; coração do mar; **tridente** Lealdade III + Empalamento III; **conduíte** |
-| **Flecheiro** | flechas de Dano II; arco Força V + Infinidade + Chama; besta Rajada + Recarga Rápida III + Remendo; varas de breeze; arco Força V + Infinidade + Inquebrável III + Impacto II |
-| **Curtidor** | selas; casco de tartaruga encantado; cascos de shulker; **élitro** |
-| **Bibliotecário** | livros Afiação V; Eficiência V; Proteção IV; Agachamento Ágil III; Velocidade das Almas III; Passos Gelados II; Remendo (mais barato) |
-| **Pedreiro** | obsidiana chorona; catalisador de sculk; detrito ancestral; **sinalizador** |
-| **Pastor** | discos Pigstep, Otherside e Relic; cabeça de dragão |
-| **Ferramenteiro** | picaretas de diamante Eficiência V com Fortuna III ou Toque Suave; fragmentos de netherite; molde de netherite; picareta Eficiência V + Fortuna III + Inquebrável III + Remendo |
-| **Armeiro de armas** | espada Afiação V + Pilhagem III; **núcleo pesado**; machado Afiação V; **maça**; espada Afiação V + Aspecto Flamejante II + Pilhagem III + Remendo |
+| **Pescador** | conchas de náutilo; vara Sorte do Mar III + Isca III + Remendo; coração do mar; **tridente** Lealdade III + Empalamento III; **conduíte**; tridente Correnteza III + Empalamento V + Remendo |
+| **Flecheiro** | flechas de Dano II; arco Força V + Infinidade + Chama; besta Rajada + Recarga Rápida III + Remendo; varas de breeze; arco Força V + Infinidade + Inquebrável III + Impacto II; besta Perfuração IV + Recarga Rápida III + Remendo |
+| **Curtidor** | selas; casco de tartaruga encantado; cascos de shulker; **élitro**; élitro Inquebrável III + Remendo |
+| **Bibliotecário** | livros Afiação V; Eficiência V; Proteção IV; Agachamento Ágil III; Velocidade das Almas III; Passos Gelados II; Remendo (mais barato); e **todos os outros no máximo**: Inquebrável III, Fortuna III, Pilhagem III, Toque Suave, Força V, Infinidade, Espinhos III, Passos Profundos III, Respiração III, Queda Suave IV, Rajada de Vento III, Densidade V, Ruptura IV, Correnteza III, Condutividade |
+| **Pedreiro** | obsidiana chorona; catalisador de sculk; detrito ancestral; **sinalizador**; caixa de shulker; chave de desafio sinistra |
+| **Pastor** | discos Pigstep, Otherside, Relic, Creator e Precipice; cabeça de dragão; padrão Fluxo |
+| **Ferramenteiro** | picaretas de diamante Eficiência V com Fortuna III ou Toque Suave; fragmentos de netherite; molde de netherite; picareta Eficiência V + Fortuna III + Inquebrável III + Remendo; **picareta, machado e pá de netherite** no máximo + Remendo |
+| **Armeiro de armas** | espada Afiação V + Pilhagem III; **núcleo pesado**; machado Afiação V; **maça**; espada Afiação V + Aspecto Flamejante II + Pilhagem III + Remendo; **maça** Densidade V + Rajada de Vento III + Remendo; **espada de netherite** com tudo no máximo + Remendo |
 
-Quando a lista da profissão acaba, as mesmas trocas voltam **15% mais baratas** (e com mais usos)
-a cada volta. A progressão nunca termina, mas fica cada vez mais demorada.
+**Depois que o aldeão entrega todos os itens mais fortes da profissão**, os níveis seguintes alternam:
+
+- **Otimizar** (Mestre ímpar depois da lista): uma das trocas fortes fica **15% mais barata e ganha 1 uso**,
+  uma de cada vez, em rodízio. Com o tempo tudo fica cada vez mais acessível.
+- **Inovar** (Mestre par depois da lista): aparece uma **troca nova sorteada**, que pode ser:
+  - um livro de **qualquer encantamento do jogo no nível máximo**;
+  - uma peça de netherite, maça, tridente, arco, besta, vara ou élitro com até 4 encantamentos no máximo;
+  - um item forte de qualquer profissão **em dobro**.
+
+Assim a progressão nunca termina: cada nível exige mais experiência e sempre traz algo melhor.
 
 ![Bibliotecário Mestre III](docs/7_mestre_iii.png)
 
