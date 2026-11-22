@@ -1,28 +1,37 @@
 package com.martins.trocas.mercador;
 
 import com.martins.trocas.TrocasMartins;
+import com.martins.trocas.trocas.NiveisExtras;
 import com.martins.trocas.trocas.NovasTrocas;
-import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
-import net.minecraft.entity.EntityType;
-import net.minecraft.entity.passive.VillagerEntity;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
+import net.minecraft.core.Holder;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.random.Random;
-import net.minecraft.village.TradeOffer;
-import net.minecraft.village.TradeOffers;
-import net.minecraft.village.VillagerProfession;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.RandomSource;
+import net.minecraft.util.Unit;
+import net.minecraft.world.entity.EntitySpawnReason;
+import net.minecraft.world.entity.EntityTypes;
+import net.minecraft.world.entity.npc.villager.Villager;
+import net.minecraft.world.entity.npc.villager.VillagerProfession;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.trading.MerchantOffer;
+import net.minecraft.world.item.trading.VillagerTrade;
+import net.minecraft.world.level.storage.loot.LootContext;
+import net.minecraft.world.level.storage.loot.LootParams;
+import net.minecraft.world.level.storage.loot.parameters.LootContextParamSets;
+import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
- * Lê as trocas de verdade de todos os aldeões (as do Minecraft, as do mascate, as deste mod e as
- * de outros mods) para o Mercador usar os mesmos preços.
+ * Lê as trocas de verdade de todos os aldeões (as do Minecraft e do mascate, que no 26.x são dados do jogo,
+ * as deste mod e as de outros mods) para o Mercador usar os mesmos preços.
  */
 public final class TrocasAldeoes {
 	/** Uma troca simples "N itens <-> E esmeraldas". */
@@ -43,60 +52,61 @@ public final class TrocasAldeoes {
 	public static void ler(MinecraftServer server) {
 		COMPRAM.clear();
 		VENDEM.clear();
-		ServerWorld mundo = server.getOverworld();
-		VillagerEntity aldeao = EntityType.VILLAGER.create(mundo);
+		ServerLevel mundo = server.overworld();
+		Villager aldeao = EntityTypes.VILLAGER.create(mundo, EntitySpawnReason.LOAD);
 		if (aldeao == null) return;
-		Random r = Random.create(20261122L);
+		RandomSource r = RandomSource.create(20261122L);
 
-		for (Map.Entry<VillagerProfession, Int2ObjectMap<TradeOffers.Factory[]>> e : TradeOffers.PROFESSION_TO_LEVELED_TRADE.entrySet()) {
-			aldeao.setVillagerData(aldeao.getVillagerData().withProfession(e.getKey()));
-			for (TradeOffers.Factory[] nivel : e.getValue().values()) {
-				for (TradeOffers.Factory f : nivel) ler(f, aldeao, r);
+		// trocas do jogo (todas as profissões e o mascate)
+		LootContext ctx = new LootContext.Builder(new LootParams.Builder(mundo)
+			.withParameter(LootContextParams.ORIGIN, aldeao.position())
+			.withParameter(LootContextParams.THIS_ENTITY, aldeao)
+			.withParameter(LootContextParams.ADDITIONAL_COST_COMPONENT_ALLOWED, Unit.INSTANCE)
+			.create(LootContextParamSets.VILLAGER_TRADE)).create(Optional.empty());
+		for (Holder<VillagerTrade> troca : server.registryAccess().lookupOrThrow(Registries.VILLAGER_TRADE).listElements().toList()) {
+			for (int i = 0; i < 3; i++) {
+				try {
+					MerchantOffer o = troca.value().getOffer(ctx);
+					if (o != null) registrar(o);
+				} catch (Exception ignorado) {
+					break;
+				}
 			}
 		}
-		for (Map.Entry<VillagerProfession, Map<Integer, List<TradeOffers.Factory>>> e : NovasTrocas.todas().entrySet()) {
-			aldeao.setVillagerData(aldeao.getVillagerData().withProfession(e.getKey()));
-			for (List<TradeOffers.Factory> nivel : e.getValue().values()) {
-				for (TradeOffers.Factory f : nivel) ler(f, aldeao, r);
+		// trocas deste mod
+		for (Map.Entry<ResourceKey<VillagerProfession>, Map<Integer, List<NovasTrocas.Fabrica>>> e : NovasTrocas.todas().entrySet()) {
+			for (List<NovasTrocas.Fabrica> nivel : e.getValue().values()) {
+				for (NovasTrocas.Fabrica f : nivel) ler(f, aldeao, r);
 			}
 		}
-		for (Map.Entry<VillagerProfession, List<TradeOffers.Factory>> e : com.martins.trocas.trocas.NiveisExtras.todas().entrySet()) {
-			aldeao.setVillagerData(aldeao.getVillagerData().withProfession(e.getKey()));
-			for (TradeOffers.Factory f : e.getValue()) ler(f, aldeao, r);
-		}
-		aldeao.setVillagerData(aldeao.getVillagerData().withProfession(VillagerProfession.NONE));
-		for (TradeOffers.Factory[] nivel : TradeOffers.WANDERING_TRADER_TRADES.values()) {
-			for (TradeOffers.Factory f : nivel) ler(f, aldeao, r);
+		for (List<NovasTrocas.Fabrica> lista : NiveisExtras.todas().values()) {
+			for (NovasTrocas.Fabrica f : lista) ler(f, aldeao, r);
 		}
 		aldeao.discard();
 		TrocasMartins.LOGGER.info("Mercador: {} itens comprados e {} vendidos pelos aldeões", COMPRAM.size(), VENDEM.size());
 	}
 
-	private static void ler(TradeOffers.Factory f, VillagerEntity aldeao, Random r) {
-		// mapas de exploração procuram estruturas no mundo: não precisa e seria lento
-		if (f instanceof TradeOffers.SellMapFactory) return;
-		List<TradeOffer> ofertas = new ArrayList<>();
+	private static void ler(NovasTrocas.Fabrica f, Villager aldeao, RandomSource r) {
 		for (int i = 0; i < 3; i++) {
 			try {
-				TradeOffer o = f.create(aldeao, r);
-				if (o != null) ofertas.add(o);
+				MerchantOffer o = f.criar(aldeao, r);
+				if (o != null) registrar(o);
 			} catch (Exception ignorado) {
 				return;
 			}
 		}
-		for (TradeOffer o : ofertas) registrar(o);
 	}
 
-	private static void registrar(TradeOffer o) {
-		ItemStack a = o.getOriginalFirstBuyItem();
-		ItemStack b = o.getDisplayedSecondBuyItem();
-		ItemStack venda = o.getSellItem();
+	private static void registrar(MerchantOffer o) {
+		ItemStack a = o.getBaseCostA();
+		ItemStack b = o.getCostB();
+		ItemStack venda = o.getResult();
 		if (!b.isEmpty() || a.isEmpty() || venda.isEmpty()) return;
 
-		if (venda.isOf(Items.EMERALD) && !a.isOf(Items.EMERALD) && a.getComponentChanges().isEmpty()) {
+		if (venda.is(Items.EMERALD) && !a.is(Items.EMERALD) && a.getComponentsPatch().isEmpty()) {
 			Taxa t = new Taxa(a.getCount(), venda.getCount());
 			COMPRAM.merge(a.getItem(), t, (x, y) -> y.porItem() > x.porItem() ? y : x);
-		} else if (a.isOf(Items.EMERALD) && !venda.isOf(Items.EMERALD) && venda.getComponentChanges().isEmpty()) {
+		} else if (a.is(Items.EMERALD) && !venda.is(Items.EMERALD) && venda.getComponentsPatch().isEmpty()) {
 			Taxa t = new Taxa(venda.getCount(), a.getCount());
 			VENDEM.merge(venda.getItem(), t, (x, y) -> y.porItem() < x.porItem() ? y : x);
 		}

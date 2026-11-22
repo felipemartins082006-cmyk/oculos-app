@@ -3,31 +3,29 @@ package com.martins.trocas.trocas;
 import com.martins.trocas.ModRegistro;
 import com.martins.trocas.rede.NivelPayload;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.enchantment.Enchantments;
-import net.minecraft.entity.effect.StatusEffectInstance;
-import net.minecraft.entity.effect.StatusEffects;
-import net.minecraft.entity.passive.VillagerEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.potion.Potions;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.village.TradeOffer;
-import net.minecraft.village.TradeOffers;
-import net.minecraft.village.TradedItem;
-import net.minecraft.village.VillagerProfession;
-
-import net.minecraft.enchantment.Enchantment;
-import net.minecraft.enchantment.EnchantmentHelper;
-import net.minecraft.enchantment.EnchantmentLevelEntry;
-import net.minecraft.item.EnchantedBookItem;
-import net.minecraft.item.Item;
-import net.minecraft.registry.Registry;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.registry.entry.RegistryEntry;
-import net.minecraft.registry.tag.EnchantmentTags;
-import net.minecraft.util.math.random.Random;
-import net.minecraft.village.TradeOfferList;
+import net.minecraft.core.Holder;
+import net.minecraft.core.Registry;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.tags.EnchantmentTags;
+import net.minecraft.util.RandomSource;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.npc.villager.Villager;
+import net.minecraft.world.entity.npc.villager.VillagerProfession;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.alchemy.Potions;
+import net.minecraft.world.item.enchantment.Enchantment;
+import net.minecraft.world.item.enchantment.EnchantmentHelper;
+import net.minecraft.world.item.enchantment.EnchantmentInstance;
+import net.minecraft.world.item.enchantment.Enchantments;
+import net.minecraft.world.item.trading.ItemCost;
+import net.minecraft.world.item.trading.MerchantOffer;
+import net.minecraft.world.item.trading.MerchantOffers;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -44,7 +42,7 @@ import static com.martins.trocas.trocas.NovasTrocas.*;
  * lista acaba, as mesmas trocas voltam mais baratas a cada volta.
  */
 public final class NiveisExtras {
-	private static final Map<VillagerProfession, List<TradeOffers.Factory>> ELITE = new HashMap<>();
+	private static final Map<ResourceKey<VillagerProfession>, List<Fabrica>> ELITE = new HashMap<>();
 
 	private NiveisExtras() {
 	}
@@ -56,72 +54,72 @@ public final class NiveisExtras {
 		return xp;
 	}
 
-	public static int nivelExtra(VillagerEntity v) {
+	public static int nivelExtra(Villager v) {
 		Integer n = v.getAttached(ModRegistro.NIVEL_EXTRA);
 		return n == null ? 0 : n;
 	}
 
-	public static Map<VillagerProfession, List<TradeOffers.Factory>> todas() {
+	public static Map<ResourceKey<VillagerProfession>, List<Fabrica>> todas() {
 		return ELITE;
 	}
 
 	/** Chamado depois de cada troca: sobe quantos níveis extras a experiência permitir. */
-	public static void verificar(VillagerEntity v) {
-		if (v.getVillagerData().getLevel() < 5) return;
-		List<TradeOffers.Factory> lista = ELITE.get(v.getVillagerData().getProfession());
+	public static void verificar(Villager v) {
+		if (v.getVillagerData().level() < 5) return;
+		List<Fabrica> lista = v.getVillagerData().profession().unwrapKey().map(ELITE::get).orElse(null);
 		if (lista == null || lista.isEmpty()) return;
 		int extra = nivelExtra(v);
 		boolean subiu = false;
-		while (v.getExperience() >= xpPara(extra + 1)) {
+		while (v.getVillagerXp() >= xpPara(extra + 1)) {
 			extra++;
 			subiu = true;
 			if (extra <= lista.size()) {
 				// fase 1: os itens mais fortes do jogo, um por nível
-				TradeOffer o = lista.get(extra - 1).create(v, v.getRandom());
+				MerchantOffer o = lista.get(extra - 1).criar(v, v.getRandom());
 				if (o != null) v.getOffers().add(o);
 			} else {
 				// fase 2: alterna otimizar uma troca forte e inovar com uma troca nova
 				int k = extra - lista.size();
 				if (k % 2 == 1) otimizar(v, lista, (k - 1) / 2);
 				else {
-					TradeOffer o = inovar(v);
+					MerchantOffer o = inovar(v);
 					if (o != null) v.getOffers().add(o);
 				}
 			}
 		}
 		if (!subiu) return;
 		v.setAttached(ModRegistro.NIVEL_EXTRA, extra);
-		v.addStatusEffect(new StatusEffectInstance(StatusEffects.REGENERATION, 200, 0));
-		v.playSound(SoundEvents.ENTITY_VILLAGER_CELEBRATE, 1.0f, 1.0f);
-		if (v.getCustomer() instanceof ServerPlayerEntity p && p.currentScreenHandler != null) {
-			p.sendTradeOffers(p.currentScreenHandler.syncId, v.getOffers(), 5, v.getExperience(), true, true);
+		v.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 200, 0));
+		v.playSound(SoundEvents.VILLAGER_CELEBRATE, 1.0f, 1.0f);
+		if (v.getTradingPlayer() instanceof ServerPlayer p && p.containerMenu != null) {
+			p.sendMerchantOffers(p.containerMenu.containerId, v.getOffers(), 5, v.getVillagerXp(), true, true);
 			enviar(p, v);
 		}
 	}
 
-	public static void enviar(ServerPlayerEntity p, VillagerEntity v) {
-		if (ServerPlayNetworking.canSend(p, NivelPayload.ID)) ServerPlayNetworking.send(p, new NivelPayload(nivelExtra(v)));
+	public static void enviar(ServerPlayer p, Villager v) {
+		if (ServerPlayNetworking.canSend(p, NivelPayload.TYPE)) ServerPlayNetworking.send(p, new NivelPayload(nivelExtra(v)));
 	}
 
 	/** Otimizar: uma das trocas fortes fica 15% mais barata e ganha 1 uso (uma de cada vez, em rodízio). */
-	private static void otimizar(VillagerEntity v, List<TradeOffers.Factory> lista, int vez) {
-		TradeOffer modelo = lista.get(vez % lista.size()).create(v, v.getRandom());
+	private static void otimizar(Villager v, List<Fabrica> lista, int vez) {
+		MerchantOffer modelo = lista.get(vez % lista.size()).criar(v, v.getRandom());
 		if (modelo == null) return;
-		TradeOfferList ofertas = v.getOffers();
+		MerchantOffers ofertas = v.getOffers();
 		for (int i = 0; i < ofertas.size(); i++) {
-			TradeOffer o = ofertas.get(i);
-			if (!ItemStack.areItemsAndComponentsEqual(o.getSellItem(), modelo.getSellItem())
-				|| !o.getOriginalFirstBuyItem().isOf(modelo.getOriginalFirstBuyItem().getItem())) continue;
+			MerchantOffer o = ofertas.get(i);
+			if (!ItemStack.isSameItemSameComponents(o.getResult(), modelo.getResult())
+				|| !o.getBaseCostA().is(modelo.getBaseCostA().getItem())) continue;
 			ofertas.set(i, barato(o, 0.85, 1));
 			return;
 		}
 	}
 
-	private static TradeOffer barato(TradeOffer o, double f, int usosExtras) {
-		ItemStack a = o.getOriginalFirstBuyItem();
-		TradedItem na = new TradedItem(a.getItem(), Math.max(1, (int) Math.floor(a.getCount() * f)));
-		Optional<TradedItem> nb = o.getSecondBuyItem().map(b -> new TradedItem(b.item().value(), Math.max(1, (int) Math.floor(b.count() * f))));
-		return new TradeOffer(na, nb, o.getSellItem(), o.getMaxUses() + usosExtras, o.getMerchantExperience(), o.getPriceMultiplier());
+	private static MerchantOffer barato(MerchantOffer o, double f, int usosExtras) {
+		ItemCost ca = o.getItemCostA();
+		ItemCost na = new ItemCost(ca.item(), Math.max(1, (int) Math.floor(ca.count() * f)), ca.components());
+		Optional<ItemCost> nb = o.getItemCostB().map(b -> new ItemCost(b.item(), Math.max(1, (int) Math.floor(b.count() * f)), b.components()));
+		return new MerchantOffer(na, nb, o.getResult(), o.getMaxUses() + usosExtras, o.getXp(), o.getPriceMultiplier());
 	}
 
 	private static final Item[] NETHERITE = {Items.NETHERITE_HELMET, Items.NETHERITE_CHESTPLATE, Items.NETHERITE_LEGGINGS,
@@ -129,50 +127,50 @@ public final class NiveisExtras {
 		Items.NETHERITE_HOE, Items.MACE, Items.TRIDENT, Items.BOW, Items.CROSSBOW, Items.ELYTRA, Items.FISHING_ROD};
 
 	/** Inovar: uma troca nova sorteada (livro no máximo, equipamento encantado ou um item forte em dobro). */
-	private static TradeOffer inovar(VillagerEntity v) {
-		Random r = v.getRandom();
-		Registry<Enchantment> reg = v.getWorld().getRegistryManager().get(RegistryKeys.ENCHANTMENT);
-		List<RegistryEntry<Enchantment>> encs = new ArrayList<>();
-		reg.streamEntries().filter(e -> !e.isIn(EnchantmentTags.CURSE)).forEach(encs::add);
+	private static MerchantOffer inovar(Villager v) {
+		RandomSource r = v.getRandom();
+		List<Holder<Enchantment>> encs = new ArrayList<>();
+		v.level().registryAccess().lookupOrThrow(Registries.ENCHANTMENT).listElements()
+			.filter(e -> !e.is(EnchantmentTags.CURSE)).forEach(encs::add);
 		switch (r.nextInt(3)) {
 			case 0 -> {
-				RegistryEntry<Enchantment> e = encs.get(r.nextInt(encs.size()));
-				ItemStack livro = EnchantedBookItem.forEnchantment(new EnchantmentLevelEntry(e, e.value().getMaxLevel()));
-				return new TradeOffer(new TradedItem(Items.EMERALD, 20 + r.nextInt(30)), Optional.of(new TradedItem(Items.BOOK, 1)), livro, 3, 30, 0.2f);
+				Holder<Enchantment> e = encs.get(r.nextInt(encs.size()));
+				ItemStack livro = EnchantmentHelper.createBook(new EnchantmentInstance(e, e.value().getMaxLevel()));
+				return new MerchantOffer(new ItemCost(Items.EMERALD, 20 + r.nextInt(30)), Optional.of(new ItemCost(Items.BOOK, 1)), livro, 3, 30, 0.2f);
 			}
 			case 1 -> {
 				ItemStack item = new ItemStack(NETHERITE[r.nextInt(NETHERITE.length)]);
-				List<RegistryEntry<Enchantment>> cabem = new ArrayList<>();
-				for (RegistryEntry<Enchantment> e : encs) if (e.value().isAcceptableItem(item)) cabem.add(e);
+				List<Holder<Enchantment>> cabem = new ArrayList<>();
+				for (Holder<Enchantment> e : encs) if (e.value().canEnchant(item)) cabem.add(e);
 				for (int i = 0; i < 4 && !cabem.isEmpty(); i++) {
-					RegistryEntry<Enchantment> e = cabem.remove(r.nextInt(cabem.size()));
-					if (EnchantmentHelper.isCompatible(EnchantmentHelper.getEnchantments(item).getEnchantments(), e)) {
-						item.addEnchantment(e, e.value().getMaxLevel());
+					Holder<Enchantment> e = cabem.remove(r.nextInt(cabem.size()));
+					if (EnchantmentHelper.isEnchantmentCompatible(EnchantmentHelper.getEnchantmentsForCrafting(item).keySet(), e)) {
+						item.enchant(e, e.value().getMaxLevel());
 					}
 				}
-				return new TradeOffer(new TradedItem(Items.EMERALD, 64), Optional.of(new TradedItem(Items.EMERALD_BLOCK, 8 + r.nextInt(9))), item, 1, 30, 0.05f);
+				return new MerchantOffer(new ItemCost(Items.EMERALD, 64), Optional.of(new ItemCost(Items.EMERALD_BLOCK, 8 + r.nextInt(9))), item, 1, 30, 0.05f);
 			}
 			default -> {
-				List<TradeOffers.Factory> todas = new ArrayList<>();
+				List<Fabrica> todas = new ArrayList<>();
 				ELITE.values().forEach(todas::addAll);
-				TradeOffer base = todas.get(r.nextInt(todas.size())).create(v, r);
+				MerchantOffer base = todas.get(r.nextInt(todas.size())).criar(v, r);
 				if (base == null) return null;
-				ItemStack venda = base.getSellItem().copy();
-				if (venda.getMaxCount() < venda.getCount() * 2) return base;
+				ItemStack venda = base.getResult().copy();
+				if (venda.getMaxStackSize() < venda.getCount() * 2) return base;
 				venda.setCount(venda.getCount() * 2);
-				ItemStack a = base.getOriginalFirstBuyItem();
+				ItemStack a = base.getBaseCostA();
 				int preco = (int) Math.ceil(a.getCount() * 1.6);
-				Optional<TradedItem> b = base.getSecondBuyItem().map(x -> new TradedItem(x.item().value(), Math.min(64, x.count() * 2)));
+				Optional<ItemCost> b = base.getItemCostB().map(x -> new ItemCost(x.item(), Math.min(64, x.count() * 2), x.components()));
 				if (preco > 64) {
-					b = Optional.of(new TradedItem(Items.EMERALD_BLOCK, Math.min(64, (preco - 64 + 8) / 9 + b.map(TradedItem::count).orElse(0))));
+					b = Optional.of(new ItemCost(Items.EMERALD_BLOCK, Math.min(64, (preco - 64 + 8) / 9 + b.map(ItemCost::count).orElse(0))));
 					preco = 64;
 				}
-				return new TradeOffer(new TradedItem(a.getItem(), preco), b, venda, base.getMaxUses(), 30, 0.05f);
+				return new MerchantOffer(new ItemCost(a.getItem(), preco), b, venda, base.getMaxUses(), 30, 0.05f);
 			}
 		}
 	}
 
-	private static void add(VillagerProfession p, TradeOffers.Factory... f) {
+	private static void add(ResourceKey<VillagerProfession> p, Fabrica... f) {
 		ELITE.computeIfAbsent(p, k -> new ArrayList<>()).addAll(List.of(f));
 	}
 

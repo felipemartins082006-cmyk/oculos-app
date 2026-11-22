@@ -2,14 +2,15 @@ package com.martins.trocas.mixin;
 
 import com.martins.trocas.client.TrocasMartinsClient;
 import com.martins.trocas.trocas.NiveisExtras;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.ingame.HandledScreen;
-import net.minecraft.client.gui.screen.ingame.MerchantScreen;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.screen.MerchantScreenHandler;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.MathHelper;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.gui.screens.inventory.MerchantScreen;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
+import net.minecraft.util.Mth;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.inventory.MerchantMenu;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -17,13 +18,14 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /** Tela de trocas dos aldeões: título "Mestre II, III..." e barra de experiência depois de Mestre. */
 @Mixin(MerchantScreen.class)
-public abstract class MerchantScreenMixin extends HandledScreen<MerchantScreenHandler> {
-	private static final Identifier XP_FUNDO = Identifier.ofVanilla("container/villager/experience_bar_background");
-	private static final Identifier XP_ATUAL = Identifier.ofVanilla("container/villager/experience_bar_current");
-	private static final Identifier XP_RESULTADO = Identifier.ofVanilla("container/villager/experience_bar_result");
+public abstract class MerchantScreenMixin extends AbstractContainerScreen<MerchantMenu> {
+	private static final Identifier XP_FUNDO = Identifier.withDefaultNamespace("container/villager/experience_bar_background");
+	private static final Identifier XP_ATUAL = Identifier.withDefaultNamespace("container/villager/experience_bar_current");
+	private static final Identifier XP_RESULTADO = Identifier.withDefaultNamespace("container/villager/experience_bar_result");
+	private static final int COR = 0xFF404040;
 
-	private MerchantScreenMixin(MerchantScreenHandler h, PlayerInventory i, Text t) {
-		super(h, i, t);
+	private MerchantScreenMixin(MerchantMenu m, Inventory i, Component t) {
+		super(m, i, t, 276, 166);
 	}
 
 	private static String romano(int n) {
@@ -37,37 +39,33 @@ public abstract class MerchantScreenMixin extends HandledScreen<MerchantScreenHa
 		return sb.toString();
 	}
 
-	@Inject(method = "drawForeground", at = @At("HEAD"), cancellable = true)
-	private void trocasmartins$titulo(DrawContext ctx, int mouseX, int mouseY, CallbackInfo ci) {
+	@Inject(method = "extractLabels", at = @At("HEAD"), cancellable = true)
+	private void trocasmartins$titulo(GuiGraphicsExtractor g, int xm, int ym, CallbackInfo ci) {
 		int extra = TrocasMartinsClient.nivelExtra;
-		if (handler.getLevelProgress() != 5 || extra <= 0) return;
-		Text nivel = Text.translatable("merchant.level.5").copy().append(" " + romano(extra + 1));
-		Text titulo = Text.translatable("merchant.title", this.title, nivel);
-		ctx.drawText(textRenderer, titulo, 49 + backgroundWidth / 2 - textRenderer.getWidth(titulo) / 2, 6, 0x404040, false);
-		ctx.drawText(textRenderer, playerInventoryTitle, playerInventoryTitleX, playerInventoryTitleY, 0x404040, false);
-		Text trocas = Text.translatable("merchant.trades");
-		ctx.drawText(textRenderer, trocas, 5 - textRenderer.getWidth(trocas) / 2 + 48, 6, 0x404040, false);
+		if (menu.getTraderLevel() != 5 || extra <= 0) return;
+		Component nivel = Component.translatable("merchant.level.5").copy().append(" " + romano(extra + 1));
+		Component titulo = Component.translatable("merchant.title", this.title, nivel);
+		g.text(font, titulo, 49 + imageWidth / 2 - font.width(titulo) / 2, 6, COR, false);
+		g.text(font, playerInventoryTitle, inventoryLabelX, inventoryLabelY, COR, false);
+		Component trocas = Component.translatable("merchant.trades");
+		g.text(font, trocas, 5 - font.width(trocas) / 2 + 48, 6, COR, false);
 		ci.cancel();
 	}
 
-	@Inject(method = "render", at = @At("TAIL"))
-	private void trocasmartins$barraXp(DrawContext ctx, int mouseX, int mouseY, float delta, CallbackInfo ci) {
-		if (handler.getLevelProgress() != 5 || !handler.isLeveled() || handler.getRecipes().isEmpty()) return;
+	@Inject(method = "extractContents", at = @At("TAIL"))
+	private void trocasmartins$barraXp(GuiGraphicsExtractor g, int mouseX, int mouseY, float a, CallbackInfo ci) {
+		if (menu.getTraderLevel() != 5 || !menu.showProgressBar() || menu.getOffers().isEmpty()) return;
 		int extra = TrocasMartinsClient.nivelExtra;
 		int min = NiveisExtras.xpPara(extra), max = NiveisExtras.xpPara(extra + 1);
-		int xp = handler.getExperience();
-		int x = (this.width - this.backgroundWidth) / 2, y = (this.height - this.backgroundHeight) / 2;
+		int x = (this.width - this.imageWidth) / 2, y = (this.height - this.imageHeight) / 2;
 		float f = 102.0F / (max - min);
-		int atual = MathHelper.clamp(MathHelper.floor(f * (xp - min)), 0, 102);
-		ctx.getMatrices().push();
-		ctx.getMatrices().translate(0, 0, 200);
-		ctx.drawGuiTexture(XP_FUNDO, x + 136, y + 16, 0, 102, 5);
-		ctx.drawGuiTexture(XP_ATUAL, 102, 5, 0, 0, x + 136, y + 16, 0, atual, 5);
-		int ganho = handler.getMerchantRewardedExperience();
+		int atual = Mth.clamp(Mth.floor(f * (menu.getTraderXp() - min)), 0, 102);
+		g.blitSprite(RenderPipelines.GUI_TEXTURED, XP_FUNDO, x + 136, y + 16, 102, 5);
+		g.blitSprite(RenderPipelines.GUI_TEXTURED, XP_ATUAL, 102, 5, 0, 0, x + 136, y + 16, atual, 5);
+		int ganho = menu.getFutureTraderXp();
 		if (ganho > 0) {
-			int o = Math.min(MathHelper.floor(ganho * f), 102 - atual);
-			ctx.drawGuiTexture(XP_RESULTADO, 102, 5, atual, 0, x + 136 + atual, y + 16, 0, o, 5);
+			int o = Math.min(Mth.floor(ganho * f), 102 - atual);
+			g.blitSprite(RenderPipelines.GUI_TEXTURED, XP_RESULTADO, 102, 5, atual, 0, x + 136 + atual, y + 16, o, 5);
 		}
-		ctx.getMatrices().pop();
 	}
 }

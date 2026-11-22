@@ -1,27 +1,26 @@
 package com.martins.trocas.rede;
 
 import com.martins.trocas.TrocasMartins;
-import net.minecraft.item.ItemStack;
-import net.minecraft.network.RegistryByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.codec.PacketCodecs;
-import net.minecraft.network.packet.CustomPayload;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.world.item.ItemStack;
 
 /**
  * Cliente -> servidor: o jogador clicou numa troca da lista.
- * comprar=false: vender {@code item} (o servidor coloca esse item no pagamento).
- * comprar=true: comprar a troca {@code indice} da loja (o servidor coloca as esmeraldas no pagamento).
+ * comprar=false: vender {@code item}; comprar=true: comprar a troca {@code indice} da loja.
  */
-public record EscolherOfertaPayload(boolean comprar, int indice, ItemStack item) implements CustomPayload {
-	public static final Id<EscolherOfertaPayload> ID = new Id<>(TrocasMartins.id("escolher_oferta"));
-	public static final PacketCodec<RegistryByteBuf, EscolherOfertaPayload> CODEC = PacketCodec.tuple(
-		PacketCodecs.BOOL, EscolherOfertaPayload::comprar,
-		PacketCodecs.VAR_INT, EscolherOfertaPayload::indice,
-		ItemStack.OPTIONAL_PACKET_CODEC, EscolherOfertaPayload::item,
+public record EscolherOfertaPayload(boolean comprar, int indice, ItemStack item) implements CustomPacketPayload {
+	public static final Type<EscolherOfertaPayload> TYPE = new Type<>(TrocasMartins.id("escolher_oferta"));
+	public static final StreamCodec<RegistryFriendlyByteBuf, EscolherOfertaPayload> CODEC = StreamCodec.composite(
+		ByteBufCodecs.BOOL, EscolherOfertaPayload::comprar,
+		ByteBufCodecs.VAR_INT, EscolherOfertaPayload::indice,
+		ItemStack.OPTIONAL_STREAM_CODEC, EscolherOfertaPayload::item,
 		EscolherOfertaPayload::new);
 
 	@Override
-	public Id<? extends CustomPayload> getId() {
-		return ID;
+	public Type<? extends CustomPacketPayload> type() {
+		return TYPE;
 	}
 }

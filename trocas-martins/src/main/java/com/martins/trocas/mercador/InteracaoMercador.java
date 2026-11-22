@@ -1,67 +1,64 @@
 package com.martins.trocas.mercador;
 
 import com.martins.trocas.ModRegistro;
-import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerFactory;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.passive.VillagerEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.stat.Stats;
-import net.minecraft.text.Text;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.EntityHitResult;
-import net.minecraft.world.World;
-import org.jetbrains.annotations.Nullable;
+import net.fabricmc.fabric.api.menu.v1.ExtendedMenuProvider;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.stats.Stats;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.npc.villager.Villager;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.EntityHitResult;
+import org.jspecify.annotations.Nullable;
 
-/** Clique direito num aldeão Mercador abre o balcão de vendas no lugar das trocas normais. */
+/** Clique direito num aldeão Mercador abre a tela de trocas do Mercador no lugar das trocas normais. */
 public final class InteracaoMercador {
 	private InteracaoMercador() {
 	}
 
-	public static ActionResult aoInteragir(PlayerEntity player, World world, Hand hand, Entity entity, @Nullable EntityHitResult hit) {
-		if (!(entity instanceof VillagerEntity aldeao)) return ActionResult.PASS;
-		if (aldeao.getVillagerData().getProfession() != ModRegistro.MERCADOR) return ActionResult.PASS;
-		if (player.isSpectator() || !aldeao.isAlive() || aldeao.isBaby() || aldeao.isSleeping()) return ActionResult.PASS;
-		ItemStack naMao = player.getStackInHand(hand);
-		if (naMao.isOf(Items.NAME_TAG) || naMao.isOf(Items.LEAD) || naMao.isOf(Items.VILLAGER_SPAWN_EGG)) return ActionResult.PASS;
-		if (hand != Hand.MAIN_HAND) return ActionResult.PASS;
+	public static InteractionResult aoInteragir(Player player, Level level, InteractionHand hand, Entity entity, @Nullable EntityHitResult hit) {
+		if (!(entity instanceof Villager aldeao) || !ModRegistro.ehMercador(aldeao)) return InteractionResult.PASS;
+		if (player.isSpectator() || !aldeao.isAlive() || aldeao.isBaby() || aldeao.isSleeping()) return InteractionResult.PASS;
+		ItemStack naMao = player.getItemInHand(hand);
+		if (naMao.is(Items.NAME_TAG) || naMao.is(Items.LEAD) || naMao.is(Items.VILLAGER_SPAWN_EGG)) return InteractionResult.PASS;
+		if (hand != InteractionHand.MAIN_HAND) return InteractionResult.PASS;
 
-		if (world.isClient) return ActionResult.SUCCESS;
+		if (level.isClientSide()) return InteractionResult.SUCCESS;
 
-		if (aldeao.getCustomer() == player) return ActionResult.SUCCESS;
-		if (aldeao.getCustomer() != null) {
-			aldeao.setHeadRollingTimeLeft(40);
-			aldeao.playSound(SoundEvents.ENTITY_VILLAGER_NO, 1.0f, aldeao.getSoundPitch());
-			return ActionResult.SUCCESS;
+		if (aldeao.getTradingPlayer() == player) return InteractionResult.SUCCESS;
+		if (aldeao.getTradingPlayer() != null) {
+			aldeao.setUnhappyCounter(40);
+			aldeao.playSound(SoundEvents.VILLAGER_NO, 1.0f, aldeao.getVoicePitch());
+			return InteractionResult.SUCCESS;
 		}
 
-		player.incrementStat(Stats.TALKED_TO_VILLAGER);
-		aldeao.setCustomer(player);
-		player.openHandledScreen(new ExtendedScreenHandlerFactory<Integer>() {
+		player.awardStat(Stats.TALKED_TO_VILLAGER);
+		aldeao.setTradingPlayer(player);
+		player.openMenu(new ExtendedMenuProvider<Integer>() {
 			@Override
-			public Integer getScreenOpeningData(ServerPlayerEntity p) {
+			public Integer getScreenOpeningData(ServerPlayer p) {
 				return aldeao.getId();
 			}
 
 			@Override
-			public Text getDisplayName() {
+			public Component getDisplayName() {
 				return aldeao.getDisplayName();
 			}
 
 			@Override
-			public ScreenHandler createMenu(int syncId, PlayerInventory inv, PlayerEntity p) {
-				return new MercadorScreenHandler(syncId, inv, aldeao);
+			public AbstractContainerMenu createMenu(int containerId, Inventory inv, Player p) {
+				return new MercadorMenu(containerId, inv, aldeao);
 			}
 		});
-		if (!(player.currentScreenHandler instanceof MercadorScreenHandler)) {
-			aldeao.setCustomer(null);
-		}
-		return ActionResult.SUCCESS;
+		if (!(player.containerMenu instanceof MercadorMenu)) aldeao.setTradingPlayer(null);
+		return InteractionResult.SUCCESS;
 	}
 }

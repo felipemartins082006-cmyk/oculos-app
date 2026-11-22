@@ -1,29 +1,27 @@
 package com.martins.trocas.trocas;
 
 import com.martins.trocas.mercador.MercadorConfig;
-import net.fabricmc.fabric.api.object.builder.v1.trade.TradeOfferHelper;
-import net.minecraft.component.type.PotionContentsComponent;
-import net.minecraft.enchantment.Enchantment;
-import net.minecraft.enchantment.EnchantmentLevelEntry;
-import net.minecraft.enchantment.Enchantments;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.passive.VillagerEntity;
-import net.minecraft.item.EnchantedBookItem;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemConvertible;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.potion.Potion;
-import net.minecraft.potion.Potions;
-import net.minecraft.registry.RegistryKey;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.registry.entry.RegistryEntry;
-import net.minecraft.util.math.random.Random;
-import net.minecraft.village.TradeOffer;
-import net.minecraft.village.TradeOfferList;
-import net.minecraft.village.TradeOffers;
-import net.minecraft.village.TradedItem;
-import net.minecraft.village.VillagerProfession;
+import net.minecraft.core.Holder;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.util.RandomSource;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.npc.villager.Villager;
+import net.minecraft.world.entity.npc.villager.VillagerProfession;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.alchemy.Potion;
+import net.minecraft.world.item.alchemy.PotionContents;
+import net.minecraft.world.item.alchemy.Potions;
+import net.minecraft.world.item.enchantment.Enchantment;
+import net.minecraft.world.item.enchantment.EnchantmentHelper;
+import net.minecraft.world.item.enchantment.EnchantmentInstance;
+import net.minecraft.world.item.enchantment.Enchantments;
+import net.minecraft.world.item.trading.ItemCost;
+import net.minecraft.world.item.trading.MerchantOffer;
+import net.minecraft.world.item.trading.MerchantOffers;
+import net.minecraft.world.level.ItemLike;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -36,114 +34,121 @@ import java.util.Optional;
  * do Minecraft + {@code trocas_novas_por_nivel} trocas sorteadas desta lista.
  */
 public final class NovasTrocas {
-	private static final Map<VillagerProfession, Map<Integer, List<TradeOffers.Factory>>> TROCAS = new HashMap<>();
+	/** Cria uma troca para o aldeão (ou null se não der). */
+	@FunctionalInterface
+	public interface Fabrica {
+		MerchantOffer criar(Entity aldeao, RandomSource r);
+	}
+
+	private static final Map<ResourceKey<VillagerProfession>, Map<Integer, List<Fabrica>>> TROCAS = new HashMap<>();
 
 	private NovasTrocas() {
 	}
 
 	/** Todas as trocas novas, por profissão e nível (o Mercador usa para conhecer os preços). */
-	public static Map<VillagerProfession, Map<Integer, List<TradeOffers.Factory>>> todas() {
+	public static Map<ResourceKey<VillagerProfession>, Map<Integer, List<Fabrica>>> todas() {
 		return TROCAS;
 	}
 
 	// ------------------------------------------------------------------ fábricas de troca
 
 	/** O aldeão VENDE {@code qtd} de {@code item} por {@code preco} esmeraldas. */
-	static TradeOffers.Factory vende(ItemConvertible item, int qtd, int preco, int usos, int xp) {
-		return (e, r) -> new TradeOffer(new TradedItem(Items.EMERALD, preco), new ItemStack(item, qtd), usos, xp, 0.05f);
+	static Fabrica vende(ItemLike item, int qtd, int preco, int usos, int xp) {
+		return (e, r) -> new MerchantOffer(new ItemCost(Items.EMERALD, preco), new ItemStack(item, qtd), usos, xp, 0.05f);
 	}
 
 	/** O aldeão vende por esmeraldas + um item extra. */
-	static TradeOffers.Factory vendeCom(ItemConvertible item, int qtd, int preco, ItemConvertible extra, int qtdExtra, int usos, int xp) {
-		return (e, r) -> new TradeOffer(new TradedItem(Items.EMERALD, preco), Optional.of(new TradedItem(extra, qtdExtra)),
+	static Fabrica vendeCom(ItemLike item, int qtd, int preco, ItemLike extra, int qtdExtra, int usos, int xp) {
+		return (e, r) -> new MerchantOffer(new ItemCost(Items.EMERALD, preco), Optional.of(new ItemCost(extra, qtdExtra)),
 			new ItemStack(item, qtd), usos, xp, 0.05f);
 	}
 
 	/** O aldeão COMPRA {@code qtd} de {@code item} e paga {@code esmeraldas}. */
-	static TradeOffers.Factory compra(ItemConvertible item, int qtd, int esmeraldas, int usos, int xp) {
-		return (e, r) -> new TradeOffer(new TradedItem(item, qtd), new ItemStack(Items.EMERALD, esmeraldas), usos, xp, 0.05f);
+	static Fabrica compra(ItemLike item, int qtd, int esmeraldas, int usos, int xp) {
+		return (e, r) -> new MerchantOffer(new ItemCost(item, qtd), new ItemStack(Items.EMERALD, esmeraldas), usos, xp, 0.05f);
 	}
 
 	/** Vende um item sorteado de uma lista. */
-	static TradeOffers.Factory vendeUmDe(int qtd, int preco, int usos, int xp, ItemConvertible... opcoes) {
-		return (e, r) -> new TradeOffer(new TradedItem(Items.EMERALD, preco),
+	static Fabrica vendeUmDe(int qtd, int preco, int usos, int xp, ItemLike... opcoes) {
+		return (e, r) -> new MerchantOffer(new ItemCost(Items.EMERALD, preco),
 			new ItemStack(opcoes[r.nextInt(opcoes.length)], qtd), usos, xp, 0.05f);
 	}
 
-	static TradeOffers.Factory vendeEncantado(Item item, int preco, int usos, int xp, Ench... encs) {
+	static Fabrica vendeEncantado(Item item, int preco, int usos, int xp, Ench... encs) {
 		return (e, r) -> {
 			ItemStack s = new ItemStack(item);
 			for (Ench en : encs) {
-				RegistryEntry<Enchantment> entry = ench(e, en.chave());
+				Holder<Enchantment> entry = ench(e, en.chave());
 				if (entry == null) return null;
-				s.addEnchantment(entry, en.nivel());
+				s.enchant(entry, en.nivel());
 			}
-			return new TradeOffer(new TradedItem(Items.EMERALD, preco), s, usos, xp, 0.05f);
+			return new MerchantOffer(new ItemCost(Items.EMERALD, preco), s, usos, xp, 0.05f);
 		};
 	}
 
 	/** Item encantado por esmeraldas + um item extra (ex.: blocos de esmeralda, lingote de netherite). */
-	static TradeOffers.Factory vendeEncantadoCom(Item item, int preco, ItemConvertible extra, int qtdExtra, int usos, int xp, Ench... encs) {
+	static Fabrica vendeEncantadoCom(Item item, int preco, ItemLike extra, int qtdExtra, int usos, int xp, Ench... encs) {
 		return (e, r) -> {
 			ItemStack s = new ItemStack(item);
 			for (Ench en : encs) {
-				RegistryEntry<Enchantment> entry = ench(e, en.chave());
+				Holder<Enchantment> entry = ench(e, en.chave());
 				if (entry == null) return null;
-				s.addEnchantment(entry, en.nivel());
+				s.enchant(entry, en.nivel());
 			}
-			return new TradeOffer(new TradedItem(Items.EMERALD, preco), Optional.of(new TradedItem(extra, qtdExtra)), s, usos, xp, 0.05f);
+			return new MerchantOffer(new ItemCost(Items.EMERALD, preco), Optional.of(new ItemCost(extra, qtdExtra)), s, usos, xp, 0.05f);
 		};
 	}
 
-	static TradeOffers.Factory vendeLivro(RegistryKey<Enchantment> chave, int nivel, int preco, int xp) {
+	static Fabrica vendeLivro(ResourceKey<Enchantment> chave, int nivel, int preco, int xp) {
 		return (e, r) -> {
-			RegistryEntry<Enchantment> entry = ench(e, chave);
+			Holder<Enchantment> entry = ench(e, chave);
 			if (entry == null) return null;
-			ItemStack livro = EnchantedBookItem.forEnchantment(new EnchantmentLevelEntry(entry, nivel));
-			return new TradeOffer(new TradedItem(Items.EMERALD, preco), Optional.of(new TradedItem(Items.BOOK, 1)), livro, 3, xp, 0.2f);
+			ItemStack livro = EnchantmentHelper.createBook(new EnchantmentInstance(entry, nivel));
+			return new MerchantOffer(new ItemCost(Items.EMERALD, preco), Optional.of(new ItemCost(Items.BOOK, 1)), livro, 3, xp, 0.2f);
 		};
 	}
 
-	static TradeOffers.Factory vendePocao(Item tipo, RegistryEntry<Potion> pocao, int preco, int xp) {
-		return (e, r) -> new TradeOffer(new TradedItem(Items.EMERALD, preco), Optional.of(new TradedItem(Items.GLASS_BOTTLE, 1)),
-			PotionContentsComponent.createStack(tipo, pocao), 6, xp, 0.05f);
+	static Fabrica vendePocao(Item tipo, Holder<Potion> pocao, int preco, int xp) {
+		return (e, r) -> new MerchantOffer(new ItemCost(Items.EMERALD, preco), Optional.of(new ItemCost(Items.GLASS_BOTTLE, 1)),
+			PotionContents.createItemStack(tipo, pocao), 6, xp, 0.05f);
 	}
 
-	static TradeOffers.Factory vendeFlechas(RegistryEntry<Potion> pocao, int qtd, int preco, int xp) {
+	static Fabrica vendeFlechas(Holder<Potion> pocao, int qtd, int preco, int xp) {
 		return (e, r) -> {
-			ItemStack flechas = PotionContentsComponent.createStack(Items.TIPPED_ARROW, pocao);
+			ItemStack flechas = PotionContents.createItemStack(Items.TIPPED_ARROW, pocao);
 			flechas.setCount(qtd);
-			return new TradeOffer(new TradedItem(Items.EMERALD, preco), Optional.of(new TradedItem(Items.ARROW, qtd)), flechas, 8, xp, 0.05f);
+			return new MerchantOffer(new ItemCost(Items.EMERALD, preco), Optional.of(new ItemCost(Items.ARROW, qtd)), flechas, 8, xp, 0.05f);
 		};
 	}
 
-	record Ench(RegistryKey<Enchantment> chave, int nivel) {
+	record Ench(ResourceKey<Enchantment> chave, int nivel) {
 	}
 
-	static Ench en(RegistryKey<Enchantment> chave, int nivel) {
+	static Ench en(ResourceKey<Enchantment> chave, int nivel) {
 		return new Ench(chave, nivel);
 	}
 
-	private static RegistryEntry<Enchantment> ench(Entity e, RegistryKey<Enchantment> chave) {
-		return e.getWorld().getRegistryManager().get(RegistryKeys.ENCHANTMENT).getEntry(chave).orElse(null);
+	private static Holder<Enchantment> ench(Entity e, ResourceKey<Enchantment> chave) {
+		return e.level().registryAccess().lookupOrThrow(Registries.ENCHANTMENT).get(chave).map(h -> (Holder<Enchantment>) h).orElse(null);
 	}
 
-	private static void add(VillagerProfession p, int nivel, TradeOffers.Factory... fabricas) {
+	private static void add(ResourceKey<VillagerProfession> p, int nivel, Fabrica... fabricas) {
 		TROCAS.computeIfAbsent(p, k -> new HashMap<>()).computeIfAbsent(nivel, k -> new ArrayList<>()).addAll(List.of(fabricas));
 	}
 
 	// ------------------------------------------------------------------ aplicar no aldeão
 
 	/** Chamado (via mixin) logo depois de o aldeão receber as trocas normais de um nível. */
-	public static void adicionarTrocas(VillagerEntity aldeao, TradeOfferList ofertas) {
+	public static void adicionarTrocas(Villager aldeao, MerchantOffers ofertas) {
 		int quantas = MercadorConfig.atual.trocas_novas_por_nivel;
 		if (quantas <= 0) return;
-		Map<Integer, List<TradeOffers.Factory>> porNivel = TROCAS.get(aldeao.getVillagerData().getProfession());
+		ResourceKey<VillagerProfession> prof = aldeao.getVillagerData().profession().unwrapKey().orElse(null);
+		Map<Integer, List<Fabrica>> porNivel = prof == null ? null : TROCAS.get(prof);
 		if (porNivel == null) return;
-		List<TradeOffers.Factory> pool = new ArrayList<>(porNivel.getOrDefault(aldeao.getVillagerData().getLevel(), List.of()));
-		Random r = aldeao.getRandom();
+		List<Fabrica> pool = new ArrayList<>(porNivel.getOrDefault(aldeao.getVillagerData().level(), List.of()));
+		RandomSource r = aldeao.getRandom();
 		for (int i = 0; i < quantas && !pool.isEmpty(); i++) {
-			TradeOffer oferta = pool.remove(r.nextInt(pool.size())).create(aldeao, r);
+			MerchantOffer oferta = pool.remove(r.nextInt(pool.size())).criar(aldeao, r);
 			if (oferta != null) ofertas.add(oferta);
 		}
 	}
@@ -151,7 +156,7 @@ public final class NovasTrocas {
 	// ------------------------------------------------------------------ as trocas
 
 	public static void registrar() {
-		VillagerProfession P;
+		ResourceKey<VillagerProfession> P;
 
 		// ARMEIRO
 		P = VillagerProfession.ARMORER;
@@ -252,10 +257,10 @@ public final class NovasTrocas {
 		// PASTOR
 		P = VillagerProfession.SHEPHERD;
 		add(P, 1, vende(Items.COBWEB, 2, 3, 12, 2), compra(Items.STRING, 16, 1, 16, 2));
-		add(P, 2, vendeUmDe(8, 3, 12, 5, Items.PINK_WOOL, Items.CYAN_WOOL, Items.PURPLE_WOOL, Items.LIME_WOOL, Items.ORANGE_WOOL,
-			Items.MAGENTA_WOOL, Items.LIGHT_BLUE_WOOL, Items.YELLOW_WOOL), vende(Items.PAINTING, 2, 2, 12, 5));
-		add(P, 3, vendeUmDe(4, 2, 12, 10, Items.CANDLE, Items.RED_CANDLE, Items.BLUE_CANDLE, Items.GREEN_CANDLE, Items.PINK_CANDLE,
-			Items.PURPLE_CANDLE, Items.YELLOW_CANDLE), vende(Items.LOOM, 1, 2, 8, 10));
+		add(P, 2, vendeUmDe(8, 3, 12, 5, Items.WOOL.pink(), Items.WOOL.cyan(), Items.WOOL.purple(), Items.WOOL.lime(), Items.WOOL.orange(),
+			Items.WOOL.magenta(), Items.WOOL.lightBlue(), Items.WOOL.yellow()), vende(Items.PAINTING, 2, 2, 12, 5));
+		add(P, 3, vendeUmDe(4, 2, 12, 10, Items.CANDLE, Items.DYED_CANDLE.red(), Items.DYED_CANDLE.blue(), Items.DYED_CANDLE.green(), Items.DYED_CANDLE.pink(),
+			Items.DYED_CANDLE.purple(), Items.DYED_CANDLE.yellow()), vende(Items.LOOM, 1, 2, 8, 10));
 		add(P, 4, vende(Items.PIGLIN_BANNER_PATTERN, 1, 10, 4, 15), vende(Items.GLOBE_BANNER_PATTERN, 1, 10, 4, 15));
 		add(P, 5, vendeUmDe(1, 16, 2, 30, Items.MUSIC_DISC_13, Items.MUSIC_DISC_CAT, Items.MUSIC_DISC_BLOCKS, Items.MUSIC_DISC_CHIRP,
 			Items.MUSIC_DISC_FAR, Items.MUSIC_DISC_MALL, Items.MUSIC_DISC_MELLOHI, Items.MUSIC_DISC_STAL, Items.MUSIC_DISC_STRAD,
@@ -281,17 +286,5 @@ public final class NovasTrocas {
 		add(P, 5, vende(Items.HEAVY_CORE, 1, 48, 1, 30),
 			vendeEncantado(Items.DIAMOND_SWORD, 50, 2, 30, en(Enchantments.SHARPNESS, 5), en(Enchantments.FIRE_ASPECT, 2)));
 
-		// MASCATE (comerciante ambulante)
-		TradeOfferHelper.registerWanderingTraderOffers(1, l -> {
-			l.add(vende(Items.EXPERIENCE_BOTTLE, 4, 3, 8, 1));
-			l.add(vende(Items.PITCHER_POD, 1, 5, 4, 1));
-			l.add(vende(Items.TORCHFLOWER_SEEDS, 1, 5, 4, 1));
-		});
-		TradeOfferHelper.registerWanderingTraderOffers(2, l -> {
-			l.add(vendeUmDe(1, 6, 3, 1, Items.ANGLER_POTTERY_SHERD, Items.ARCHER_POTTERY_SHERD, Items.HEART_POTTERY_SHERD,
-				Items.PRIZE_POTTERY_SHERD, Items.SKULL_POTTERY_SHERD, Items.SNORT_POTTERY_SHERD, Items.BURN_POTTERY_SHERD));
-			l.add(vende(Items.NAME_TAG, 1, 10, 2, 1));
-			l.add(vende(Items.SNIFFER_EGG, 1, 24, 1, 1));
-		});
 	}
 }

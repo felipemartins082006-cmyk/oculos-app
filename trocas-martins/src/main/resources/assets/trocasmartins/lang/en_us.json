@@ -8,5 +8,6 @@
   "gui.trocasmartins.impossivel": "Trade not possible",
   "gui.trocasmartins.faltam_esmeraldas": "%s more emeralds needed",
   "gui.trocasmartins.nada_encontrado": "Nothing found",
-  "gui.trocasmartins.esgotado": "Out of stock for now"
+  "gui.trocasmartins.esgotado": "Out of stock for now",
+  "entity.trocasmartins.villager.mercador": "Merchant"
 }

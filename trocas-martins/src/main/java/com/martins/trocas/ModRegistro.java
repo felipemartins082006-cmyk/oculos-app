@@ -2,82 +2,94 @@ package com.martins.trocas;
 
 import com.google.common.collect.ImmutableSet;
 import com.martins.trocas.mercador.BalcaoDoMercadorBlock;
-import com.martins.trocas.mercador.MercadorScreenHandler;
-import net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents;
-import net.fabricmc.fabric.api.object.builder.v1.world.poi.PointOfInterestHelper;
-import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerType;
-import net.minecraft.block.AbstractBlock;
-import net.minecraft.block.Block;
-import net.minecraft.block.MapColor;
-import net.minecraft.block.enums.NoteBlockInstrument;
-import net.minecraft.item.BlockItem;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemGroups;
-import net.minecraft.item.Items;
-import net.minecraft.network.codec.PacketCodecs;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.Registry;
-import net.minecraft.registry.RegistryKey;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.screen.ScreenHandlerType;
-import net.minecraft.sound.BlockSoundGroup;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.village.VillagerProfession;
-import net.minecraft.world.poi.PointOfInterestType;
+import com.martins.trocas.mercador.MercadorMenu;
+import com.mojang.serialization.Codec;
+import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+import net.fabricmc.fabric.api.attachment.v1.AttachmentRegistry;
+import net.fabricmc.fabric.api.attachment.v1.AttachmentType;
+import net.fabricmc.fabric.api.creativetab.v1.CreativeModeTabEvents;
+import net.fabricmc.fabric.api.menu.v1.ExtendedMenuType;
+import net.fabricmc.fabric.api.object.builder.v1.world.poi.PoiHelper;
+import net.minecraft.core.Registry;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.world.entity.ai.village.poi.PoiType;
+import net.minecraft.world.entity.npc.villager.VillagerProfession;
+import net.minecraft.world.inventory.MenuType;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.CreativeModeTabs;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.SoundType;
+import net.minecraft.world.level.block.state.BlockBehaviour;
+import net.minecraft.world.level.block.state.properties.NoteBlockInstrument;
+import net.minecraft.world.level.material.MapColor;
+
+import java.util.HashMap;
+import java.util.Map;
 
 public final class ModRegistro {
-	public static final RegistryKey<PointOfInterestType> MERCADOR_POI_KEY =
-		RegistryKey.of(RegistryKeys.POINT_OF_INTEREST_TYPE, TrocasMartins.id("mercador"));
+	public static final ResourceKey<PoiType> MERCADOR_POI_KEY = ResourceKey.create(Registries.POINT_OF_INTEREST_TYPE, TrocasMartins.id("mercador"));
+	public static final ResourceKey<VillagerProfession> MERCADOR_KEY = ResourceKey.create(Registries.VILLAGER_PROFESSION, TrocasMartins.id("mercador"));
+	private static final ResourceKey<Block> BALCAO_BLOCK_KEY = ResourceKey.create(Registries.BLOCK, TrocasMartins.id("balcao_do_mercador"));
+	private static final ResourceKey<Item> BALCAO_ITEM_KEY = ResourceKey.create(Registries.ITEM, TrocasMartins.id("balcao_do_mercador"));
 
-	public static final Block BALCAO_DO_MERCADOR = new BalcaoDoMercadorBlock(AbstractBlock.Settings.create()
-		.mapColor(MapColor.OAK_TAN)
+	public static final Block BALCAO_DO_MERCADOR = new BalcaoDoMercadorBlock(BlockBehaviour.Properties.of()
+		.mapColor(MapColor.WOOD)
 		.instrument(NoteBlockInstrument.BASS)
 		.strength(2.5f)
-		.sounds(BlockSoundGroup.WOOD)
-		.burnable()
-		.nonOpaque());
+		.sound(SoundType.WOOD)
+		.ignitedByLava()
+		.noOcclusion()
+		.setId(BALCAO_BLOCK_KEY));
 
-	public static final Item BALCAO_DO_MERCADOR_ITEM = new BlockItem(BALCAO_DO_MERCADOR, new Item.Settings());
+	public static final Item BALCAO_DO_MERCADOR_ITEM = new BlockItem(BALCAO_DO_MERCADOR,
+		new Item.Properties().setId(BALCAO_ITEM_KEY).useBlockDescriptionPrefix());
 
-	/** Quantas vezes cada troca do Mercador já foi usada desde a última reposição (salvo no aldeão). */
-	public static final net.fabricmc.fabric.api.attachment.v1.AttachmentType<java.util.Map<String, Integer>> USOS =
-		net.fabricmc.fabric.api.attachment.v1.AttachmentRegistry.<java.util.Map<String, Integer>>builder()
-			.persistent(com.mojang.serialization.Codec.unboundedMap(com.mojang.serialization.Codec.STRING, com.mojang.serialization.Codec.INT))
-			.initializer(java.util.HashMap::new)
-			.buildAndRegister(TrocasMartins.id("usos"));
-
-	/** Níveis depois de Mestre (0 = Mestre, 1 = Mestre II...). */
-	public static final net.fabricmc.fabric.api.attachment.v1.AttachmentType<Integer> NIVEL_EXTRA =
-		net.fabricmc.fabric.api.attachment.v1.AttachmentRegistry.<Integer>builder()
-			.persistent(com.mojang.serialization.Codec.INT)
-			.buildAndRegister(TrocasMartins.id("nivel_extra"));
-
-	public static PointOfInterestType MERCADOR_POI;
+	public static PoiType MERCADOR_POI;
 	public static VillagerProfession MERCADOR;
 
-	public static final ScreenHandlerType<MercadorScreenHandler> MERCADOR_SCREEN = new ExtendedScreenHandlerType<>(
-		MercadorScreenHandler::new, PacketCodecs.VAR_INT);
+	/** Quantas vezes cada troca do Mercador já foi usada desde a última reposição (salvo no aldeão). */
+	public static final AttachmentType<Map<String, Integer>> USOS = AttachmentRegistry.create(TrocasMartins.id("usos"),
+		b -> b.persistent(Codec.unboundedMap(Codec.STRING, Codec.INT)).initializer(HashMap::new));
+
+	/** Níveis depois de Mestre (0 = Mestre, 1 = Mestre II...). */
+	public static final AttachmentType<Integer> NIVEL_EXTRA = AttachmentRegistry.create(TrocasMartins.id("nivel_extra"),
+		b -> b.persistent(Codec.INT));
+
+	public static final MenuType<MercadorMenu> MERCADOR_MENU = new ExtendedMenuType<>(MercadorMenu::new, ByteBufCodecs.VAR_INT);
 
 	private ModRegistro() {
 	}
 
+	/** O aldeão é Mercador? */
+	public static boolean ehMercador(net.minecraft.world.entity.npc.villager.Villager v) {
+		return v.getVillagerData().profession().is(MERCADOR_KEY);
+	}
+
 	public static void registrar() {
-		Registry.register(Registries.BLOCK, TrocasMartins.id("balcao_do_mercador"), BALCAO_DO_MERCADOR);
-		Registry.register(Registries.ITEM, TrocasMartins.id("balcao_do_mercador"), BALCAO_DO_MERCADOR_ITEM);
+		Registry.register(BuiltInRegistries.BLOCK, BALCAO_BLOCK_KEY, BALCAO_DO_MERCADOR);
+		Registry.register(BuiltInRegistries.ITEM, BALCAO_ITEM_KEY, BALCAO_DO_MERCADOR_ITEM);
 
-		MERCADOR_POI = PointOfInterestHelper.register(TrocasMartins.id("mercador"), 1, 1, BALCAO_DO_MERCADOR);
+		MERCADOR_POI = PoiHelper.register(TrocasMartins.id("mercador"), 1, 1, BALCAO_DO_MERCADOR);
 
-		MERCADOR = Registry.register(Registries.VILLAGER_PROFESSION, TrocasMartins.id("mercador"), new VillagerProfession(
-			"mercador",
-			entry -> entry.matchesKey(MERCADOR_POI_KEY),
-			entry -> entry.matchesKey(MERCADOR_POI_KEY),
+		MERCADOR = Registry.register(BuiltInRegistries.VILLAGER_PROFESSION, MERCADOR_KEY, new VillagerProfession(
+			Component.translatable("entity.trocasmartins.villager.mercador"),
+			h -> h.is(MERCADOR_POI_KEY),
+			h -> h.is(MERCADOR_POI_KEY),
 			ImmutableSet.of(),
 			ImmutableSet.of(),
-			SoundEvents.ENTITY_VILLAGER_WORK_CARTOGRAPHER));
+			SoundEvents.VILLAGER_WORK_CARTOGRAPHER,
+			Int2ObjectMap.ofEntries()));
 
-		Registry.register(Registries.SCREEN_HANDLER, TrocasMartins.id("mercador"), MERCADOR_SCREEN);
+		Registry.register(BuiltInRegistries.MENU, TrocasMartins.id("mercador"), MERCADOR_MENU);
 
-		ItemGroupEvents.modifyEntriesEvent(ItemGroups.FUNCTIONAL).register(entries ->
-			entries.addAfter(Items.LECTERN, BALCAO_DO_MERCADOR_ITEM));
+		CreativeModeTabEvents.modifyOutputEvent(CreativeModeTabs.FUNCTIONAL_BLOCKS).register(saida ->
+			saida.insertAfter(Items.LECTERN, BALCAO_DO_MERCADOR_ITEM));
 	}
 }

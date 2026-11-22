@@ -3,19 +3,21 @@ package com.martins.trocas;
 import com.martins.trocas.mercador.ComandoMercador;
 import com.martins.trocas.mercador.InteracaoMercador;
 import com.martins.trocas.mercador.MercadorConfig;
+import com.martins.trocas.mercador.MercadorMenu;
 import com.martins.trocas.mercador.PrecoMercador;
-import com.martins.trocas.trocas.NovasTrocas;
-import com.martins.trocas.mercador.MercadorScreenHandler;
 import com.martins.trocas.rede.CatalogoPayload;
 import com.martins.trocas.rede.EscolherOfertaPayload;
+import com.martins.trocas.rede.NivelPayload;
 import com.martins.trocas.rede.OfertasPayload;
+import com.martins.trocas.trocas.NiveisExtras;
+import com.martins.trocas.trocas.NovasTrocas;
 import net.fabricmc.api.ModInitializer;
-import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.player.UseEntityCallback;
-import net.minecraft.util.Identifier;
+import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.resources.Identifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,7 +26,7 @@ public class TrocasMartins implements ModInitializer {
 	public static final Logger LOGGER = LoggerFactory.getLogger("Trocas Martins");
 
 	public static Identifier id(String path) {
-		return Identifier.of(MOD_ID, path);
+		return Identifier.fromNamespaceAndPath(MOD_ID, path);
 	}
 
 	@Override
@@ -32,16 +34,16 @@ public class TrocasMartins implements ModInitializer {
 		MercadorConfig.carregar();
 		ModRegistro.registrar();
 		NovasTrocas.registrar();
-		com.martins.trocas.trocas.NiveisExtras.registrar();
+		NiveisExtras.registrar();
 
-		PayloadTypeRegistry.playS2C().register(OfertasPayload.ID, OfertasPayload.CODEC);
-		PayloadTypeRegistry.playS2C().register(CatalogoPayload.ID, CatalogoPayload.CODEC);
-		PayloadTypeRegistry.playS2C().register(com.martins.trocas.rede.NivelPayload.ID, com.martins.trocas.rede.NivelPayload.CODEC);
-		PayloadTypeRegistry.playC2S().register(EscolherOfertaPayload.ID, EscolherOfertaPayload.CODEC);
-		ServerPlayNetworking.registerGlobalReceiver(EscolherOfertaPayload.ID, (payload, ctx) -> {
-			if (ctx.player().currentScreenHandler instanceof MercadorScreenHandler h) {
-				if (payload.comprar()) h.escolherCompra(payload.indice());
-				else h.escolherVenda(payload.item());
+		PayloadTypeRegistry.clientboundPlay().register(OfertasPayload.TYPE, OfertasPayload.CODEC);
+		PayloadTypeRegistry.clientboundPlay().register(CatalogoPayload.TYPE, CatalogoPayload.CODEC);
+		PayloadTypeRegistry.clientboundPlay().register(NivelPayload.TYPE, NivelPayload.CODEC);
+		PayloadTypeRegistry.serverboundPlay().register(EscolherOfertaPayload.TYPE, EscolherOfertaPayload.CODEC);
+		ServerPlayNetworking.registerGlobalReceiver(EscolherOfertaPayload.TYPE, (payload, ctx) -> {
+			if (ctx.player().containerMenu instanceof MercadorMenu m) {
+				if (payload.comprar()) m.escolherCompra(payload.indice());
+				else m.escolherVenda(payload.item());
 			}
 		});
 

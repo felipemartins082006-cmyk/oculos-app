@@ -1,5 +1,5 @@
 plugins {
-    id 'fabric-loom' version "${loom_version}"
+    id 'net.fabricmc.fabric-loom' version "${loom_version}"
 }
 
 version = project.mod_version
@@ -7,9 +7,6 @@ group = project.maven_group
 
 base {
     archivesName = project.archives_base_name
-}
-
-repositories {
 }
 
 sourceSets {
@@ -21,12 +18,8 @@ sourceSets {
 
 loom {
     mods {
-        trocasmartins {
-            sourceSet sourceSets.main
-        }
-        "trocasmartins-gametest" {
-            sourceSet sourceSets.gametest
-        }
+        trocasmartins { sourceSet sourceSets.main }
+        "trocasmartins-gametest" { sourceSet sourceSets.gametest }
     }
     runs {
         // Testes automáticos: ./gradlew runGametest
@@ -38,12 +31,11 @@ loom {
             runDir "build/gametest"
             source sourceSets.gametest
         }
-        // Fotos da tela (desenvolvimento): xvfb-run ./gradlew runFotos
+        // Fotos da tela no jogo de verdade (desenvolvimento): xvfb-run ./gradlew runFotos
         fotos {
             client()
             name "Fotos"
-            vmArg "-Dtrocasmartins.foto=true"
-            programArgs "--width", "1280", "--height", "720"
+            vmArg "-Dfabric.client.gametest"
             runDir "build/fotos"
             source sourceSets.gametest
         }
@@ -52,24 +44,24 @@ loom {
 
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
-    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
-    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 }
 
 processResources {
-    inputs.property "version", project.version
+    def v = project.version
+    inputs.property "version", v
     filesMatching("fabric.mod.json") {
-        expand "version": project.version
+        expand "version": v
     }
 }
 
 tasks.withType(JavaCompile).configureEach {
-    it.options.release = 21
+    it.options.release = 25
     it.options.encoding = 'UTF-8'
 }
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_21
-    targetCompatibility = JavaVersion.VERSION_21
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
 }

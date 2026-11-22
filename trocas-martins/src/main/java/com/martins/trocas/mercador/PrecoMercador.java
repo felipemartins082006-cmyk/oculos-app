@@ -2,29 +2,33 @@ package com.martins.trocas.mercador;
 
 import com.martins.trocas.TrocasMartins;
 import it.unimi.dsi.fastutil.objects.Object2IntMap;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.ContainerComponent;
-import net.minecraft.component.type.ItemEnchantmentsComponent;
-import net.minecraft.component.type.NbtComponent;
-import net.minecraft.enchantment.Enchantment;
-import net.minecraft.entity.passive.VillagerEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.item.SpawnEggItem;
-import net.minecraft.recipe.AbstractCookingRecipe;
-import net.minecraft.recipe.Ingredient;
-import net.minecraft.recipe.Recipe;
-import net.minecraft.recipe.RecipeEntry;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.registry.entry.RegistryEntry;
-import net.minecraft.registry.tag.EnchantmentTags;
-import net.minecraft.registry.tag.TagKey;
+import net.minecraft.core.Holder;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.Rarity;
+import net.minecraft.tags.EnchantmentTags;
+import net.minecraft.tags.TagKey;
+import net.minecraft.util.context.ContextMap;
+import net.minecraft.world.entity.npc.villager.Villager;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.ItemStackTemplate;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.Rarity;
+import net.minecraft.world.item.SpawnEggItem;
+import net.minecraft.world.item.component.CustomData;
+import net.minecraft.world.item.component.ItemContainerContents;
+import net.minecraft.world.item.crafting.AbstractCookingRecipe;
+import net.minecraft.world.item.crafting.Ingredient;
+import net.minecraft.world.item.crafting.Recipe;
+import net.minecraft.world.item.crafting.RecipeHolder;
+import net.minecraft.world.item.crafting.display.RecipeDisplay;
+import net.minecraft.world.item.crafting.display.SlotDisplayContext;
+import net.minecraft.world.item.enchantment.Enchantment;
+import net.minecraft.world.item.enchantment.ItemEnchantments;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -36,7 +40,7 @@ import java.util.Map;
  * Valores internos em milésimos de esmeralda (1000 = 1 esmeralda).
  */
 public final class PrecoMercador {
-	public static final TagKey<Item> NAO_COMPRA = TagKey.of(RegistryKeys.ITEM, TrocasMartins.id("nao_compra"));
+	public static final TagKey<Item> NAO_COMPRA = TagKey.create(Registries.ITEM, TrocasMartins.id("nao_compra"));
 	public static final long UMA_ESMERALDA = 1000;
 	/** 8 milésimos = 125 itens por esmeralda: cabe nos 2 espaços de pagamento. */
 	public static final long VALOR_MINIMO = 8;
@@ -102,7 +106,7 @@ public final class PrecoMercador {
 			for (Receita rc : receitas) {
 				// só resultados empilháveis: um barco ou uma ferramenta não define o preço da madeira
 				Double vSaida = atual.get(rc.saida);
-				if (vSaida == null || rc.unicos == null || rc.saida.getMaxCount() <= 1) continue;
+				if (vSaida == null || rc.unicos == null || rc.saida.getDefaultMaxStackSize() <= 1) continue;
 				double cand = vSaida * rc.qtdSaida / rc.ingredientes.size() * FATOR_RECEITA;
 				for (Item x : rc.unicos) {
 					if (!ancora.containsKey(x)) d.merge(x, cand, Math::max);
@@ -159,17 +163,18 @@ public final class PrecoMercador {
 		Map<Item, Double> v = new HashMap<>(tabela);
 		sobe.forEach((item, valor) -> v.put(item, valor * FATOR_RECEITA));
 		desce.forEach((item, valor) -> v.merge(item, valor, Math::max));
-		v.putAll(ancora);
+		// trava contra lucro, menos para itens que algum aldeão compra: esses seguem o aldeão
 		v.replaceAll((item, valor) -> travar(item, valor, custo));
+		v.putAll(ancora);
 
 		// itens de netherite (mesa de ferraria): versão de diamante + lingote de netherite
 		Double lingote = v.get(Items.NETHERITE_INGOT);
 		if (lingote != null) {
-			for (Item item : Registries.ITEM) {
-				Identifier id = Registries.ITEM.getId(item);
+			for (Item item : BuiltInRegistries.ITEM) {
+				Identifier id = BuiltInRegistries.ITEM.getKey(item);
 				if (v.containsKey(item) || !id.getPath().startsWith("netherite_")) continue;
-				Identifier diamante = Identifier.of(id.getNamespace(), "diamond_" + id.getPath().substring("netherite_".length()));
-				Double vd = Registries.ITEM.getOrEmpty(diamante).map(v::get).orElse(null);
+				Identifier diamante = Identifier.fromNamespaceAndPath(id.getNamespace(), "diamond_" + id.getPath().substring("netherite_".length()));
+				Double vd = BuiltInRegistries.ITEM.getOptional(diamante).map(v::get).orElse(null);
 				if (vd != null) v.put(item, vd + lingote);
 			}
 		}
@@ -193,23 +198,24 @@ public final class PrecoMercador {
 
 	private static List<Receita> lerReceitas(MinecraftServer server) {
 		List<Receita> lista = new ArrayList<>();
-		for (RecipeEntry<?> entrada : server.getRecipeManager().values()) {
+		ContextMap contexto = SlotDisplayContext.fromLevel(server.overworld());
+		for (RecipeHolder<?> entrada : server.getRecipeManager().getRecipes()) {
 			Recipe<?> receita = entrada.value();
 			ItemStack saida;
 			List<Ingredient> ings;
 			try {
-				saida = receita.getResult(server.getRegistryManager());
-				ings = receita.getIngredients();
+				List<RecipeDisplay> displays = receita.display();
+				if (displays.isEmpty()) continue;
+				saida = displays.get(0).result().resolveForFirstStack(contexto);
+				ings = receita.placementInfo().ingredients();
 			} catch (Exception e) {
 				continue;
 			}
 			if (saida == null || saida.isEmpty()) continue;
 			List<List<Item>> ingredientes = new ArrayList<>();
 			for (Ingredient ing : ings) {
-				if (ing.isEmpty()) continue;
-				List<Item> opcoes = new ArrayList<>();
-				for (ItemStack s : ing.getMatchingStacks()) opcoes.add(s.getItem());
-				if (!opcoes.isEmpty()) ingredientes.add(opcoes);
+				List<Item> opcoes = ing.items().map(Holder::value).toList();
+				if (!opcoes.isEmpty()) ingredientes.add(new ArrayList<>(opcoes));
 			}
 			if (ingredientes.isEmpty()) continue;
 			// itens que servem em TODOS os ingredientes (ex.: 2 tábuas -> 4 gravetos)
@@ -258,7 +264,8 @@ public final class PrecoMercador {
 			Double valor = v.get(item);
 			if (valor == null) continue;
 			// ex.: balde de leite devolve o balde, então só conta o leite
-			Item sobra = item.getRecipeRemainder();
+			ItemStackTemplate resto = item.getCraftingRemainder();
+			Item sobra = resto == null ? null : resto.item().value();
 			if (sobra != null && sobra != Items.AIR) {
 				Double vs = v.get(sobra);
 				if (vs != null) valor = Math.max(0, valor - vs);
@@ -274,7 +281,7 @@ public final class PrecoMercador {
 			if (!chave.startsWith("#")) return;
 			Identifier id = Identifier.tryParse(chave.substring(1));
 			if (id == null) return;
-			for (RegistryEntry<Item> e : Registries.ITEM.iterateEntries(TagKey.of(RegistryKeys.ITEM, id))) {
+			for (Holder<Item> e : BuiltInRegistries.ITEM.getTagOrEmpty(TagKey.create(Registries.ITEM, id))) {
 				destino.put(e.value(), valor);
 			}
 		});
@@ -282,7 +289,7 @@ public final class PrecoMercador {
 			if (chave.startsWith("#")) return;
 			Identifier id = Identifier.tryParse(chave);
 			if (id == null) return;
-			Registries.ITEM.getOrEmpty(id).ifPresent(item -> destino.put(item, valor));
+			BuiltInRegistries.ITEM.getOptional(id).ifPresent(item -> destino.put(item, valor));
 		});
 	}
 
@@ -296,13 +303,13 @@ public final class PrecoMercador {
 	/** Valor-base de um item (milésimos de esmeralda). 0 = o Mercador não compra. */
 	public static double valorBase(Item item) {
 		if (item == Items.AIR || item == Items.EMERALD || item == Items.EMERALD_BLOCK) return 0;
-		if (item instanceof SpawnEggItem || Registries.ITEM.getEntry(item).isIn(NAO_COMPRA)) return 0;
+		if (item instanceof SpawnEggItem || item.builtInRegistryHolder().is(NAO_COMPRA)) return 0;
 		Double v = valores.get(item);
 		if (v != null) return v;
-		ItemStack s = item.getDefaultStack();
+		ItemStack s = item.getDefaultInstance();
 		Rarity raridade = s.getRarity();
 		long porRaridade = switch (raridade) {
-			case COMMON -> s.getMaxCount() == 1 ? 200 : 20;
+			case COMMON -> s.getMaxStackSize() == 1 ? 200 : 20;
 			case UNCOMMON -> 500;
 			case RARE -> 2000;
 			case EPIC -> 8000;
@@ -320,37 +327,37 @@ public final class PrecoMercador {
 		double v = valorBase(stack.getItem());
 		if (v <= 0) return 0;
 
-		if (stack.isDamageable() && stack.getMaxDamage() > 0) {
-			double restante = 1.0 - (double) stack.getDamage() / stack.getMaxDamage();
+		if (stack.isDamageableItem() && stack.getMaxDamage() > 0) {
+			double restante = 1.0 - (double) stack.getDamageValue() / stack.getMaxDamage();
 			v = Math.max(1, v * Math.max(0.1, restante));
 		}
 
-		v += valorEncantamentos(stack.getOrDefault(DataComponentTypes.ENCHANTMENTS, ItemEnchantmentsComponent.DEFAULT));
-		v += valorEncantamentos(stack.getOrDefault(DataComponentTypes.STORED_ENCHANTMENTS, ItemEnchantmentsComponent.DEFAULT));
+		v += valorEncantamentos(stack.getOrDefault(DataComponents.ENCHANTMENTS, ItemEnchantments.EMPTY));
+		v += valorEncantamentos(stack.getOrDefault(DataComponents.STORED_ENCHANTMENTS, ItemEnchantments.EMPTY));
 
 		// comprado de um aldeão: no máximo metade do que foi pago
-		NbtComponent dados = stack.get(DataComponentTypes.CUSTOM_DATA);
-		if (dados != null && dados.contains(CHAVE_PAGO)) {
-			int pago = dados.copyNbt().getInt(CHAVE_PAGO);
+		CustomData dados = stack.get(DataComponents.CUSTOM_DATA);
+		if (dados != null && dados.copyTag().contains(CHAVE_PAGO)) {
+			int pago = dados.copyTag().getIntOr(CHAVE_PAGO, 0);
 			v = Math.max(1, Math.min(v, pago * UMA_ESMERALDA / 2.0));
 		}
 
-		ContainerComponent conteudo = stack.get(DataComponentTypes.CONTAINER);
+		ItemContainerContents conteudo = stack.get(DataComponents.CONTAINER);
 		if (conteudo != null && profundidade < 2) {
-			for (ItemStack dentro : conteudo.iterateNonEmpty()) {
+			for (ItemStack dentro : conteudo.nonEmptyItemCopyStream().toList()) {
 				v += valorUnitario(dentro, profundidade + 1) * dentro.getCount();
 			}
 		}
 		return v;
 	}
 
-	private static long valorEncantamentos(ItemEnchantmentsComponent encantamentos) {
+	private static long valorEncantamentos(ItemEnchantments encantamentos) {
 		long soma = 0;
-		for (Object2IntMap.Entry<RegistryEntry<Enchantment>> e : encantamentos.getEnchantmentEntries()) {
-			RegistryEntry<Enchantment> ench = e.getKey();
-			if (ench.isIn(EnchantmentTags.CURSE)) continue;
+		for (Object2IntMap.Entry<Holder<Enchantment>> e : encantamentos.entrySet()) {
+			Holder<Enchantment> ench = e.getKey();
+			if (ench.is(EnchantmentTags.CURSE)) continue;
 			long add = 400L * e.getIntValue() * Math.max(1, ench.value().getAnvilCost());
-			if (ench.isIn(EnchantmentTags.TREASURE)) add *= 2;
+			if (ench.is(EnchantmentTags.TREASURE)) add *= 2;
 			soma += add;
 		}
 		return soma;
@@ -359,7 +366,7 @@ public final class PrecoMercador {
 	// ------------------------------------------------------------------ proposta do Mercador
 
 	/** Multiplicador de preço do Mercador (só o ajuste global da configuração). */
-	public static double multiplicador(VillagerEntity mercador, PlayerEntity jogador) {
+	public static double multiplicador(Villager mercador, Player jogador) {
 		return Math.max(0.01, MercadorConfig.atual.multiplicador_global);
 	}
 
@@ -401,7 +408,7 @@ public final class PrecoMercador {
 			if (s.isEmpty()) continue;
 			if (referencia.isEmpty()) {
 				referencia = s;
-			} else if (!ItemStack.areItemsAndComponentsEqual(referencia, s)) {
+			} else if (!ItemStack.isSameItemSameComponents(referencia, s)) {
 				return Cotacao.simples(Cotacao.Status.MISTURADO, 0);
 			}
 			total += s.getCount();

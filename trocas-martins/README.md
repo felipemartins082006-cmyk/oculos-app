@@ -1,6 +1,6 @@
 # Trocas Martins — mod de aldeões para Minecraft
 
-Mod para **Minecraft Java 1.21.1** (Fabric) que:
+Mod para **Minecraft Java 26.2** (Fabric) que:
 
 1. **Adiciona trocas novas para todas as profissões de aldeão** (e para o mascate).
 2. **Cria uma profissão nova, o Mercador**, com um bloco de trabalho craftável, o **Balcão do Mercador**.
@@ -12,13 +12,16 @@ Mod para **Minecraft Java 1.21.1** (Fabric) que:
 
 ## Instalação
 
-1. Instale o [Fabric Loader](https://fabricmc.net/use/installer/) para o Minecraft **1.21.1**.
-2. Baixe o [Fabric API](https://modrinth.com/mod/fabric-api) para 1.21.1 e coloque na pasta `mods`.
-3. Coloque o arquivo [`download/trocas-martins-1.0.0.jar`](download/trocas-martins-1.0.0.jar) na pasta `mods`
+1. Instale o [Fabric Loader](https://fabricmc.net/use/installer/) para o Minecraft **26.2**.
+2. Baixe o [Fabric API](https://modrinth.com/mod/fabric-api) para **26.2** e coloque na pasta `mods`.
+3. Coloque o arquivo [`download/trocas-martins-1.1.0-mc26.2.jar`](download/trocas-martins-1.1.0-mc26.2.jar) na pasta `mods`
    (`%appdata%\.minecraft\mods` no Windows).
 4. Abra o Minecraft com o perfil do Fabric.
 
 Em servidor: o mod precisa estar no servidor **e** nos jogadores (por causa da tela do Mercador).
+
+A versão antiga para Minecraft 1.21.1 continua em `download/trocas-martins-1.0.0-mc1.21.1.jar`
+(sem as últimas novidades).
 
 ## O Mercador
 
@@ -192,13 +195,13 @@ Assim a progressão nunca termina: cada nível exige mais experiência e sempre 
 
 ## Para desenvolvedores
 
-Requer Java 21.
+Requer Java 25.
 
 ```bash
-./gradlew build          # gera build/libs/trocas-martins-1.0.0.jar
+./gradlew build          # gera build/libs/trocas-martins-1.1.0.jar
 ./gradlew runClient      # abre o jogo com o mod
 ./gradlew runGametest    # testes automáticos num servidor de verdade
-xvfb-run ./gradlew runFotos   # tira as fotos da pasta docs/ (opcional)
+xvfb-run ./gradlew runFotos   # abre o jogo, monta a cena e tira fotos (opcional)
 python3 tools/gerar_texturas.py   # recria a roupa do Mercador
 ```
 

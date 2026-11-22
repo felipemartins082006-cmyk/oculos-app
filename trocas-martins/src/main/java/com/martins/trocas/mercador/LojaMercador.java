@@ -1,10 +1,12 @@
 package com.martins.trocas.mercador;
 
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.network.RegistryByteBuf;
-import net.minecraft.network.codec.PacketCodec;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -20,16 +22,16 @@ import java.util.List;
 public final class LojaMercador {
 	/** Uma troca de venda: paga custoA (+ custoB) e recebe resultado. */
 	public record Oferta(ItemStack custoA, ItemStack custoB, ItemStack resultado, int maxUsos) {
-		public static final PacketCodec<RegistryByteBuf, Oferta> CODEC = PacketCodec.tuple(
-			ItemStack.PACKET_CODEC, Oferta::custoA,
-			ItemStack.OPTIONAL_PACKET_CODEC, Oferta::custoB,
-			ItemStack.PACKET_CODEC, Oferta::resultado,
-			net.minecraft.network.codec.PacketCodecs.VAR_INT, Oferta::maxUsos,
+		public static final StreamCodec<RegistryFriendlyByteBuf, Oferta> CODEC = StreamCodec.composite(
+			ItemStack.STREAM_CODEC, Oferta::custoA,
+			ItemStack.OPTIONAL_STREAM_CODEC, Oferta::custoB,
+			ItemStack.STREAM_CODEC, Oferta::resultado,
+			ByteBufCodecs.VAR_INT, Oferta::maxUsos,
 			Oferta::new);
 
 		/** Chave usada para contar os usos desta troca. */
 		public String chave() {
-			return "c:" + net.minecraft.registry.Registries.ITEM.getId(resultado.getItem());
+			return "c:" + BuiltInRegistries.ITEM.getKey(resultado.getItem());
 		}
 
 		/** Custo total em esmeraldas (blocos contam 9). */
@@ -39,8 +41,8 @@ public final class LojaMercador {
 	}
 
 	public static int emEsmeraldas(ItemStack s) {
-		if (s.isOf(Items.EMERALD)) return s.getCount();
-		if (s.isOf(Items.EMERALD_BLOCK)) return s.getCount() * 9;
+		if (s.is(Items.EMERALD)) return s.getCount();
+		if (s.is(Items.EMERALD_BLOCK)) return s.getCount() * 9;
 		return 0;
 	}
 
@@ -71,7 +73,7 @@ public final class LojaMercador {
 		Items.COAL, Items.IRON_INGOT, Items.COPPER_INGOT, Items.GOLD_INGOT, Items.REDSTONE, Items.LAPIS_LAZULI, Items.QUARTZ,
 		Items.AMETHYST_SHARD, Items.GLOWSTONE_DUST, Items.STRING, Items.LEATHER, Items.FEATHER, Items.BONE, Items.GUNPOWDER,
 		Items.SLIME_BALL, Items.INK_SAC, Items.PAPER, Items.BOOK, Items.FLINT, Items.ENDER_PEARL,
-		Items.EXPERIENCE_BOTTLE, Items.WHITE_WOOL,
+		Items.EXPERIENCE_BOTTLE, Items.WOOL.white(),
 		// utilidades
 		Items.TORCH, Items.LANTERN, Items.BUCKET, Items.SHEARS, Items.COMPASS, Items.CLOCK, Items.MAP, Items.ARROW, Items.LEAD,
 		Items.SADDLE, Items.NAME_TAG, Items.BELL,
@@ -108,7 +110,7 @@ public final class LojaMercador {
 	private static Oferta precificar(Item item) {
 		// 1) algum aldeão ou o mascate já vende: mesma troca
 		TrocasAldeoes.Taxa t = TrocasAldeoes.VENDEM.get(item);
-		if (t != null && t.esmeraldas() <= 64 && t.itens() <= item.getMaxCount()) {
+		if (t != null && t.esmeraldas() <= 64 && t.itens() <= item.getDefaultMaxStackSize()) {
 			return new Oferta(new ItemStack(Items.EMERALD, t.esmeraldas()), ItemStack.EMPTY, new ItemStack(item, t.itens()), USOS);
 		}
 		// 2) preço justo: 25% acima do que o próprio Mercador pagaria
@@ -116,7 +118,7 @@ public final class LojaMercador {
 		if (valor <= 0) return null;
 		double porItem = valor * MARGEM;
 		if (porItem < PrecoMercador.UMA_ESMERALDA) {
-			int itens = (int) Math.max(1, Math.min(item.getMaxCount(), Math.floor(PrecoMercador.UMA_ESMERALDA / porItem)));
+			int itens = (int) Math.max(1, Math.min(item.getDefaultMaxStackSize(), Math.floor(PrecoMercador.UMA_ESMERALDA / porItem)));
 			return new Oferta(new ItemStack(Items.EMERALD, 1), ItemStack.EMPTY, new ItemStack(item, itens), USOS);
 		}
 		int esm = (int) Math.ceil(porItem / PrecoMercador.UMA_ESMERALDA);

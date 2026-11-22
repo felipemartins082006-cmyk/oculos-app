@@ -1,33 +1,34 @@
 package com.martins.trocas.mercador;
 
 import com.mojang.serialization.MapCodec;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.HorizontalFacingBlock;
-import net.minecraft.item.ItemPlacementContext;
-import net.minecraft.state.StateManager;
+import net.minecraft.core.Direction;
+import net.minecraft.world.item.context.BlockPlaceContext;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.HorizontalDirectionalBlock;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.StateDefinition;
 
 /** Bloco de trabalho do Mercador: transforma um aldeão desempregado em Mercador. */
-public class BalcaoDoMercadorBlock extends HorizontalFacingBlock {
-	public static final MapCodec<BalcaoDoMercadorBlock> CODEC = createCodec(BalcaoDoMercadorBlock::new);
+public class BalcaoDoMercadorBlock extends HorizontalDirectionalBlock {
+	public static final MapCodec<BalcaoDoMercadorBlock> CODEC = simpleCodec(BalcaoDoMercadorBlock::new);
 
-	public BalcaoDoMercadorBlock(Settings settings) {
-		super(settings);
-		setDefaultState(getStateManager().getDefaultState().with(FACING, net.minecraft.util.math.Direction.NORTH));
+	public BalcaoDoMercadorBlock(Properties properties) {
+		super(properties);
+		registerDefaultState(stateDefinition.any().setValue(FACING, Direction.NORTH));
 	}
 
 	@Override
-	protected MapCodec<? extends HorizontalFacingBlock> getCodec() {
+	protected MapCodec<? extends HorizontalDirectionalBlock> codec() {
 		return CODEC;
 	}
 
 	@Override
-	protected void appendProperties(StateManager.Builder<Block, BlockState> builder) {
+	protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
 		builder.add(FACING);
 	}
 
 	@Override
-	public BlockState getPlacementState(ItemPlacementContext ctx) {
-		return getDefaultState().with(FACING, ctx.getHorizontalPlayerFacing().getOpposite());
+	public BlockState getStateForPlacement(BlockPlaceContext ctx) {
+		return defaultBlockState().setValue(FACING, ctx.getHorizontalDirection().getOpposite());
 	}
 }

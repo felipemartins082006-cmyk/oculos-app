@@ -4,24 +4,25 @@ import com.martins.trocas.ModRegistro;
 import com.martins.trocas.rede.CatalogoPayload;
 import com.martins.trocas.rede.OfertasPayload;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.entity.passive.VillagerEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.inventory.Inventory;
-import net.minecraft.inventory.SimpleInventory;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.registry.Registries;
-import net.minecraft.screen.ArrayPropertyDelegate;
-import net.minecraft.screen.PropertyDelegate;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.screen.slot.Slot;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.stat.Stats;
-import net.minecraft.village.TradeOffer;
-import net.minecraft.village.TradedItem;
-import org.jetbrains.annotations.Nullable;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.stats.Stats;
+import net.minecraft.world.Container;
+import net.minecraft.world.SimpleContainer;
+import net.minecraft.world.entity.npc.villager.Villager;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ContainerData;
+import net.minecraft.world.inventory.SimpleContainerData;
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.trading.ItemCost;
+import net.minecraft.world.item.trading.MerchantOffer;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -33,7 +34,7 @@ import java.util.Optional;
  * - Vender: coloque qualquer item no pagamento e ele mostra quantas esmeraldas paga (ou quantos faltam).
  * - Comprar: escolha uma troca da loja; o pagamento são esmeraldas e o resultado é o item.
  */
-public class MercadorScreenHandler extends ScreenHandler {
+public class MercadorMenu extends AbstractContainerMenu {
 	public static final int PAGAMENTO_1 = 0, PAGAMENTO_2 = 1, SAIDA = 2;
 	public static final int INV_INICIO = 3;
 	public static final int INV_FIM = 39;
@@ -42,12 +43,12 @@ public class MercadorScreenHandler extends ScreenHandler {
 	public static final int P_STATUS = 0, P_ESMERALDAS = 1, P_USADOS = 2, P_TOTAL = 3, P_FALTAM = 4,
 		P_ITENS_POR_ESM = 5, P_ESM_POR_ITEM = 6, P_NIVEL = 7, P_XP = 8, P_COMPRA = 9, P_TAMANHO = 10;
 
-	private final SimpleInventory pagamento;
-	private final SimpleInventory saida = new SimpleInventory(1);
-	private final PropertyDelegate props;
-	private final PlayerEntity jogador;
+	private final SimpleContainer pagamento;
+	private final SimpleContainer saida = new SimpleContainer(1);
+	private final ContainerData props;
+	private final Player jogador;
 	@Nullable
-	private final VillagerEntity mercador; // só no servidor
+	private final Villager mercador; // só no servidor
 	private Cotacao cotacao = Cotacao.VAZIA;
 	private boolean ocupado;
 	private boolean catalogoEnviado;
@@ -62,21 +63,21 @@ public class MercadorScreenHandler extends ScreenHandler {
 	private java.util.HashMap<String, Integer> usosCliente = new java.util.HashMap<>();
 
 	/** Cliente. */
-	public MercadorScreenHandler(int syncId, PlayerInventory inv, Integer idDoAldeao) {
-		this(syncId, inv, (VillagerEntity) null);
+	public MercadorMenu(int syncId, Inventory inv, Integer idDoAldeao) {
+		this(syncId, inv, (Villager) null);
 	}
 
 	/** Servidor. */
-	public MercadorScreenHandler(int syncId, PlayerInventory inv, @Nullable VillagerEntity mercador) {
-		super(ModRegistro.MERCADOR_SCREEN, syncId);
+	public MercadorMenu(int syncId, Inventory inv, @Nullable Villager mercador) {
+		super(ModRegistro.MERCADOR_MENU, syncId);
 		this.jogador = inv.player;
 		this.mercador = mercador;
-		this.props = new ArrayPropertyDelegate(P_TAMANHO);
-		this.pagamento = new SimpleInventory(2) {
+		this.props = new SimpleContainerData(P_TAMANHO);
+		this.pagamento = new SimpleContainer(2) {
 			@Override
-			public void markDirty() {
-				super.markDirty();
-				MercadorScreenHandler.this.onContentChanged(this);
+			public void setChanged() {
+				super.setChanged();
+				MercadorMenu.this.slotsChanged(this);
 			}
 		};
 
@@ -92,7 +93,7 @@ public class MercadorScreenHandler extends ScreenHandler {
 		for (int col = 0; col < 9; col++) {
 			addSlot(new Slot(inv, col, 108 + col * 18, 142));
 		}
-		addProperties(props);
+		addDataSlots(props);
 		if (mercador != null) {
 			loja = LojaMercador.ofertas();
 			atualizarNivel();
@@ -101,7 +102,7 @@ public class MercadorScreenHandler extends ScreenHandler {
 
 	// ------------------------------------------------------------------ dados para a tela
 
-	public PropertyDelegate getProps() {
+	public ContainerData getProps() {
 		return props;
 	}
 
@@ -138,7 +139,7 @@ public class MercadorScreenHandler extends ScreenHandler {
 	// ------------------------------------------------------------------ limite de trocas
 
 	public static String chaveVenda(ItemStack s) {
-		return "v:" + Registries.ITEM.getId(s.getItem());
+		return "v:" + BuiltInRegistries.ITEM.getKey(s.getItem());
 	}
 
 	private java.util.Map<String, Integer> usos() {
@@ -164,9 +165,9 @@ public class MercadorScreenHandler extends ScreenHandler {
 	// ------------------------------------------------------------------ cálculo
 
 	@Override
-	public void onContentChanged(Inventory inventory) {
+	public void slotsChanged(Container inventory) {
 		if (inventory == pagamento && !ocupado) recalcular();
-		super.onContentChanged(inventory);
+		super.slotsChanged(inventory);
 	}
 
 	private double multiplicador() {
@@ -174,17 +175,17 @@ public class MercadorScreenHandler extends ScreenHandler {
 	}
 
 	private void atualizarNivel() {
-		props.set(P_NIVEL, mercador.getVillagerData().getLevel());
-		props.set(P_XP, mercador.getExperience());
+		props.set(P_NIVEL, mercador.getVillagerData().level());
+		props.set(P_XP, mercador.getVillagerXp());
 	}
 
 	private static boolean ehEsmeralda(ItemStack s) {
-		return s.isOf(Items.EMERALD) || s.isOf(Items.EMERALD_BLOCK);
+		return s.is(Items.EMERALD) || s.is(Items.EMERALD_BLOCK);
 	}
 
 	private void recalcular() {
 		if (mercador == null) return;
-		ItemStack a = pagamento.getStack(0), b = pagamento.getStack(1);
+		ItemStack a = pagamento.getItem(0), b = pagamento.getItem(1);
 		// colocou algo que não é esmeralda: volta a ser venda
 		if (compra >= 0 && ((!a.isEmpty() && !ehEsmeralda(a)) || (!b.isEmpty() && !ehEsmeralda(b)))) compra = -1;
 
@@ -193,17 +194,17 @@ public class MercadorScreenHandler extends ScreenHandler {
 			int falta = falta(o.custoA(), a) + falta(o.custoB(), b);
 			if (restantes(o.chave(), o.maxUsos()) <= 0) {
 				cotacao = Cotacao.simples(Cotacao.Status.ESGOTADO, 0);
-				saida.setStack(0, ItemStack.EMPTY);
+				saida.setItem(0, ItemStack.EMPTY);
 			} else cotacao = falta == 0
 				? new Cotacao(Cotacao.Status.COMPRA_OK, 0, 0, 0, 0, 0, 0)
 				: new Cotacao(Cotacao.Status.COMPRA_FALTA, 0, 0, 0, falta, 0, 0);
-			if (cotacao.status() != Cotacao.Status.ESGOTADO) saida.setStack(0, falta == 0 ? o.resultado().copy() : ItemStack.EMPTY);
+			if (cotacao.status() != Cotacao.Status.ESGOTADO) saida.setItem(0, falta == 0 ? o.resultado().copy() : ItemStack.EMPTY);
 		} else {
 			compra = -1;
 			ItemStack ref = !a.isEmpty() ? a : b;
 			int limite = ref.isEmpty() ? Integer.MAX_VALUE : restantes(chaveVenda(ref), LojaMercador.USOS_VENDA);
 			cotacao = PrecoMercador.cotar(List.of(a, b), multiplicador(), limite);
-			saida.setStack(0, cotacao.ok() ? new ItemStack(Items.EMERALD, cotacao.esmeraldas()) : ItemStack.EMPTY);
+			saida.setItem(0, cotacao.ok() ? new ItemStack(Items.EMERALD, cotacao.esmeraldas()) : ItemStack.EMPTY);
 		}
 		props.set(P_STATUS, cotacao.status().ordinal());
 		props.set(P_ESMERALDAS, cotacao.esmeraldas());
@@ -219,8 +220,8 @@ public class MercadorScreenHandler extends ScreenHandler {
 	/** Esmeraldas que faltam no espaço para pagar {@code custo}. */
 	private static int falta(ItemStack custo, ItemStack noEspaco) {
 		if (custo.isEmpty()) return 0;
-		int tem = noEspaco.isOf(custo.getItem()) ? noEspaco.getCount() : 0;
-		int peso = custo.isOf(Items.EMERALD_BLOCK) ? 9 : 1;
+		int tem = noEspaco.is(custo.getItem()) ? noEspaco.getCount() : 0;
+		int peso = custo.is(Items.EMERALD_BLOCK) ? 9 : 1;
 		return Math.max(0, custo.getCount() - tem) * peso;
 	}
 
@@ -230,16 +231,16 @@ public class MercadorScreenHandler extends ScreenHandler {
 		List<ItemStack> tipos = new ArrayList<>();
 		List<Integer> totais = new ArrayList<>();
 		List<ItemStack> fontes = new ArrayList<>();
-		fontes.add(pagamento.getStack(0));
-		fontes.add(pagamento.getStack(1));
-		PlayerInventory inv = jogador.getInventory();
-		fontes.addAll(inv.main);
+		fontes.add(pagamento.getItem(0));
+		fontes.add(pagamento.getItem(1));
+		Inventory inv = jogador.getInventory();
+		fontes.addAll(inv.getNonEquipmentItems());
 
 		for (ItemStack s : fontes) {
 			if (s.isEmpty()) continue;
 			int achado = -1;
 			for (int i = 0; i < tipos.size(); i++) {
-				if (ItemStack.areItemsAndComponentsEqual(tipos.get(i), s)) {
+				if (ItemStack.isSameItemSameComponents(tipos.get(i), s)) {
 					achado = i;
 					break;
 				}
@@ -257,11 +258,10 @@ public class MercadorScreenHandler extends ScreenHandler {
 			OfertasPayload.Oferta o = oferta(tipos.get(i), mult, totais.get(i));
 			if (o != null) lista.add(o);
 		}
-		lista.sort(Comparator.comparingInt(o -> Registries.ITEM.getRawId(o.item().getItem())));
+		lista.sort(Comparator.comparingInt(o -> BuiltInRegistries.ITEM.getId(o.item().getItem())));
 		return lista;
 	}
 
-	@Nullable
 	private static OfertasPayload.Oferta oferta(ItemStack item, double mult, int tem) {
 		double v = PrecoMercador.valorEfetivo(item, mult);
 		if (v <= 0) return null;
@@ -274,40 +274,40 @@ public class MercadorScreenHandler extends ScreenHandler {
 	private List<OfertasPayload.Oferta> calcularCatalogo() {
 		double mult = multiplicador();
 		List<OfertasPayload.Oferta> lista = new ArrayList<>();
-		for (Item item : Registries.ITEM) {
+		for (Item item : BuiltInRegistries.ITEM) {
 			if (item == Items.AIR) continue;
-			OfertasPayload.Oferta o = oferta(item.getDefaultStack(), mult, 0);
+			OfertasPayload.Oferta o = oferta(item.getDefaultInstance(), mult, 0);
 			if (o != null) lista.add(o);
 		}
 		return lista;
 	}
 
 	@Override
-	public void sendContentUpdates() {
-		super.sendContentUpdates();
-		if (mercador == null || !(jogador instanceof ServerPlayerEntity sp)) return;
+	public void broadcastChanges() {
+		super.broadcastChanges();
+		if (mercador == null || !(jogador instanceof ServerPlayer sp)) return;
 		atualizarNivel();
 		if (!catalogoEnviado) {
 			catalogoEnviado = true;
 			catalogoCompra = calcularCatalogo();
-			enviar(sp, new CatalogoPayload(syncId, catalogoCompra, loja));
+			enviar(sp, new CatalogoPayload(containerId, catalogoCompra, loja));
 		}
 		List<OfertasPayload.Oferta> novas = calcularOfertas();
 		int assinatura = usos().hashCode();
 		for (OfertasPayload.Oferta o : novas) {
-			assinatura = 31 * assinatura + ItemStack.hashCode(o.item());
+			assinatura = 31 * assinatura + ItemStack.hashItemAndComponents(o.item());
 			assinatura = 31 * assinatura + o.quantidade() * 7 + o.esmeraldas() * 131 + o.temJogador() * 1031;
 		}
 		if (assinatura != assinaturaOfertas) {
 			assinaturaOfertas = assinatura;
 			ofertas = novas;
-			enviar(sp, new OfertasPayload(syncId, novas, new java.util.HashMap<>(usos())));
+			enviar(sp, new OfertasPayload(containerId, novas, new java.util.HashMap<>(usos())));
 		}
 	}
 
-	private static void enviar(ServerPlayerEntity sp, net.minecraft.network.packet.CustomPayload payload) {
+	private static void enviar(ServerPlayer sp, CustomPacketPayload payload) {
 		try {
-			if (ServerPlayNetworking.canSend(sp, payload.getId())) ServerPlayNetworking.send(sp, payload);
+			if (ServerPlayNetworking.canSend(sp, payload.type())) ServerPlayNetworking.send(sp, payload);
 		} catch (Exception ignorado) {
 			// jogador falso (testes) não tem conexão
 		}
@@ -327,7 +327,7 @@ public class MercadorScreenHandler extends ScreenHandler {
 			ocupado = false;
 		}
 		recalcular();
-		sendContentUpdates();
+		broadcastChanges();
 	}
 
 	/** Comprar: devolve o pagamento e coloca as esmeraldas da troca escolhida, como nas trocas normais. */
@@ -343,76 +343,76 @@ public class MercadorScreenHandler extends ScreenHandler {
 			ocupado = false;
 		}
 		recalcular();
-		sendContentUpdates();
+		broadcastChanges();
 	}
 
 	private void devolverPagamento(@Nullable ItemStack manter) {
 		for (int i = 0; i < 2; i++) {
-			ItemStack s = pagamento.getStack(i);
-			if (s.isEmpty() || (manter != null && ItemStack.areItemsAndComponentsEqual(s, manter))) continue;
-			pagamento.setStack(i, ItemStack.EMPTY);
-			jogador.getInventory().offerOrDrop(s);
+			ItemStack s = pagamento.getItem(i);
+			if (s.isEmpty() || (manter != null && ItemStack.isSameItemSameComponents(s, manter))) continue;
+			pagamento.setItem(i, ItemStack.EMPTY);
+			jogador.getInventory().placeItemBackInInventory(s);
 		}
 	}
 
 	private void preencherCompra(LojaMercador.Oferta o) {
 		if (!o.custoA().isEmpty()) puxar(0, o.custoA());
 		if (!o.custoB().isEmpty()) puxar(1, o.custoB());
-		pagamento.markDirty();
+		pagamento.setChanged();
 	}
 
 	/** Puxa do inventário o item indicado para os espaços de pagamento (até encher). */
 	private void preencher(ItemStack alvo, ItemStack ignorado) {
 		puxar(0, alvo);
 		puxar(1, alvo);
-		pagamento.markDirty();
+		pagamento.setChanged();
 	}
 
 	private void puxar(int espaco, ItemStack alvo) {
-		PlayerInventory inv = jogador.getInventory();
-		ItemStack atual = pagamento.getStack(espaco);
-		if (!atual.isEmpty() && !ItemStack.areItemsAndComponentsEqual(atual, alvo)) return;
-		for (int i = 0; i < inv.main.size(); i++) {
-			atual = pagamento.getStack(espaco);
-			int lugar = alvo.getMaxCount() - atual.getCount();
+		Inventory inv = jogador.getInventory();
+		ItemStack atual = pagamento.getItem(espaco);
+		if (!atual.isEmpty() && !ItemStack.isSameItemSameComponents(atual, alvo)) return;
+		for (int i = 0; i < inv.getNonEquipmentItems().size(); i++) {
+			atual = pagamento.getItem(espaco);
+			int lugar = alvo.getMaxStackSize() - atual.getCount();
 			if (lugar <= 0) break;
-			ItemStack s = inv.main.get(i);
-			if (s.isEmpty() || !ItemStack.areItemsAndComponentsEqual(s, alvo)) continue;
+			ItemStack s = inv.getNonEquipmentItems().get(i);
+			if (s.isEmpty() || !ItemStack.isSameItemSameComponents(s, alvo)) continue;
 			int mover = Math.min(lugar, s.getCount());
-			if (atual.isEmpty()) pagamento.setStack(espaco, s.copyWithCount(mover));
-			else atual.increment(mover);
-			s.decrement(mover);
+			if (atual.isEmpty()) pagamento.setItem(espaco, s.copyWithCount(mover));
+			else atual.grow(mover);
+			s.shrink(mover);
 		}
 	}
 
 	// ------------------------------------------------------------------ fechar a troca
 
-	private void concluir(PlayerEntity player, ItemStack recebido) {
+	private void concluir(Player player, ItemStack recebido) {
 		if (mercador == null) return;
-		TradeOffer troca;
+		MerchantOffer troca;
 		ocupado = true;
 		try {
 			if (cotacao.status() == Cotacao.Status.COMPRA_OK && compra >= 0) {
 				LojaMercador.Oferta o = loja.get(compra);
-				if (!o.custoA().isEmpty()) pagamento.removeStack(0, o.custoA().getCount());
-				if (!o.custoB().isEmpty()) pagamento.removeStack(1, o.custoB().getCount());
-				troca = new TradeOffer(new TradedItem(o.custoA().getItem(), o.custoA().getCount()),
-					o.custoB().isEmpty() ? Optional.empty() : Optional.of(new TradedItem(o.custoB().getItem(), o.custoB().getCount())),
+				if (!o.custoA().isEmpty()) pagamento.removeItem(0, o.custoA().getCount());
+				if (!o.custoB().isEmpty()) pagamento.removeItem(1, o.custoB().getCount());
+				troca = new MerchantOffer(new ItemCost(o.custoA().getItem(), o.custoA().getCount()),
+					o.custoB().isEmpty() ? Optional.empty() : Optional.of(new ItemCost(o.custoB().getItem(), o.custoB().getCount())),
 					recebido.copy(), Integer.MAX_VALUE, Math.max(1, Math.min(30, o.esmeraldas())), 0f);
 				usar(o.chave(), 1);
 			} else if (cotacao.ok()) {
 				ItemStack vendido = ItemStack.EMPTY;
 				int restante = cotacao.usados();
 				for (int i = 0; i < 2 && restante > 0; i++) {
-					ItemStack s = pagamento.getStack(i);
+					ItemStack s = pagamento.getItem(i);
 					if (s.isEmpty()) continue;
 					if (vendido.isEmpty()) vendido = s.copyWithCount(1);
 					int tirar = Math.min(restante, s.getCount());
-					pagamento.removeStack(i, tirar);
+					pagamento.removeItem(i, tirar);
 					restante -= tirar;
 				}
 				usar(chaveVenda(vendido), cotacao.itensPorEsmeralda() > 0 ? cotacao.esmeraldas() : cotacao.usados());
-				troca = new TradeOffer(new TradedItem(vendido.getItem(), Math.min(64, cotacao.usados())),
+				troca = new MerchantOffer(new ItemCost(vendido.getItem(), Math.min(64, cotacao.usados())),
 					recebido.copy(), Integer.MAX_VALUE, Math.max(1, cotacao.esmeraldas()), 0f);
 			} else {
 				return;
@@ -420,26 +420,26 @@ public class MercadorScreenHandler extends ScreenHandler {
 		} finally {
 			ocupado = false;
 		}
-		mercador.trade(troca);
-		mercador.onSellingItem(recebido);
-		player.incrementStat(Stats.TRADED_WITH_VILLAGER);
+		mercador.notifyTrade(troca);
+		mercador.notifyTradeUpdated(recebido);
+		player.awardStat(Stats.TRADED_WITH_VILLAGER);
 		recalcular();
 	}
 
 	@Override
-	public ItemStack quickMove(PlayerEntity player, int indice) {
+	public ItemStack quickMoveStack(Player player, int indice) {
 		Slot slot = slots.get(indice);
-		if (slot == null || !slot.hasStack()) return ItemStack.EMPTY;
-		ItemStack pilha = slot.getStack();
+		if (slot == null || !slot.hasItem()) return ItemStack.EMPTY;
+		ItemStack pilha = slot.getItem();
 		ItemStack resultado = pilha.copy();
 
 		if (indice == SAIDA) {
-			if (!slot.canTakeItems(player) || espacoNoInventario(pilha) < pilha.getCount()) return ItemStack.EMPTY;
-			ItemStack vendido = !pagamento.getStack(0).isEmpty() ? pagamento.getStack(0).copyWithCount(1) : pagamento.getStack(1).copyWithCount(1);
+			if (!slot.mayPickup(player) || espacoNoInventario(pilha) < pilha.getCount()) return ItemStack.EMPTY;
+			ItemStack vendido = !pagamento.getItem(0).isEmpty() ? pagamento.getItem(0).copyWithCount(1) : pagamento.getItem(1).copyWithCount(1);
 			int compraAntes = compra;
-			insertItem(pilha, INV_INICIO, INV_FIM, true);
-			slot.setStack(ItemStack.EMPTY);
-			slot.onTakeItem(player, resultado);
+			moveItemStackTo(pilha, INV_INICIO, INV_FIM, true);
+			slot.set(ItemStack.EMPTY);
+			slot.onTake(player, resultado);
 			// shift-clique repete a troca enquanto houver itens/esmeraldas no inventário
 			if (mercador != null) {
 				ocupado = true;
@@ -453,85 +453,85 @@ public class MercadorScreenHandler extends ScreenHandler {
 			}
 			return resultado;
 		} else if (indice < SAIDA) {
-			if (!insertItem(pilha, INV_INICIO, INV_FIM, true)) return ItemStack.EMPTY;
+			if (!moveItemStackTo(pilha, INV_INICIO, INV_FIM, true)) return ItemStack.EMPTY;
 		} else {
-			if (!insertItem(pilha, PAGAMENTO_1, SAIDA, false)) {
+			if (!moveItemStackTo(pilha, PAGAMENTO_1, SAIDA, false)) {
 				if (indice < INV_FIM - 9) {
-					if (!insertItem(pilha, INV_FIM - 9, INV_FIM, false)) return ItemStack.EMPTY;
-				} else if (!insertItem(pilha, INV_INICIO, INV_FIM - 9, false)) {
+					if (!moveItemStackTo(pilha, INV_FIM - 9, INV_FIM, false)) return ItemStack.EMPTY;
+				} else if (!moveItemStackTo(pilha, INV_INICIO, INV_FIM - 9, false)) {
 					return ItemStack.EMPTY;
 				}
 			}
 		}
 
-		if (pilha.isEmpty()) slot.setStack(ItemStack.EMPTY);
-		else slot.markDirty();
+		if (pilha.isEmpty()) slot.set(ItemStack.EMPTY);
+		else slot.setChanged();
 		if (pilha.getCount() == resultado.getCount()) return ItemStack.EMPTY;
-		slot.onTakeItem(player, pilha);
+		slot.onTake(player, pilha);
 		return resultado;
 	}
 
 	private int espacoNoInventario(ItemStack pilha) {
 		int espaco = 0;
 		for (int i = INV_INICIO; i < INV_FIM; i++) {
-			ItemStack s = slots.get(i).getStack();
-			if (s.isEmpty()) espaco += pilha.getMaxCount();
-			else if (ItemStack.areItemsAndComponentsEqual(s, pilha)) espaco += Math.max(0, s.getMaxCount() - s.getCount());
+			ItemStack s = slots.get(i).getItem();
+			if (s.isEmpty()) espaco += pilha.getMaxStackSize();
+			else if (ItemStack.isSameItemSameComponents(s, pilha)) espaco += Math.max(0, s.getMaxStackSize() - s.getCount());
 		}
 		return espaco;
 	}
 
 	@Override
-	public boolean canInsertIntoSlot(ItemStack stack, Slot slot) {
-		return slot.inventory != saida && super.canInsertIntoSlot(stack, slot);
+	public boolean canTakeItemForPickAll(ItemStack stack, Slot slot) {
+		return slot.container != saida && super.canTakeItemForPickAll(stack, slot);
 	}
 
 	@Override
-	public boolean canUse(PlayerEntity player) {
+	public boolean stillValid(Player player) {
 		if (mercador == null) return true;
 		return mercador.isAlive()
-			&& mercador.getCustomer() == player
-			&& mercador.getVillagerData().getProfession() == ModRegistro.MERCADOR
-			&& player.squaredDistanceTo(mercador) <= 64.0;
+			&& mercador.getTradingPlayer() == player
+			&& ModRegistro.ehMercador(mercador)
+			&& player.distanceToSqr(mercador) <= 64.0;
 	}
 
 	@Override
-	public void onClosed(PlayerEntity player) {
-		super.onClosed(player);
-		saida.setStack(0, ItemStack.EMPTY);
+	public void removed(Player player) {
+		super.removed(player);
+		saida.setItem(0, ItemStack.EMPTY);
 		if (mercador != null) {
 			ocupado = true;
-			dropInventory(player, pagamento);
-			if (mercador.getCustomer() == player) mercador.setCustomer(null);
+			clearContainer(player, pagamento);
+			if (mercador.getTradingPlayer() == player) mercador.setTradingPlayer(null);
 		}
 	}
 
 	private class SlotSaida extends Slot {
-		SlotSaida(Inventory inv, int index, int x, int y) {
+		SlotSaida(Container inv, int index, int x, int y) {
 			super(inv, index, x, y);
 		}
 
 		@Override
-		public boolean canInsert(ItemStack stack) {
+		public boolean mayPlace(ItemStack stack) {
 			return false;
 		}
 
 		@Override
-		public boolean canTakeItems(PlayerEntity player) {
+		public boolean mayPickup(Player player) {
 			Cotacao.Status s = mercador == null ? Cotacao.Status.of(props.get(P_STATUS)) : cotacao.status();
 			return mercador == null ? s == Cotacao.Status.OK || s == Cotacao.Status.COMPRA_OK
 				: cotacao.ok() || s == Cotacao.Status.COMPRA_OK;
 		}
 
 		@Override
-		public ItemStack takeStack(int amount) {
-			return super.takeStack(getStack().getCount());
+		public ItemStack remove(int amount) {
+			return super.remove(getItem().getCount());
 		}
 
 		@Override
-		public void onTakeItem(PlayerEntity player, ItemStack stack) {
-			if (!player.getWorld().isClient && !stack.isEmpty()) concluir(player, stack);
-			super.onTakeItem(player, stack);
+		public void onTake(Player player, ItemStack stack) {
+			if (!player.level().isClientSide() && !stack.isEmpty()) concluir(player, stack);
+			super.onTake(player, stack);
 		}
 	}
 }

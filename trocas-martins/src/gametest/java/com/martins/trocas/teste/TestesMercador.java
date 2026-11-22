@@ -4,43 +4,45 @@ import com.martins.trocas.ModRegistro;
 import com.martins.trocas.TrocasMartins;
 import com.martins.trocas.mercador.Cotacao;
 import com.martins.trocas.mercador.LojaMercador;
+import com.martins.trocas.mercador.MercadorMenu;
+import com.martins.trocas.mercador.PrecoMercador;
 import com.martins.trocas.mercador.Taxa;
 import com.martins.trocas.mercador.TrocasAldeoes;
-import com.martins.trocas.mercador.MercadorScreenHandler;
-import com.martins.trocas.mercador.PrecoMercador;
+import com.martins.trocas.trocas.NiveisExtras;
 import net.fabricmc.fabric.api.entity.FakePlayer;
-import net.fabricmc.fabric.api.gametest.v1.FabricGameTest;
-import net.minecraft.block.Blocks;
-import net.minecraft.entity.EntityType;
-import net.minecraft.entity.passive.VillagerEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.screen.slot.SlotActionType;
-import net.minecraft.test.GameTest;
-import net.minecraft.test.TestContext;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.village.TradeOffer;
-import net.minecraft.village.TradeOfferList;
-import net.minecraft.village.TradedItem;
-import net.minecraft.village.VillagerProfession;
+import net.fabricmc.fabric.api.gametest.v1.GameTest;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.entity.EntityTypes;
+import net.minecraft.world.entity.npc.villager.Villager;
+import net.minecraft.world.entity.npc.villager.VillagerProfession;
+import net.minecraft.world.inventory.ContainerInput;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.trading.ItemCost;
+import net.minecraft.world.item.trading.MerchantOffer;
+import net.minecraft.world.item.trading.MerchantOffers;
+import net.minecraft.world.level.block.Blocks;
 
 import java.util.List;
 
-public class TestesMercador implements FabricGameTest {
+public class TestesMercador {
 
-	private static void piso(TestContext ctx) {
+	private static void piso(GameTestHelper ctx) {
 		for (int x = 0; x < 8; x++)
 			for (int z = 0; z < 8; z++)
-				ctx.setBlockState(new BlockPos(x, 0, z), Blocks.STONE);
+				ctx.setBlock(new BlockPos(x, 0, z), Blocks.STONE);
 	}
 
-	private static void igual(TestContext ctx, long esperado, long real, String oQue) {
+	private static void igual(GameTestHelper ctx, long esperado, long real, String oQue) {
 		ctx.assertTrue(esperado == real, oQue + ": esperado " + esperado + ", veio " + real);
 	}
 
-	@GameTest(templateName = EMPTY_STRUCTURE)
-	public void precos(TestContext ctx) {
-		ctx.assertTrue(ctx.getWorld().getRecipeManager().get(TrocasMartins.id("balcao_do_mercador")).isPresent(),
+	@GameTest
+	public void precos(GameTestHelper ctx) {
+		ctx.assertTrue(ctx.getLevel().getServer().getRecipeManager().byKey(ResourceKey.create(Registries.RECIPE, TrocasMartins.id("balcao_do_mercador"))).isPresent(),
 			"a receita do Balcão do Mercador deveria existir");
 
 		// igual aos aldeões: flecheiro compra 32 gravetos, fazendeiro 20 trigos, armeiro 1 diamante por 1 esmeralda
@@ -55,12 +57,15 @@ public class TestesMercador implements FabricGameTest {
 
 		// tronco: 1 tronco = 4 tábuas = 8 gravetos = 0,25 esmeralda no flecheiro; o Mercador paga um pouco menos
 		double tronco = PrecoMercador.valorUnitario(new ItemStack(Items.OAK_LOG));
-		ctx.assertTrue(tronco > 200 && tronco < 250, "tronco deveria valer entre 0,2 e 0,25 esmeralda, veio " + tronco);
+		var mascate = TrocasAldeoes.VENDEM.get(Items.OAK_LOG);
+		double tetoTronco = mascate == null ? 250 : Math.min(250, mascate.porItem() * 1000 * 0.9);
+		ctx.assertTrue(tronco > 0 && tronco <= tetoTronco + 0.01, "tronco: até 0,25 esmeralda e sem lucro com o mascate, veio " + tronco);
 		double tabua = PrecoMercador.valorUnitario(new ItemStack(Items.OAK_PLANKS));
 		ctx.assertTrue(tabua * 4 <= 250 && tronco <= tabua * 4, "tábuas e tronco coerentes: " + tabua + " / " + tronco);
 
 		// nenhum aldeão vende algo mais barato do que o Mercador paga (não dá lucro)
 		for (var e : TrocasAldeoes.VENDEM.entrySet()) {
+			if (TrocasAldeoes.COMPRAM.containsKey(e.getKey())) continue; // segue o preço do próprio aldeão
 			double pago = PrecoMercador.valorUnitario(new ItemStack(e.getKey()));
 			ctx.assertTrue(pago <= e.getValue().porItem() * 1000 * 0.9 + 1,
 				"lucro possível com " + e.getKey() + ": aldeão vende a " + e.getValue() + ", Mercador paga " + pago);
@@ -80,12 +85,12 @@ public class TestesMercador implements FabricGameTest {
 			var compram = TrocasAldeoes.COMPRAM.get(o.resultado().getItem());
 			if (compram != null) ctx.assertTrue(compram.porItem() * 1000 <= custoPorItem + 0.01,
 				"revender " + o.resultado() + " a um aldeão dá lucro");
-			ctx.assertFalse(o.resultado().isOf(Items.ELYTRA) || o.resultado().isOf(Items.TOTEM_OF_UNDYING), "item apelão na loja");
+			ctx.assertTrue(!(o.resultado().is(Items.ELYTRA) || o.resultado().is(Items.TOTEM_OF_UNDYING)), "item apelão na loja");
 		}
 		// itens raros com preço absurdo
 		for (LojaMercador.Oferta o : LojaMercador.ofertas()) {
-			if (o.resultado().isOf(Items.DIAMOND)) ctx.assertTrue(o.esmeraldas() >= 100, "diamante barato demais");
-			if (o.resultado().isOf(Items.NETHERITE_INGOT)) ctx.assertTrue(o.esmeraldas() >= 500, "netherite barato demais");
+			if (o.resultado().is(Items.DIAMOND)) ctx.assertTrue(o.esmeraldas() >= 100, "diamante barato demais");
+			if (o.resultado().is(Items.NETHERITE_INGOT)) ctx.assertTrue(o.esmeraldas() >= 500, "netherite barato demais");
 			// mesmo preço do aldeão quando algum aldeão vende
 			var vendem = TrocasAldeoes.VENDEM.get(o.resultado().getItem());
 			if (vendem != null && vendem.esmeraldas() <= 64)
@@ -100,182 +105,182 @@ public class TestesMercador implements FabricGameTest {
 		c = PrecoMercador.cotar(List.of(new ItemStack(Items.BEDROCK, 1)), 1.0);
 		ctx.assertTrue(c.status() == Cotacao.Status.NAO_COMPRA, "bedrock: " + c);
 
-		TradeOffer oferta = new TradeOffer(new TradedItem(Items.EMERALD, 1), new ItemStack(Items.DIAMOND_CHESTPLATE), 1, 1, 0f);
-		ctx.assertTrue(PrecoMercador.valorUnitario(oferta.copySellItem()) <= 500, "peitoral comprado de aldeão por 1 esmeralda");
+		MerchantOffer oferta = new MerchantOffer(new ItemCost(Items.EMERALD, 1), new ItemStack(Items.DIAMOND_CHESTPLATE), 1, 1, 0f);
+		ctx.assertTrue(PrecoMercador.valorUnitario(oferta.assemble()) <= 500, "peitoral comprado de aldeão por 1 esmeralda");
 		ItemStack picaretaGasta = new ItemStack(Items.IRON_PICKAXE);
-		picaretaGasta.setDamage(picaretaGasta.getMaxDamage() / 2);
+		picaretaGasta.setDamageValue(picaretaGasta.getMaxDamage() / 2);
 		ctx.assertTrue(PrecoMercador.valorUnitario(picaretaGasta) < PrecoMercador.valorUnitario(new ItemStack(Items.IRON_PICKAXE)),
 			"picareta gasta deveria valer menos");
 
 		for (var item : List.of(Items.STICK, Items.OAK_LOG, Items.OAK_PLANKS, Items.DIRT, Items.COBBLESTONE, Items.WHEAT, Items.BREAD,
 			Items.IRON_INGOT, Items.IRON_BLOCK, Items.RAW_IRON, Items.DIAMOND, Items.DIAMOND_PICKAXE, Items.ROTTEN_FLESH, Items.PAPER,
-			Items.BOOK, Items.BOOKSHELF, Items.ARROW, Items.GLASS, Items.TORCH, Items.STRING, Items.WHITE_WOOL)) {
+			Items.BOOK, Items.BOOKSHELF, Items.ARROW, Items.GLASS, Items.TORCH, Items.STRING, Items.WOOL.white())) {
 			Cotacao q = PrecoMercador.cotar(List.of(new ItemStack(item)), 1.0);
 			TrocasMartins.LOGGER.info("[preço] {} -> {}", item, Taxa.descrever(q));
 		}
 		for (LojaMercador.Oferta o : LojaMercador.ofertas()) {
 			TrocasMartins.LOGGER.info("[loja] {} + {} -> {}", o.custoA(), o.custoB(), o.resultado());
 		}
-		ctx.complete();
+		ctx.succeed();
 	}
 
-	@GameTest(templateName = EMPTY_STRUCTURE)
-	public void vendaNoBalcao(TestContext ctx) {
+	@GameTest
+	public void vendaNoBalcao(GameTestHelper ctx) {
 		piso(ctx);
-		VillagerEntity v = ctx.spawnEntity(EntityType.VILLAGER, new BlockPos(2, 1, 2));
-		v.setVillagerData(v.getVillagerData().withProfession(ModRegistro.MERCADOR).withLevel(1));
-		FakePlayer p = FakePlayer.get(ctx.getWorld());
-		p.getInventory().clear();
-		p.refreshPositionAndAngles(v.getX() + 1, v.getY(), v.getZ(), 0, 0);
-		v.setCustomer(p);
-		MercadorScreenHandler h = new MercadorScreenHandler(1, p.getInventory(), v);
-		int saida = MercadorScreenHandler.SAIDA;
+		Villager v = ctx.spawn(EntityTypes.VILLAGER, new BlockPos(2, 1, 2));
+		v.setVillagerData(v.getVillagerData().withProfession(ctx.getLevel().registryAccess(), ModRegistro.MERCADOR_KEY).withLevel(1));
+		FakePlayer p = FakePlayer.get(ctx.getLevel());
+		p.getInventory().clearContent();
+		p.snapTo(v.getX() + 1, v.getY(), v.getZ(), 0, 0);
+		v.setTradingPlayer(p);
+		MercadorMenu h = new MercadorMenu(1, p.getInventory(), v);
+		int saida = MercadorMenu.SAIDA;
 
 		// 100 terras nos 2 espaços de pagamento: faltam 25 para 1 esmeralda
-		h.getSlot(0).setStack(new ItemStack(Items.DIRT, 64));
-		h.getSlot(1).setStack(new ItemStack(Items.DIRT, 36));
+		h.getSlot(0).set(new ItemStack(Items.DIRT, 64));
+		h.getSlot(1).set(new ItemStack(Items.DIRT, 36));
 		Cotacao c = h.cotacaoCliente();
 		ctx.assertTrue(c.status() == Cotacao.Status.INSUFICIENTE, "100 terras: insuficiente, veio " + c);
 		igual(ctx, 25, c.faltam(), "faltam com 100 terras");
-		ctx.assertTrue(h.getSlot(saida).getStack().isEmpty(), "sem proposta não pode haver esmeralda na saída");
-		ctx.assertFalse(h.getSlot(saida).canTakeItems(p), "não pode pegar a saída sem proposta");
+		ctx.assertTrue(h.getSlot(saida).getItem().isEmpty(), "sem proposta não pode haver esmeralda na saída");
+		ctx.assertTrue(!h.getSlot(saida).mayPickup(p), "não pode pegar a saída sem proposta");
 
-		h.getSlot(1).setStack(new ItemStack(Items.DIRT, 64));
+		h.getSlot(1).set(new ItemStack(Items.DIRT, 64));
 		c = h.cotacaoCliente();
 		ctx.assertTrue(c.ok() && c.esmeraldas() == 1 && c.usados() == 125, "128 terras: 1 esmeralda usando 125, veio " + c);
 
-		int xpAntes = v.getExperience();
-		h.onSlotClick(saida, 0, SlotActionType.PICKUP, p);
-		ctx.assertTrue(h.getCursorStack().isOf(Items.EMERALD) && h.getCursorStack().getCount() == 1, "cursor com 1 esmeralda");
-		igual(ctx, 3, h.getSlot(0).getStack().getCount() + h.getSlot(1).getStack().getCount(), "terras que sobraram");
-		ctx.assertTrue(v.getExperience() > xpAntes, "o Mercador deveria ganhar experiência");
-		h.setCursorStack(ItemStack.EMPTY);
-		h.getSlot(0).setStack(ItemStack.EMPTY);
-		h.getSlot(1).setStack(ItemStack.EMPTY);
+		int xpAntes = v.getVillagerXp();
+		h.clicked(saida, 0, ContainerInput.PICKUP, p);
+		ctx.assertTrue(h.getCarried().is(Items.EMERALD) && h.getCarried().getCount() == 1, "cursor com 1 esmeralda");
+		igual(ctx, 3, h.getSlot(0).getItem().getCount() + h.getSlot(1).getItem().getCount(), "terras que sobraram");
+		ctx.assertTrue(v.getVillagerXp() > xpAntes, "o Mercador deveria ganhar experiência");
+		h.setCarried(ItemStack.EMPTY);
+		h.getSlot(0).set(ItemStack.EMPTY);
+		h.getSlot(1).set(ItemStack.EMPTY);
 
 		// lista de trocas montada a partir do inventário
-		p.getInventory().insertStack(new ItemStack(Items.DIRT, 64));
-		p.getInventory().insertStack(new ItemStack(Items.DIRT, 64));
-		p.getInventory().insertStack(new ItemStack(Items.DIRT, 64));
-		p.getInventory().insertStack(new ItemStack(Items.DIRT, 64));
-		p.getInventory().insertStack(new ItemStack(Items.DIRT, 44));
-		p.getInventory().insertStack(new ItemStack(Items.BEDROCK, 1));
-		h.sendContentUpdates();
+		p.getInventory().add(new ItemStack(Items.DIRT, 64));
+		p.getInventory().add(new ItemStack(Items.DIRT, 64));
+		p.getInventory().add(new ItemStack(Items.DIRT, 64));
+		p.getInventory().add(new ItemStack(Items.DIRT, 64));
+		p.getInventory().add(new ItemStack(Items.DIRT, 44));
+		p.getInventory().add(new ItemStack(Items.BEDROCK, 1));
+		h.broadcastChanges();
 		var ofertas = h.getOfertas();
 		igual(ctx, 1, ofertas.size(), "só a terra deveria aparecer na lista (bedrock não)");
 		var o = ofertas.get(0);
-		ctx.assertTrue(o.item().isOf(Items.DIRT) && o.quantidade() == 125 && o.esmeraldas() == 1 && o.temJogador() == 300,
+		ctx.assertTrue(o.item().is(Items.DIRT) && o.quantidade() == 125 && o.esmeraldas() == 1 && o.temJogador() == 300,
 			"oferta da terra: " + o);
 
 		// clicar na troca enche os espaços; shift-clique vende tudo o que dá
 		h.escolherVenda(new ItemStack(Items.DIRT));
-		igual(ctx, 128, h.getSlot(0).getStack().getCount() + h.getSlot(1).getStack().getCount(), "espaços cheios ao escolher");
-		h.onSlotClick(saida, 0, SlotActionType.QUICK_MOVE, p);
-		igual(ctx, 2, p.getInventory().count(Items.EMERALD), "esmeraldas depois do shift-clique");
-		igual(ctx, 50, p.getInventory().count(Items.DIRT) + h.getSlot(0).getStack().getCount() + h.getSlot(1).getStack().getCount(),
+		igual(ctx, 128, h.getSlot(0).getItem().getCount() + h.getSlot(1).getItem().getCount(), "espaços cheios ao escolher");
+		h.clicked(saida, 0, ContainerInput.QUICK_MOVE, p);
+		igual(ctx, 2, p.getInventory().countItem(Items.EMERALD), "esmeraldas depois do shift-clique");
+		igual(ctx, 50, p.getInventory().countItem(Items.DIRT) + h.getSlot(0).getItem().getCount() + h.getSlot(1).getItem().getCount(),
 			"terras que sobraram depois do shift-clique");
 
-		h.getSlot(0).setStack(new ItemStack(Items.STONE, 3));
-		h.getSlot(1).setStack(new ItemStack(Items.DIRT, 3));
+		h.getSlot(0).set(new ItemStack(Items.STONE, 3));
+		h.getSlot(1).set(new ItemStack(Items.DIRT, 3));
 		ctx.assertTrue(h.cotacaoCliente().status() == Cotacao.Status.MISTURADO, "itens misturados");
 
 		// comprar: escolher pão na loja coloca as esmeraldas no pagamento e o pão no resultado
-		h.getSlot(0).setStack(ItemStack.EMPTY);
-		h.getSlot(1).setStack(ItemStack.EMPTY);
-		p.getInventory().clear();
-		p.getInventory().insertStack(new ItemStack(Items.EMERALD, 10));
+		h.getSlot(0).set(ItemStack.EMPTY);
+		h.getSlot(1).set(ItemStack.EMPTY);
+		p.getInventory().clearContent();
+		p.getInventory().add(new ItemStack(Items.EMERALD, 10));
 		int pao = -1;
-		for (int i = 0; i < h.getLoja().size(); i++) if (h.getLoja().get(i).resultado().isOf(Items.BREAD)) pao = i;
+		for (int i = 0; i < h.getLoja().size(); i++) if (h.getLoja().get(i).resultado().is(Items.BREAD)) pao = i;
 		ctx.assertTrue(pao >= 0, "a loja deveria vender pão");
 		LojaMercador.Oferta oferta = h.getLoja().get(pao);
 		h.escolherCompra(pao);
 		ctx.assertTrue(h.cotacaoCliente().status() == Cotacao.Status.COMPRA_OK, "compra de pão: " + h.cotacaoCliente());
-		ctx.assertTrue(h.getSlot(saida).getStack().isOf(Items.BREAD), "resultado = pão");
-		h.onSlotClick(saida, 0, SlotActionType.PICKUP, p);
-		ctx.assertTrue(h.getCursorStack().isOf(Items.BREAD), "pegou o pão");
-		igual(ctx, 10 - oferta.esmeraldas(), p.getInventory().count(Items.EMERALD) + h.getSlot(0).getStack().getCount(), "esmeraldas depois da compra");
-		h.setCursorStack(ItemStack.EMPTY);
+		ctx.assertTrue(h.getSlot(saida).getItem().is(Items.BREAD), "resultado = pão");
+		h.clicked(saida, 0, ContainerInput.PICKUP, p);
+		ctx.assertTrue(h.getCarried().is(Items.BREAD), "pegou o pão");
+		igual(ctx, 10 - oferta.esmeraldas(), p.getInventory().countItem(Items.EMERALD) + h.getSlot(0).getItem().getCount(), "esmeraldas depois da compra");
+		h.setCarried(ItemStack.EMPTY);
 		// diamante custa blocos de esmeralda: sem eles, X e "faltam N esmeraldas"
 		int diamante = -1;
-		for (int i = 0; i < h.getLoja().size(); i++) if (h.getLoja().get(i).resultado().isOf(Items.DIAMOND)) diamante = i;
+		for (int i = 0; i < h.getLoja().size(); i++) if (h.getLoja().get(i).resultado().is(Items.DIAMOND)) diamante = i;
 		h.escolherCompra(diamante);
 		ctx.assertTrue(h.cotacaoCliente().status() == Cotacao.Status.COMPRA_FALTA && h.cotacaoCliente().faltam() > 90,
 			"diamante sem dinheiro: " + h.cotacaoCliente());
 
 		// limite igual aos aldeões: 16 trocas de gravetos e depois esgota
-		h.setCursorStack(ItemStack.EMPTY);
-		h.getSlot(0).setStack(ItemStack.EMPTY);
-		h.getSlot(1).setStack(ItemStack.EMPTY);
-		p.getInventory().clear();
-		for (int i = 0; i < 9; i++) p.getInventory().insertStack(new ItemStack(Items.STICK, 64));
+		h.setCarried(ItemStack.EMPTY);
+		h.getSlot(0).set(ItemStack.EMPTY);
+		h.getSlot(1).set(ItemStack.EMPTY);
+		p.getInventory().clearContent();
+		for (int i = 0; i < 9; i++) p.getInventory().add(new ItemStack(Items.STICK, 64));
 		h.escolherVenda(new ItemStack(Items.STICK));
-		h.onSlotClick(saida, 0, SlotActionType.QUICK_MOVE, p);
-		igual(ctx, 16, p.getInventory().count(Items.EMERALD), "só 16 trocas de gravetos até repor");
+		h.clicked(saida, 0, ContainerInput.QUICK_MOVE, p);
+		igual(ctx, 16, p.getInventory().countItem(Items.EMERALD), "só 16 trocas de gravetos até repor");
 		ctx.assertTrue(h.cotacaoCliente().status() == Cotacao.Status.ESGOTADO, "gravetos esgotados: " + h.cotacaoCliente());
 		v.restock();
 		h.escolherVenda(new ItemStack(Items.STICK));
 		ctx.assertTrue(h.cotacaoCliente().ok(), "depois de repor volta a comprar: " + h.cotacaoCliente());
 
-		h.onClosed(p);
-		ctx.assertTrue(v.getCustomer() == null, "o Mercador deveria ficar livre ao fechar");
-		ctx.complete();
+		h.removed(p);
+		ctx.assertTrue(v.getTradingPlayer() == null, "o Mercador deveria ficar livre ao fechar");
+		ctx.succeed();
 	}
 
-	@GameTest(templateName = EMPTY_STRUCTURE)
-	public void trocasNovas(TestContext ctx) {
+	@GameTest
+	public void trocasNovas(GameTestHelper ctx) {
 		piso(ctx);
-		for (VillagerProfession prof : List.of(VillagerProfession.LIBRARIAN, VillagerProfession.ARMORER, VillagerProfession.FARMER,
+		for (ResourceKey<VillagerProfession> prof : List.of(VillagerProfession.LIBRARIAN, VillagerProfession.ARMORER, VillagerProfession.FARMER,
 			VillagerProfession.WEAPONSMITH, VillagerProfession.CLERIC, VillagerProfession.FISHERMAN)) {
 			for (int nivel = 1; nivel <= 5; nivel++) {
-				VillagerEntity v = ctx.spawnEntity(EntityType.VILLAGER, new BlockPos(3, 1, 3));
-				v.setVillagerData(v.getVillagerData().withProfession(prof).withLevel(nivel));
-				TradeOfferList ofertas = v.getOffers();
+				Villager v = ctx.spawn(EntityTypes.VILLAGER, new BlockPos(3, 1, 3));
+				v.setVillagerData(v.getVillagerData().withProfession(ctx.getLevel().registryAccess(), prof).withLevel(nivel));
+				MerchantOffers ofertas = v.getOffers();
 				ctx.assertTrue(ofertas.size() >= 2, prof + " nível " + nivel + " deveria ter troca nova, tem " + ofertas.size());
-				TrocasMartins.LOGGER.info("[troca] {} nv{}: {}", prof, nivel, ofertas.get(ofertas.size() - 1).getSellItem());
+				TrocasMartins.LOGGER.info("[troca] {} nv{}: {}", prof, nivel, ofertas.get(ofertas.size() - 1).getResult());
 				v.discard();
 			}
 		}
 		// níveis depois de Mestre: precisa completar a experiência de cada nível
-		VillagerEntity mestre = ctx.spawnEntity(EntityType.VILLAGER, new BlockPos(3, 1, 3));
-		mestre.setVillagerData(mestre.getVillagerData().withProfession(VillagerProfession.LIBRARIAN).withLevel(5));
+		Villager mestre = ctx.spawn(EntityTypes.VILLAGER, new BlockPos(3, 1, 3));
+		mestre.setVillagerData(mestre.getVillagerData().withProfession(ctx.getLevel().registryAccess(), VillagerProfession.LIBRARIAN).withLevel(5));
 		int antes = mestre.getOffers().size();
-		mestre.setExperience(com.martins.trocas.trocas.NiveisExtras.xpPara(1) - 1);
-		mestre.trade(new TradeOffer(new TradedItem(Items.EMERALD, 1), new ItemStack(Items.BOOK), 1, 0, 0f));
-		igual(ctx, 0, com.martins.trocas.trocas.NiveisExtras.nivelExtra(mestre), "ainda não completou Mestre");
-		mestre.trade(new TradeOffer(new TradedItem(Items.EMERALD, 1), new ItemStack(Items.BOOK), 1,
-			com.martins.trocas.trocas.NiveisExtras.xpPara(2) - mestre.getExperience(), 0f));
-		igual(ctx, 2, com.martins.trocas.trocas.NiveisExtras.nivelExtra(mestre), "deveria estar em Mestre III");
+		mestre.setVillagerXp(NiveisExtras.xpPara(1) - 1);
+		mestre.notifyTrade(new MerchantOffer(new ItemCost(Items.EMERALD, 1), new ItemStack(Items.BOOK), 1, 0, 0f));
+		igual(ctx, 0, NiveisExtras.nivelExtra(mestre), "ainda não completou Mestre");
+		mestre.notifyTrade(new MerchantOffer(new ItemCost(Items.EMERALD, 1), new ItemStack(Items.BOOK), 1,
+			NiveisExtras.xpPara(2) - mestre.getVillagerXp(), 0f));
+		igual(ctx, 2, NiveisExtras.nivelExtra(mestre), "deveria estar em Mestre III");
 		igual(ctx, antes + 2, mestre.getOffers().size(), "uma troca nova por nível extra");
-		for (int n = 1; n <= 40; n++) ctx.assertTrue(com.martins.trocas.trocas.NiveisExtras.xpPara(n + 1) > com.martins.trocas.trocas.NiveisExtras.xpPara(n), "níveis cada vez mais difíceis");
+		for (int n = 1; n <= 40; n++) ctx.assertTrue(NiveisExtras.xpPara(n + 1) > NiveisExtras.xpPara(n), "níveis cada vez mais difíceis");
 		mestre.discard();
 
 		// fase 2: depois de entregar todos os itens fortes, alterna otimizar (mais barato) e inovar (troca nova)
-		var lista = com.martins.trocas.trocas.NiveisExtras.todas().get(VillagerProfession.LIBRARIAN);
-		VillagerEntity sabio = ctx.spawnEntity(EntityType.VILLAGER, new BlockPos(3, 1, 3));
-		sabio.setVillagerData(sabio.getVillagerData().withProfession(VillagerProfession.LIBRARIAN).withLevel(5));
+		var lista = NiveisExtras.todas().get(VillagerProfession.LIBRARIAN);
+		Villager sabio = ctx.spawn(EntityTypes.VILLAGER, new BlockPos(3, 1, 3));
+		sabio.setVillagerData(sabio.getVillagerData().withProfession(ctx.getLevel().registryAccess(), VillagerProfession.LIBRARIAN).withLevel(5));
 		int base = sabio.getOffers().size();
-		sabio.setExperience(com.martins.trocas.trocas.NiveisExtras.xpPara(lista.size()));
-		com.martins.trocas.trocas.NiveisExtras.verificar(sabio);
+		sabio.setVillagerXp(NiveisExtras.xpPara(lista.size()));
+		NiveisExtras.verificar(sabio);
 		igual(ctx, base + lista.size(), sabio.getOffers().size(), "fase 1 entrega todos os itens fortes");
-		int precoAntes = sabio.getOffers().get(base).getOriginalFirstBuyItem().getCount();
-		sabio.setExperience(com.martins.trocas.trocas.NiveisExtras.xpPara(lista.size() + 2));
-		com.martins.trocas.trocas.NiveisExtras.verificar(sabio);
+		int precoAntes = sabio.getOffers().get(base).getBaseCostA().getCount();
+		sabio.setVillagerXp(NiveisExtras.xpPara(lista.size() + 2));
+		NiveisExtras.verificar(sabio);
 		igual(ctx, base + lista.size() + 1, sabio.getOffers().size(), "otimizar não cria troca, inovar cria uma");
-		ctx.assertTrue(sabio.getOffers().get(base).getOriginalFirstBuyItem().getCount() < precoAntes, "a primeira troca forte deveria ficar mais barata");
+		ctx.assertTrue(sabio.getOffers().get(base).getBaseCostA().getCount() < precoAntes, "a primeira troca forte deveria ficar mais barata");
 		sabio.discard();
 
-		VillagerEntity m = ctx.spawnEntity(EntityType.VILLAGER, new BlockPos(3, 1, 3));
-		m.setVillagerData(m.getVillagerData().withProfession(ModRegistro.MERCADOR));
+		Villager m = ctx.spawn(EntityTypes.VILLAGER, new BlockPos(3, 1, 3));
+		m.setVillagerData(m.getVillagerData().withProfession(ctx.getLevel().registryAccess(), ModRegistro.MERCADOR_KEY));
 		ctx.assertTrue(m.getOffers().isEmpty(), "o Mercador não usa a tela de trocas normal");
-		ctx.complete();
+		ctx.succeed();
 	}
 
-	@GameTest(templateName = EMPTY_STRUCTURE, tickLimit = 2400)
-	public void aldeaoViraMercador(TestContext ctx) {
+	@GameTest(maxTicks = 2400)
+	public void aldeaoViraMercador(GameTestHelper ctx) {
 		piso(ctx);
-		ctx.setBlockState(new BlockPos(5, 1, 5), ModRegistro.BALCAO_DO_MERCADOR);
-		VillagerEntity v = ctx.spawnEntity(EntityType.VILLAGER, new BlockPos(2, 1, 2));
-		ctx.addInstantFinalTask(() -> ctx.assertTrue(v.getVillagerData().getProfession() == ModRegistro.MERCADOR,
-			"aldeão ainda é " + v.getVillagerData().getProfession()));
+		ctx.setBlock(new BlockPos(5, 1, 5), ModRegistro.BALCAO_DO_MERCADOR);
+		Villager v = ctx.spawn(EntityTypes.VILLAGER, new BlockPos(2, 1, 2));
+		ctx.succeedWhen(() -> ctx.assertTrue(v.getVillagerData().profession().is(ModRegistro.MERCADOR_KEY),
+			"aldeão ainda é " + v.getVillagerData().profession()));
 	}
 }

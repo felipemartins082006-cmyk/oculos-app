@@ -5,8 +5,14 @@
   "name": "Trocas Martins - testes",
   "environment": "*",
   "entrypoints": {
-    "fabric-gametest": ["com.martins.trocas.teste.TestesMercador"],
-    "client": ["com.martins.trocas.teste.FotosCliente"]
+    "fabric-gametest": [
+      "com.martins.trocas.teste.TestesMercador"
+    ],
+    "fabric-client-gametest": [
+      "com.martins.trocas.teste.FotosCliente"
+    ]
   },
-  "depends": { "trocasmartins": "*" }
+  "depends": {
+    "trocasmartins": "*"
+  }
 }

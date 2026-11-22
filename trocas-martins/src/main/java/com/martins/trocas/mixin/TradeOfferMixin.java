@@ -1,36 +1,35 @@
 package com.martins.trocas.mixin;
 
 import com.martins.trocas.mercador.PrecoMercador;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.NbtComponent;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.village.TradeOffer;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.CustomData;
+import net.minecraft.world.item.trading.MerchantOffer;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
- * Itens únicos (ferramentas, armaduras...) comprados de aldeões guardam quantas esmeraldas custaram.
- * Assim o Mercador nunca paga mais que a metade disso e não dá para "fabricar" esmeraldas
- * comprando barato de um aldeão com desconto e vendendo caro ao Mercador.
+ * Itens únicos comprados de aldeões guardam quantas esmeraldas custaram, para o Mercador
+ * nunca pagar mais que a metade disso (sem "fabricar" esmeraldas com descontos).
  */
-@Mixin(TradeOffer.class)
+@Mixin(MerchantOffer.class)
 public abstract class TradeOfferMixin {
-	@Inject(method = "copySellItem", at = @At("RETURN"))
+	@Inject(method = "assemble", at = @At("RETURN"))
 	private void trocasmartins$marcarPrecoPago(CallbackInfoReturnable<ItemStack> cir) {
 		ItemStack item = cir.getReturnValue();
-		if (item.isEmpty() || item.getMaxCount() > 1) return;
-		TradeOffer self = (TradeOffer) (Object) this;
-		int pago = esmeraldas(self.getDisplayedFirstBuyItem()) + esmeraldas(self.getDisplayedSecondBuyItem());
+		if (item.isEmpty() || item.getMaxStackSize() > 1) return;
+		MerchantOffer self = (MerchantOffer) (Object) this;
+		int pago = esmeraldas(self.getCostA()) + esmeraldas(self.getCostB());
 		if (pago <= 0) return;
-		NbtComponent.set(DataComponentTypes.CUSTOM_DATA, item, nbt -> nbt.putInt(PrecoMercador.CHAVE_PAGO, pago));
+		CustomData.update(DataComponents.CUSTOM_DATA, item, tag -> tag.putInt(PrecoMercador.CHAVE_PAGO, pago));
 	}
 
 	private static int esmeraldas(ItemStack s) {
-		if (s.isOf(Items.EMERALD)) return s.getCount();
-		if (s.isOf(Items.EMERALD_BLOCK)) return s.getCount() * 9;
+		if (s.is(Items.EMERALD)) return s.getCount();
+		if (s.is(Items.EMERALD_BLOCK)) return s.getCount() * 9;
 		return 0;
 	}
 }
