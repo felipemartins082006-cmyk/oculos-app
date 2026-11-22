@@ -50,14 +50,11 @@ public class MercadorScreen extends HandledScreen<MercadorScreenHandler> {
 
 	/** Uma linha da lista: o que se paga (a, b) e o que se recebe (c). */
 	private record Linha(ItemStack a, ItemStack b, ItemStack c, boolean disponivel, int faltam,
-	                     boolean comprar, int indiceLoja, ItemStack chave) {
+	                     boolean comprar, int indiceLoja, ItemStack chave, boolean esgotado) {
 	}
 
 	private final BotaoOferta[] botoes = new BotaoOferta[VISIVEIS];
-	private ButtonWidget abaVender;
-	private ButtonWidget abaComprar;
 	private TextFieldWidget pesquisa;
-	private boolean modoComprar;
 	private int inicio;
 	private boolean rolando;
 	private List<Linha> linhas = List.of();
@@ -75,14 +72,12 @@ public class MercadorScreen extends HandledScreen<MercadorScreenHandler> {
 		int i = this.x;
 		int j = this.y;
 
-		abaVender = addDrawableChild(ButtonWidget.builder(Text.translatable("gui.trocasmartins.vender"), b -> trocarModo(false))
-			.dimensions(i + 4, j - 21, 49, 20).build());
-		abaComprar = addDrawableChild(ButtonWidget.builder(Text.translatable("gui.trocasmartins.comprar"), b -> trocarModo(true))
-			.dimensions(i + 54, j - 21, 49, 20).build());
-
-		pesquisa = new TextFieldWidget(textRenderer, i + 6, j + 4, 87, 12, Text.translatable("gui.trocasmartins.pesquisar"));
+		// igual à pesquisa do livro de receitas
+		pesquisa = new TextFieldWidget(textRenderer, i + 6, j + 2, 87, 9 + 5, Text.translatable("itemGroup.search"));
 		pesquisa.setMaxLength(50);
-		pesquisa.setPlaceholder(Text.translatable("gui.trocasmartins.pesquisar").formatted(Formatting.DARK_GRAY));
+		pesquisa.setVisible(true);
+		pesquisa.setEditableColor(0xFFFFFF);
+		pesquisa.setPlaceholder(Text.translatable("gui.recipebook.search_hint").formatted(Formatting.ITALIC).formatted(Formatting.GRAY));
 		pesquisa.setChangedListener(t -> montarLinhas());
 		addDrawableChild(pesquisa);
 
@@ -91,7 +86,6 @@ public class MercadorScreen extends HandledScreen<MercadorScreenHandler> {
 			botoes[l] = addDrawableChild(new BotaoOferta(i + 5, k, l, b -> clicar(((BotaoOferta) b).indice + inicio)));
 			k += 20;
 		}
-		atualizarAbas();
 		montarLinhas();
 	}
 
@@ -99,18 +93,6 @@ public class MercadorScreen extends HandledScreen<MercadorScreenHandler> {
 	protected void handledScreenTick() {
 		super.handledScreenTick();
 		montarLinhas();
-	}
-
-	private void trocarModo(boolean comprar) {
-		modoComprar = comprar;
-		inicio = 0;
-		atualizarAbas();
-		montarLinhas();
-	}
-
-	private void atualizarAbas() {
-		abaVender.active = modoComprar;
-		abaComprar.active = !modoComprar;
 	}
 
 	private void clicar(int indice) {
@@ -149,23 +131,26 @@ public class MercadorScreen extends HandledScreen<MercadorScreenHandler> {
 	private void montarLinhas() {
 		String busca = normalizar(pesquisa.getText().trim());
 		List<Linha> nova = new ArrayList<>();
-		if (modoComprar) {
-			List<LojaMercador.Oferta> loja = handler.getLoja();
-			for (int i = 0; i < loja.size(); i++) {
-				LojaMercador.Oferta o = loja.get(i);
-				if (!combina(o.resultado(), busca)) continue;
-				int falta = Math.max(0, o.custoA().getCount() - quantosTem(o.custoA().getItem()));
-				if (!o.custoB().isEmpty()) falta += Math.max(0, o.custoB().getCount() - quantosTem(o.custoB().getItem()));
-				int esmFalta = Math.max(0, o.esmeraldas() - (quantosTem(Items.EMERALD) + 9 * quantosTem(Items.EMERALD_BLOCK)));
-				nova.add(new Linha(o.custoA(), o.custoB(), o.resultado(), falta == 0, esmFalta, true, i, ItemStack.EMPTY));
-			}
-		} else {
-			// primeiro o que você tem, depois todo o resto que ele compra
-			Set<Item> jaListados = new HashSet<>();
-			for (OfertasPayload.Oferta o : handler.getOfertas()) {
-				jaListados.add(o.item().getItem());
-				if (combina(o.item(), busca)) nova.add(linhaVenda(o, o.temJogador()));
-			}
+		// 1) o que você tem e ele compra
+		Set<Item> jaListados = new HashSet<>();
+		for (OfertasPayload.Oferta o : handler.getOfertas()) {
+			jaListados.add(o.item().getItem());
+			if (combina(o.item(), busca)) nova.add(linhaVenda(o, o.temJogador()));
+		}
+		// 2) o que ele vende
+		List<LojaMercador.Oferta> loja = handler.getLoja();
+		for (int i = 0; i < loja.size(); i++) {
+			LojaMercador.Oferta o = loja.get(i);
+			if (!combina(o.resultado(), busca)) continue;
+			int esmFalta = Math.max(0, o.esmeraldas() - (quantosTem(Items.EMERALD) + 9 * quantosTem(Items.EMERALD_BLOCK)));
+			boolean temA = quantosTem(o.custoA().getItem()) >= o.custoA().getCount();
+			boolean temB = o.custoB().isEmpty() || quantosTem(o.custoB().getItem()) >= o.custoB().getCount();
+			boolean esgotado = handler.restantes(o.chave(), o.maxUsos()) <= 0;
+			nova.add(new Linha(o.custoA(), o.custoB(), o.resultado(), temA && temB && !esgotado, esmFalta, true, i,
+				ItemStack.EMPTY, esgotado));
+		}
+		// 3) pesquisando: todo o resto que ele compra
+		if (!busca.isEmpty()) {
 			for (OfertasPayload.Oferta o : handler.getCatalogoCompra()) {
 				if (jaListados.contains(o.item().getItem()) || !combina(o.item(), busca)) continue;
 				nova.add(linhaVenda(o, 0));
@@ -179,11 +164,12 @@ public class MercadorScreen extends HandledScreen<MercadorScreenHandler> {
 		inicio = MathHelper.clamp(inicio, 0, Math.max(0, linhas.size() - VISIVEIS));
 	}
 
-	private static Linha linhaVenda(OfertasPayload.Oferta o, int tem) {
+	private Linha linhaVenda(OfertasPayload.Oferta o, int tem) {
 		ItemStack a = o.item().copyWithCount(Math.min(64, o.quantidade()));
 		ItemStack b = o.quantidade() > 64 ? o.item().copyWithCount(o.quantidade() - 64) : ItemStack.EMPTY;
-		return new Linha(a, b, new ItemStack(Items.EMERALD, o.esmeraldas()), tem >= o.quantidade(),
-			Math.max(0, o.quantidade() - tem), false, -1, o.item());
+		boolean esgotado = handler.restantes(MercadorScreenHandler.chaveVenda(o.item()), LojaMercador.USOS_VENDA) <= 0;
+		return new Linha(a, b, new ItemStack(Items.EMERALD, o.esmeraldas()), tem >= o.quantidade() && !esgotado,
+			Math.max(0, o.quantidade() - tem), false, -1, o.item(), esgotado);
 	}
 
 	// ------------------------------------------------------------------ desenho
@@ -212,6 +198,7 @@ public class MercadorScreen extends HandledScreen<MercadorScreenHandler> {
 			case INSUFICIENTE -> Text.translatable("gui.trocasmartins.faltam_itens", c.faltam());
 			case COMPRA_FALTA -> Text.translatable("gui.trocasmartins.faltam_esmeraldas", c.faltam());
 			case MISTURADO -> Text.translatable("gui.trocasmartins.misturado");
+			case ESGOTADO -> Text.translatable("gui.trocasmartins.esgotado");
 			case NAO_COMPRA -> Text.translatable("gui.trocasmartins.nao_compra");
 			default -> null;
 		};
@@ -284,8 +271,7 @@ public class MercadorScreen extends HandledScreen<MercadorScreenHandler> {
 			k += 20;
 		}
 		if (linhas.isEmpty()) {
-			Text vazio = Text.translatable(modoComprar || !pesquisa.getText().isEmpty()
-				? "gui.trocasmartins.nada_encontrado" : "gui.trocasmartins.nada");
+			Text vazio = Text.translatable("gui.trocasmartins.nada_encontrado");
 			ctx.drawText(textRenderer, vazio, i + 49 - textRenderer.getWidth(vazio) / 2, j + 80, 0x404040, false);
 		}
 
@@ -296,7 +282,9 @@ public class MercadorScreen extends HandledScreen<MercadorScreenHandler> {
 
 		Text aviso = aviso(handler.cotacaoCliente());
 		if (aviso != null && isPointWithinBounds(186, 35, 22, 21, mouseX, mouseY)) {
-			ctx.drawTooltip(textRenderer, List.of(Text.translatable("gui.trocasmartins.impossivel"), aviso), mouseX, mouseY);
+			ctx.drawTooltip(textRenderer, handler.cotacaoCliente().status() == Cotacao.Status.ESGOTADO
+				? List.of(aviso, Text.translatable("merchant.deprecated").copy().formatted(Formatting.GRAY))
+				: List.of(Text.translatable("gui.trocasmartins.impossivel"), aviso), mouseX, mouseY);
 		}
 		RenderSystem.enableDepthTest();
 		drawMouseoverTooltip(ctx, mouseX, mouseY);
@@ -364,6 +352,9 @@ public class MercadorScreen extends HandledScreen<MercadorScreenHandler> {
 				ctx.drawItemTooltip(textRenderer, l.a(), x, y);
 			} else if (x < getX() + 50 && x > getX() + 30 && !l.b().isEmpty()) {
 				ctx.drawItemTooltip(textRenderer, l.b(), x, y);
+			} else if (x >= getX() + 50 && x <= getX() + 65 && l.esgotado()) {
+				ctx.drawTooltip(textRenderer, List.of(Text.translatable("gui.trocasmartins.esgotado"),
+					Text.translatable("merchant.deprecated").formatted(Formatting.GRAY)), x, y);
 			} else if (x >= getX() + 50 && x <= getX() + 65 && !l.disponivel()) {
 				ctx.drawTooltip(textRenderer, Text.translatable(l.comprar()
 					? "gui.trocasmartins.faltam_esmeraldas" : "gui.trocasmartins.faltam_itens", l.faltam()), x, y);

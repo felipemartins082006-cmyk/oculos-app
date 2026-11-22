@@ -3,7 +3,7 @@
   "minVersion": "0.8",
   "package": "com.martins.trocas.mixin",
   "compatibilityLevel": "JAVA_21",
-  "mixins": ["TradeOfferMixin", "VillagerEntityMixin"],
+  "mixins": ["TradeOfferMixin", "VillagerEntityMixin", "VillagerRestockMixin"],
   "injectors": {
     "defaultRequire": 1
   }

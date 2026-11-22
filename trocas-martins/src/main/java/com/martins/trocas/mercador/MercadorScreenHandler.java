@@ -58,6 +58,8 @@ public class MercadorScreenHandler extends ScreenHandler {
 	private List<OfertasPayload.Oferta> catalogoCompra = List.of();
 	private List<LojaMercador.Oferta> loja = List.of();
 	private int assinaturaOfertas = Integer.MIN_VALUE;
+	/** Usos de cada troca (no cliente, a cópia que o servidor mandou). */
+	private java.util.HashMap<String, Integer> usosCliente = new java.util.HashMap<>();
 
 	/** Cliente. */
 	public MercadorScreenHandler(int syncId, PlayerInventory inv, Integer idDoAldeao) {
@@ -128,8 +130,30 @@ public class MercadorScreenHandler extends ScreenHandler {
 		return loja;
 	}
 
-	public void setOfertas(List<OfertasPayload.Oferta> ofertas) {
+	public void setOfertas(List<OfertasPayload.Oferta> ofertas, java.util.HashMap<String, Integer> usos) {
 		this.ofertas = ofertas;
+		this.usosCliente = usos;
+	}
+
+	// ------------------------------------------------------------------ limite de trocas
+
+	public static String chaveVenda(ItemStack s) {
+		return "v:" + Registries.ITEM.getId(s.getItem());
+	}
+
+	private java.util.Map<String, Integer> usos() {
+		return mercador != null ? mercador.getAttachedOrCreate(ModRegistro.USOS) : usosCliente;
+	}
+
+	/** Quantas trocas ainda dá para fazer com {@code chave} até o Mercador repor. */
+	public int restantes(String chave, int max) {
+		return Math.max(0, max - usos().getOrDefault(chave, 0));
+	}
+
+	private void usar(String chave, int quantas) {
+		java.util.Map<String, Integer> novo = new java.util.HashMap<>(usos());
+		novo.merge(chave, quantas, Integer::sum);
+		mercador.setAttached(ModRegistro.USOS, novo);
 	}
 
 	public void setCatalogo(List<OfertasPayload.Oferta> compra, List<LojaMercador.Oferta> venda) {
@@ -167,13 +191,18 @@ public class MercadorScreenHandler extends ScreenHandler {
 		if (compra >= 0 && compra < loja.size()) {
 			LojaMercador.Oferta o = loja.get(compra);
 			int falta = falta(o.custoA(), a) + falta(o.custoB(), b);
-			cotacao = falta == 0
+			if (restantes(o.chave(), o.maxUsos()) <= 0) {
+				cotacao = Cotacao.simples(Cotacao.Status.ESGOTADO, 0);
+				saida.setStack(0, ItemStack.EMPTY);
+			} else cotacao = falta == 0
 				? new Cotacao(Cotacao.Status.COMPRA_OK, 0, 0, 0, 0, 0, 0)
 				: new Cotacao(Cotacao.Status.COMPRA_FALTA, 0, 0, 0, falta, 0, 0);
-			saida.setStack(0, falta == 0 ? o.resultado().copy() : ItemStack.EMPTY);
+			if (cotacao.status() != Cotacao.Status.ESGOTADO) saida.setStack(0, falta == 0 ? o.resultado().copy() : ItemStack.EMPTY);
 		} else {
 			compra = -1;
-			cotacao = PrecoMercador.cotar(List.of(a, b), multiplicador());
+			ItemStack ref = !a.isEmpty() ? a : b;
+			int limite = ref.isEmpty() ? Integer.MAX_VALUE : restantes(chaveVenda(ref), LojaMercador.USOS_VENDA);
+			cotacao = PrecoMercador.cotar(List.of(a, b), multiplicador(), limite);
 			saida.setStack(0, cotacao.ok() ? new ItemStack(Items.EMERALD, cotacao.esmeraldas()) : ItemStack.EMPTY);
 		}
 		props.set(P_STATUS, cotacao.status().ordinal());
@@ -264,7 +293,7 @@ public class MercadorScreenHandler extends ScreenHandler {
 			enviar(sp, new CatalogoPayload(syncId, catalogoCompra, loja));
 		}
 		List<OfertasPayload.Oferta> novas = calcularOfertas();
-		int assinatura = 1;
+		int assinatura = usos().hashCode();
 		for (OfertasPayload.Oferta o : novas) {
 			assinatura = 31 * assinatura + ItemStack.hashCode(o.item());
 			assinatura = 31 * assinatura + o.quantidade() * 7 + o.esmeraldas() * 131 + o.temJogador() * 1031;
@@ -272,7 +301,7 @@ public class MercadorScreenHandler extends ScreenHandler {
 		if (assinatura != assinaturaOfertas) {
 			assinaturaOfertas = assinatura;
 			ofertas = novas;
-			enviar(sp, new OfertasPayload(syncId, novas));
+			enviar(sp, new OfertasPayload(syncId, novas, new java.util.HashMap<>(usos())));
 		}
 	}
 
@@ -370,6 +399,7 @@ public class MercadorScreenHandler extends ScreenHandler {
 				troca = new TradeOffer(new TradedItem(o.custoA().getItem(), o.custoA().getCount()),
 					o.custoB().isEmpty() ? Optional.empty() : Optional.of(new TradedItem(o.custoB().getItem(), o.custoB().getCount())),
 					recebido.copy(), Integer.MAX_VALUE, Math.max(1, Math.min(30, o.esmeraldas())), 0f);
+				usar(o.chave(), 1);
 			} else if (cotacao.ok()) {
 				ItemStack vendido = ItemStack.EMPTY;
 				int restante = cotacao.usados();
@@ -381,6 +411,7 @@ public class MercadorScreenHandler extends ScreenHandler {
 					pagamento.removeStack(i, tirar);
 					restante -= tirar;
 				}
+				usar(chaveVenda(vendido), cotacao.itensPorEsmeralda() > 0 ? cotacao.esmeraldas() : cotacao.usados());
 				troca = new TradeOffer(new TradedItem(vendido.getItem(), Math.min(64, cotacao.usados())),
 					recebido.copy(), Integer.MAX_VALUE, Math.max(1, cotacao.esmeraldas()), 0f);
 			} else {

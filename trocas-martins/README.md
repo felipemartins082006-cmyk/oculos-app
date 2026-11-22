@@ -30,41 +30,37 @@ Em servidor: o mod precisa estar no servidor **e** nos jogadores (por causa da t
 | Esmeralda | Baú | Esmeralda |
 | Tábuas | Tábuas | Tábuas |
 
-Coloque o Balcão perto de um aldeão desempregado e ele vira **Mercador** (chapéu marrom e túnica verde),
+Coloque o Balcão perto de um aldeão desempregado e ele vira **Mercador**: capuz e manto no estilo do
+mascate, mas verde-azulados, com cinto de couro e uma esmeralda na fivela,
 igual acontece com a mesa de cartografia, o atril etc. O Balcão é um armário de abeto com pano verde,
 esmeraldas e moedas de ouro em cima, e fica na aba "Blocos funcionais" do criativo.
 
 ### A tela do Mercador
 
-Clique com o botão direito no Mercador. Abre a **mesma tela de trocas dos aldeões**, com duas abas em cima:
-**Vender** e **Comprar**, e um campo de **pesquisa** no lugar do título "Trocas".
+Clique com o botão direito no Mercador. Abre a **mesma tela de trocas dos aldeões**, com uma **lista só**
+(vender e comprar juntos, como num aldeão normal) e a **pesquisa igual à do livro de receitas** em cima dela.
 
-#### Vender
+- **Primeiro** aparecem os itens do seu inventário que ele compra (ex.: 32 gravetos → 1 esmeralda);
+  **depois**, o que ele vende (ex.: 1 esmeralda → 6 pães).
+- **Pesquisando** (ex.: "ferro", "tronco"), aparecem também todos os outros itens do jogo que ele compra.
+- Se você não tem o suficiente, a seta vira **X vermelho**; passe o mouse para ver **quantos itens
+  ou esmeraldas faltam**.
+- **Clicar numa troca** coloca os itens (ou as esmeraldas) nos 2 espaços de pagamento.
+  Também dá para **soltar qualquer item** direto no pagamento: ele avalia na hora.
+- Se não fecha, aparece o **X grande** e o aviso **"Faltam N itens"** / **"Faltam N esmeraldas"**.
+- **Shift + clique** no resultado repete a troca enquanto der.
 
-- A lista mostra **tudo o que o Mercador compra** (praticamente todos os itens do jogo).
-  Os itens que você tem no inventário aparecem primeiro; o resto aparece depois, e dá para **pesquisar**
-  pelo nome (ex.: "ferro", "tronco").
-- Cada linha mostra quanto ele pede e quanto paga (ex.: 32 gravetos → 1 esmeralda). Se você não tem o
-  suficiente, a seta vira **X vermelho**; passe o mouse nele para ver **quantos itens faltam**.
-- **Clicar numa linha** coloca os itens nos 2 espaços de pagamento, como numa troca normal.
-  Ou simplesmente **coloque qualquer item** no pagamento com a mão: ele avalia na hora.
-- Se fecha, as esmeraldas aparecem no resultado (ele usa só os itens necessários; o resto fica).
-  Se não fecha, aparece o **X grande** e o aviso **"Faltam N itens"**.
-- **Shift + clique** nas esmeraldas vende tudo daquele item que estiver no inventário.
+**Limite de trocas, igual aos aldeões:** cada item pode ser vendido a ele **16 vezes** e cada item da loja
+comprado **12 vezes** (diamante e netherite: **1 vez**). Depois aparece "Esgotado por enquanto".
+Ele repõe trabalhando no Balcão, até 2 vezes por dia, como qualquer aldeão.
 
-| Faltam itens | 32 gravetos = 1 esmeralda | Pesquisa |
-|---|---|---|
-| ![Faltam itens](docs/2_vender_faltam.png) | ![Gravetos](docs/3_vender_gravetos.png) | ![Pesquisa](docs/4_pesquisa.png) |
-
-#### Comprar
-
-- A lista mostra o que o Mercador vende. Clique numa linha e ele coloca as esmeraldas no pagamento;
-  o item aparece no resultado. Se faltar dinheiro: X vermelho e **"Faltam N esmeraldas"**.
-- **Shift + clique** compra várias vezes seguidas.
-
-| Comprar pão | Diamante (preço absurdo, em blocos de esmeralda) |
+| Faltam itens | 32 gravetos = 1 esmeralda |
 |---|---|
-| ![Comprar](docs/5_comprar.png) | ![Diamante](docs/6_comprar_diamante.png) |
+| ![Faltam itens](docs/2_vender_faltam.png) | ![Gravetos](docs/3_vender_gravetos.png) |
+| **Pesquisa** | **Comprar pão** |
+| ![Pesquisa](docs/4_pesquisa.png) | ![Comprar](docs/5_comprar.png) |
+
+![Diamante a preço absurdo](docs/6_comprar_diamante.png)
 
 ### Preços justos (sem lucro, sem prejuízo absurdo)
 

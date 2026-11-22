@@ -15,7 +15,7 @@ public class TrocasMartinsClient implements ClientModInitializer {
 		ClientPlayNetworking.registerGlobalReceiver(OfertasPayload.ID, (payload, ctx) -> {
 			if (ctx.player() != null && ctx.player().currentScreenHandler instanceof MercadorScreenHandler h
 				&& h.syncId == payload.syncId()) {
-				h.setOfertas(payload.ofertas());
+				h.setOfertas(payload.ofertas(), payload.usos());
 			}
 		});
 		ClientPlayNetworking.registerGlobalReceiver(CatalogoPayload.ID, (payload, ctx) -> {

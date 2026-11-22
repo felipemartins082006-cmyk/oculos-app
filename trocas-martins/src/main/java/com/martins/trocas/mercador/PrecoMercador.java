@@ -383,6 +383,18 @@ public final class PrecoMercador {
 	}
 
 	public static Cotacao cotar(List<ItemStack> pilhas, double multiplicador) {
+		return cotar(pilhas, multiplicador, Integer.MAX_VALUE);
+	}
+
+	/** Uma "unidade" de troca: quantos itens rendem 1 esmeralda (ou 1 item, se ele vale mais que isso). */
+	public static int itensPorUnidade(double valor) {
+		return valor < UMA_ESMERALDA ? teto(UMA_ESMERALDA, valor) : 1;
+	}
+
+	/**
+	 * @param unidadesRestantes quantas trocas ainda podem ser feitas com esse item até o Mercador repor
+	 */
+	public static Cotacao cotar(List<ItemStack> pilhas, double multiplicador, int unidadesRestantes) {
 		ItemStack referencia = ItemStack.EMPTY;
 		int total = 0;
 		for (ItemStack s : pilhas) {
@@ -399,13 +411,16 @@ public final class PrecoMercador {
 		double valor = valorEfetivo(referencia, multiplicador);
 		if (valor <= 0) return Cotacao.simples(Cotacao.Status.NAO_COMPRA, total);
 
+		if (unidadesRestantes <= 0) return Cotacao.simples(Cotacao.Status.ESGOTADO, total);
+		int totalReal = total;
+		total = (int) Math.min(total, (long) unidadesRestantes * itensPorUnidade(valor));
 		int itensPorEsmeralda = valor < UMA_ESMERALDA ? teto(UMA_ESMERALDA, valor) : 0;
 		int esmPorItemX10 = valor >= UMA_ESMERALDA ? (int) (valor / 100) : 0;
 
 		int esmeraldas = (int) Math.min(64, Math.floor(total * valor / UMA_ESMERALDA + 1e-9));
 		if (esmeraldas <= 0) {
 			int faltam = teto(UMA_ESMERALDA, valor) - total;
-			return new Cotacao(Cotacao.Status.INSUFICIENTE, 0, 0, total, Math.max(1, faltam), itensPorEsmeralda, esmPorItemX10);
+			return new Cotacao(Cotacao.Status.INSUFICIENTE, 0, 0, totalReal, Math.max(1, faltam), itensPorEsmeralda, esmPorItemX10);
 		}
 		int usados = Math.min(total, teto(esmeraldas * (double) UMA_ESMERALDA, valor));
 		int faltamProxima = esmeraldas < 64 ? Math.max(0, teto((esmeraldas + 1) * (double) UMA_ESMERALDA, valor) - total) : 0;

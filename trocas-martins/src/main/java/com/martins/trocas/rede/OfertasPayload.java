@@ -10,7 +10,7 @@ import net.minecraft.network.packet.CustomPayload;
 import java.util.List;
 
 /** Servidor -> cliente: a lista de "trocas" do Mercador (o que ele compra do seu inventário). */
-public record OfertasPayload(int syncId, List<Oferta> ofertas) implements CustomPayload {
+public record OfertasPayload(int syncId, List<Oferta> ofertas, java.util.HashMap<String, Integer> usos) implements CustomPayload {
 	public static final Id<OfertasPayload> ID = new Id<>(TrocasMartins.id("ofertas"));
 
 	/**
@@ -35,6 +35,7 @@ public record OfertasPayload(int syncId, List<Oferta> ofertas) implements Custom
 	public static final PacketCodec<RegistryByteBuf, OfertasPayload> CODEC = PacketCodec.tuple(
 		PacketCodecs.VAR_INT, OfertasPayload::syncId,
 		Oferta.CODEC.collect(PacketCodecs.toList()), OfertasPayload::ofertas,
+		PacketCodecs.map(java.util.HashMap::new, PacketCodecs.STRING, PacketCodecs.VAR_INT), OfertasPayload::usos,
 		OfertasPayload::new);
 
 	@Override

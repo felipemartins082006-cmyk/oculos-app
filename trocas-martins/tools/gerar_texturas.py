@@ -121,39 +121,64 @@ def bloco():
 
 # ------------------------------------------------------------------ roupa do aldeão (camada da profissão, 64x64)
 def aldeao():
+    """Roupa do Mercador: capuz e manto no estilo do mascate, mas verde-azulado com acabamento creme,
+    cinto de couro e uma esmeralda na fivela. Sombreado pixel a pixel como as texturas do jogo."""
+    random.seed(7)
     img = Image.new('RGBA', (64, 64), (0, 0, 0, 0))
-    VERDE, VERDE2, VERDE3 = hexc('1F7A3A'), hexc('2E9E4F'), hexc('145226')
-    OURO, OURO2 = hexc('F2C94C'), hexc('B8862B')
-    MARROM, MARROM2 = hexc('5A3A1E'), hexc('74502B')
-    def ret(x0, y0, w, h, cor):
+    MANTO = [hexc('1E4D4A'), hexc('24605B'), hexc('2A6E68'), hexc('327B74')]
+    MANTO_ESC = [hexc('163A38'), hexc('1B4643'), hexc('205350')]
+    CREME = [hexc('C9B98F'), hexc('D8C9A0'), hexc('E3D6B0')]
+    COURO = [hexc('4A3020'), hexc('5A3B27'), hexc('6B482F')]
+    def tom(paleta, x, y):
+        r = random.random()
+        i = 0 if r < 0.2 else (len(paleta) - 1 if r > 0.85 else 1 + int(random.random() * (len(paleta) - 2)) if len(paleta) > 2 else 1)
+        return paleta[min(i, len(paleta) - 1)]
+    def ret(x0, y0, w, h, paleta):
         for y in range(y0, y0 + h):
-            for x in range(x0, x0 + w): img.putpixel((x, y), cor)
-    # chapéu (camada externa da cabeça: deslocamento 32,0, caixa 8x10x8)
-    ret(40, 0, 8, 8, MARROM)                     # topo
-    for x0 in (32, 40, 48, 56):                  # 4 lados, 3 linhas de cima
-        ret(x0, 8, 8, 3, MARROM2)
-        ret(x0, 11, 8, 1, VERDE)                 # faixa verde
-    img.putpixel((43, 11), OURO); img.putpixel((44, 11), OURO)  # fivela
-    # aba do chapéu (deslocamento 30,47, 16x16x1)
-    ret(31, 47, 16, 16, MARROM)
-    ret(33, 49, 12, 12, (0, 0, 0, 0))
-    # colete por cima do corpo (corpo: 16,20 caixa 8x12x6)
-    ret(22, 26, 8, 12, VERDE)                    # frente
-    ret(25, 26, 2, 12, hexc('D9CBA3'))           # camisa aparecendo no meio
-    for y in (28, 31, 34): img.putpixel((24, y), OURO)
-    ret(16, 26, 6, 12, VERDE3); ret(30, 26, 6, 12, VERDE3); ret(36, 26, 8, 12, VERDE)
-    # túnica (jaqueta: 0,38 caixa 8x20x6)
-    ret(6, 44, 8, 20, VERDE2)                    # frente
-    ret(6, 44, 8, 1, OURO2)
-    ret(9, 45, 2, 19, VERDE3)                    # abertura
-    ret(6, 56, 8, 1, OURO); ret(6, 63, 8, 1, OURO2)
-    ret(0, 44, 6, 20, VERDE); ret(14, 44, 6, 20, VERDE); ret(20, 44, 8, 20, VERDE2)
-    ret(6, 38, 8, 6, VERDE3); ret(14, 38, 8, 6, VERDE3)
-    # bolsinha de moedas na cintura
-    ret(11, 57, 2, 3, MARROM); img.putpixel((11, 57), OURO)
-    # mangas (braços cruzados: 44,22 e 40,38)
-    ret(44, 26, 16, 4, VERDE); ret(44, 29, 16, 1, OURO2)
-    ret(40, 42, 16, 1, OURO2)
+            for x in range(x0, x0 + w):
+                img.putpixel((x, y), tom(paleta, x, y))
+    def px(x, y, paleta):
+        img.putpixel((x, y), tom(paleta, x, y))
+
+    # capuz (camada externa da cabeça, 32,0): cobre tudo, menos o rosto
+    ret(40, 0, 8, 8, MANTO)           # topo
+    ret(48, 0, 8, 8, MANTO_ESC)       # baixo
+    ret(32, 8, 8, 10, MANTO)          # lado direito
+    ret(48, 8, 8, 10, MANTO)          # lado esquerdo
+    ret(56, 8, 8, 10, MANTO_ESC)      # nuca
+    ret(40, 8, 8, 2, MANTO)           # testa
+    for y in range(10, 18):           # moldura do rosto
+        px(40, y, CREME); px(47, y, CREME)
+    for x in range(40, 48):
+        px(x, 10, CREME)
+    # corpo (16,20) e manto (0,38)
+    ret(16, 20, 28, 18, MANTO)
+    ret(22, 20, 8, 6, MANTO_ESC)
+    ret(0, 38, 28, 26, MANTO)
+    ret(6, 38, 8, 6, MANTO_ESC); ret(14, 38, 8, 6, MANTO_ESC)
+    ret(20, 44, 8, 20, MANTO_ESC)     # costas do manto mais escuras
+    for y in range(26, 38):           # gola/abertura na frente do corpo
+        px(25, y, CREME); px(26, y, CREME)
+    for x in range(22, 30):
+        px(x, 26, CREME)
+    for y in range(44, 64):           # abertura do manto
+        px(9, y, CREME); px(10, y, CREME)
+    for x in list(range(0, 28)):      # barra creme
+        px(x, 63, CREME); px(x, 62, CREME)
+    # cinto de couro com fivela de esmeralda
+    for x in range(0, 28):
+        px(x, 50, COURO); px(x, 51, COURO)
+    img.putpixel((9, 50), hexc('3FCF6A')); img.putpixel((10, 50), hexc('17A345'))
+    img.putpixel((9, 51), hexc('17A345')); img.putpixel((10, 51), hexc('0E6B2E'))
+    # bolsinha no quadril
+    ret(12, 52, 2, 3, COURO)
+    # mangas (braços cruzados) com punhos creme
+    ret(44, 22, 16, 12, MANTO)
+    ret(40, 38, 24, 8, MANTO)
+    for x in range(44, 60):
+        px(x, 33, CREME)
+    for x in range(40, 64):
+        px(x, 45, CREME)
     salvar(img, 'entity', 'villager', 'profession', 'mercador.png')
     salvar(img, 'entity', 'zombie_villager', 'profession', 'mercador.png')
 

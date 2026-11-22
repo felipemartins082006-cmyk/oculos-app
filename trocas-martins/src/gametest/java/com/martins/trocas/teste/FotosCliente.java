@@ -106,11 +106,11 @@ public class FotosCliente implements ClientModInitializer {
 					cmd(server, p, String.format("setblock %d %d %d minecraft:lantern", b.getX(), y + 1, b.getZ() - 4));
 
 					mercador = EntityType.VILLAGER.create(p.getServerWorld());
-					mercador.refreshPositionAndAngles(b.getX() + 0.5 - 1.4, y, b.getZ() - 3.2, 200, 0);
+					mercador.refreshPositionAndAngles(b.getX() + 0.5 - 1.4, y, b.getZ() - 3.2, 20, 0);
 					mercador.setVillagerData(mercador.getVillagerData().withProfession(ModRegistro.MERCADOR).withLevel(3));
 					mercador.setAiDisabled(true);
-					mercador.setHeadYaw(200);
-					mercador.setBodyYaw(200);
+					mercador.setHeadYaw(20);
+					mercador.setBodyYaw(20);
 					p.getServerWorld().spawnEntity(mercador);
 
 					bibliotecario = EntityType.VILLAGER.create(p.getServerWorld());
@@ -176,7 +176,6 @@ public class FotosCliente implements ClientModInitializer {
 			case 7 -> {
 				foto(c, "4_pesquisa");
 				tela(c, "pesquisa", "");
-				chamar(c, "trocarModo", true);
 				ServerPlayerEntity p = server.getPlayerManager().getPlayer(c.player.getUuid());
 				server.execute(() -> {
 					if (p.currentScreenHandler instanceof MercadorScreenHandler h) {

@@ -19,12 +19,18 @@ import java.util.List;
  */
 public final class LojaMercador {
 	/** Uma troca de venda: paga custoA (+ custoB) e recebe resultado. */
-	public record Oferta(ItemStack custoA, ItemStack custoB, ItemStack resultado) {
+	public record Oferta(ItemStack custoA, ItemStack custoB, ItemStack resultado, int maxUsos) {
 		public static final PacketCodec<RegistryByteBuf, Oferta> CODEC = PacketCodec.tuple(
 			ItemStack.PACKET_CODEC, Oferta::custoA,
 			ItemStack.OPTIONAL_PACKET_CODEC, Oferta::custoB,
 			ItemStack.PACKET_CODEC, Oferta::resultado,
+			net.minecraft.network.codec.PacketCodecs.VAR_INT, Oferta::maxUsos,
 			Oferta::new);
+
+		/** Chave usada para contar os usos desta troca. */
+		public String chave() {
+			return "c:" + net.minecraft.registry.Registries.ITEM.getId(resultado.getItem());
+		}
 
 		/** Custo total em esmeraldas (blocos contam 9). */
 		public int esmeraldas() {
@@ -39,6 +45,12 @@ public final class LojaMercador {
 	}
 
 	private static final double MARGEM = 1.25;
+	/** Igual à maioria das trocas dos aldeões: 12 vezes até repor. */
+	public static final int USOS = 12;
+	/** Diamante e netherite: só 1 por reposição. */
+	public static final int USOS_RAROS = 1;
+	/** Vendas para o Mercador: 16 trocas de cada item até repor (igual às compras dos aldeões). */
+	public static final int USOS_VENDA = 16;
 
 	private static final Item[] CATALOGO = {
 		// madeira
@@ -88,7 +100,7 @@ public final class LojaMercador {
 			if (o != null) lista.add(o);
 		}
 		for (Object[] raro : RAROS) {
-			lista.add(caro(new ItemStack((Item) raro[0]), (Integer) raro[1]));
+			lista.add(caro(new ItemStack((Item) raro[0]), (Integer) raro[1], USOS_RAROS));
 		}
 		ofertas = List.copyOf(lista);
 	}
@@ -97,7 +109,7 @@ public final class LojaMercador {
 		// 1) algum aldeão ou o mascate já vende: mesma troca
 		TrocasAldeoes.Taxa t = TrocasAldeoes.VENDEM.get(item);
 		if (t != null && t.esmeraldas() <= 64 && t.itens() <= item.getMaxCount()) {
-			return new Oferta(new ItemStack(Items.EMERALD, t.esmeraldas()), ItemStack.EMPTY, new ItemStack(item, t.itens()));
+			return new Oferta(new ItemStack(Items.EMERALD, t.esmeraldas()), ItemStack.EMPTY, new ItemStack(item, t.itens()), USOS);
 		}
 		// 2) preço justo: 25% acima do que o próprio Mercador pagaria
 		double valor = PrecoMercador.valorBase(item);
@@ -105,20 +117,20 @@ public final class LojaMercador {
 		double porItem = valor * MARGEM;
 		if (porItem < PrecoMercador.UMA_ESMERALDA) {
 			int itens = (int) Math.max(1, Math.min(item.getMaxCount(), Math.floor(PrecoMercador.UMA_ESMERALDA / porItem)));
-			return new Oferta(new ItemStack(Items.EMERALD, 1), ItemStack.EMPTY, new ItemStack(item, itens));
+			return new Oferta(new ItemStack(Items.EMERALD, 1), ItemStack.EMPTY, new ItemStack(item, itens), USOS);
 		}
 		int esm = (int) Math.ceil(porItem / PrecoMercador.UMA_ESMERALDA);
-		return caro(new ItemStack(item), esm);
+		return caro(new ItemStack(item), esm, USOS);
 	}
 
 	/** Preço em esmeraldas; acima de 64 vira blocos de esmeralda + esmeraldas. */
-	private static Oferta caro(ItemStack resultado, int esmeraldas) {
+	private static Oferta caro(ItemStack resultado, int esmeraldas, int usos) {
 		if (esmeraldas <= 64) {
-			return new Oferta(new ItemStack(Items.EMERALD, esmeraldas), ItemStack.EMPTY, resultado);
+			return new Oferta(new ItemStack(Items.EMERALD, esmeraldas), ItemStack.EMPTY, resultado, usos);
 		}
 		int blocos = Math.min(64, esmeraldas / 9);
 		int resto = Math.min(64, esmeraldas - blocos * 9);
 		return new Oferta(new ItemStack(Items.EMERALD_BLOCK, blocos),
-			resto > 0 ? new ItemStack(Items.EMERALD, resto) : ItemStack.EMPTY, resultado);
+			resto > 0 ? new ItemStack(Items.EMERALD, resto) : ItemStack.EMPTY, resultado, usos);
 	}
 }

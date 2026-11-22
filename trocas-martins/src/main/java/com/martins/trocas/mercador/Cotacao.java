@@ -17,7 +17,7 @@ public record Cotacao(Status status, int esmeraldas, int usados, int total, int 
 	public static final Cotacao VAZIA = new Cotacao(Status.VAZIO, 0, 0, 0, 0, 0, 0);
 
 	public enum Status {
-		VAZIO, MISTURADO, NAO_COMPRA, INSUFICIENTE, OK, COMPRA_OK, COMPRA_FALTA;
+		VAZIO, MISTURADO, NAO_COMPRA, INSUFICIENTE, OK, COMPRA_OK, COMPRA_FALTA, ESGOTADO;
 
 		public static Status of(int i) {
 			Status[] v = values();
@@ -36,6 +36,6 @@ public record Cotacao(Status status, int esmeraldas, int usados, int total, int 
 	/** O X vermelho aparece quando há algo no pagamento mas a troca não fecha. */
 	public boolean impossivel() {
 		return status == Status.MISTURADO || status == Status.NAO_COMPRA || status == Status.INSUFICIENTE
-			|| status == Status.COMPRA_FALTA;
+			|| status == Status.COMPRA_FALTA || status == Status.ESGOTADO;
 	}
 }

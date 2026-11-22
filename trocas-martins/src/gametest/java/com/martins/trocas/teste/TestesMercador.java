@@ -202,6 +202,20 @@ public class TestesMercador implements FabricGameTest {
 		ctx.assertTrue(h.cotacaoCliente().status() == Cotacao.Status.COMPRA_FALTA && h.cotacaoCliente().faltam() > 90,
 			"diamante sem dinheiro: " + h.cotacaoCliente());
 
+		// limite igual aos aldeões: 16 trocas de gravetos e depois esgota
+		h.setCursorStack(ItemStack.EMPTY);
+		h.getSlot(0).setStack(ItemStack.EMPTY);
+		h.getSlot(1).setStack(ItemStack.EMPTY);
+		p.getInventory().clear();
+		for (int i = 0; i < 9; i++) p.getInventory().insertStack(new ItemStack(Items.STICK, 64));
+		h.escolherVenda(new ItemStack(Items.STICK));
+		h.onSlotClick(saida, 0, SlotActionType.QUICK_MOVE, p);
+		igual(ctx, 16, p.getInventory().count(Items.EMERALD), "só 16 trocas de gravetos até repor");
+		ctx.assertTrue(h.cotacaoCliente().status() == Cotacao.Status.ESGOTADO, "gravetos esgotados: " + h.cotacaoCliente());
+		v.restock();
+		h.escolherVenda(new ItemStack(Items.STICK));
+		ctx.assertTrue(h.cotacaoCliente().ok(), "depois de repor volta a comprar: " + h.cotacaoCliente());
+
 		h.onClosed(p);
 		ctx.assertTrue(v.getCustomer() == null, "o Mercador deveria ficar livre ao fechar");
 		ctx.complete();

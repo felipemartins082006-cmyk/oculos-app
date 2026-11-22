@@ -39,6 +39,13 @@ public final class ModRegistro {
 
 	public static final Item BALCAO_DO_MERCADOR_ITEM = new BlockItem(BALCAO_DO_MERCADOR, new Item.Settings());
 
+	/** Quantas vezes cada troca do Mercador já foi usada desde a última reposição (salvo no aldeão). */
+	public static final net.fabricmc.fabric.api.attachment.v1.AttachmentType<java.util.Map<String, Integer>> USOS =
+		net.fabricmc.fabric.api.attachment.v1.AttachmentRegistry.<java.util.Map<String, Integer>>builder()
+			.persistent(com.mojang.serialization.Codec.unboundedMap(com.mojang.serialization.Codec.STRING, com.mojang.serialization.Codec.INT))
+			.initializer(java.util.HashMap::new)
+			.buildAndRegister(TrocasMartins.id("usos"));
+
 	public static PointOfInterestType MERCADOR_POI;
 	public static VillagerProfession MERCADOR;
 

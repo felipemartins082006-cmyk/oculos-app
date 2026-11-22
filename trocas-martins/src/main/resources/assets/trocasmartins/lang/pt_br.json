@@ -6,10 +6,7 @@
   "gui.trocasmartins.misturado": "Só um tipo de item",
   "gui.trocasmartins.nao_compra": "Não compro isso",
   "gui.trocasmartins.impossivel": "Troca impossível",
-  "gui.trocasmartins.vender": "Vender",
-  "gui.trocasmartins.comprar": "Comprar",
-  "gui.trocasmartins.pesquisar": "Pesquisar...",
   "gui.trocasmartins.faltam_esmeraldas": "Faltam %s esmeraldas",
-  "gui.trocasmartins.nada": "Nada para vender",
-  "gui.trocasmartins.nada_encontrado": "Nada encontrado"
+  "gui.trocasmartins.nada_encontrado": "Nada encontrado",
+  "gui.trocasmartins.esgotado": "Esgotado por enquanto"
 }
