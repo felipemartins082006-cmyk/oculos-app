@@ -1733,10 +1733,11 @@ let otWorkerURL = null;
 function criarWorkerOt() {
   try {
     if (!otWorkerURL) {
-      const fns = [media, aleatorio, estimarRobusto, projetar, anualGeo, estatPesos, otimizarPesos, limitesOt, quedaPesos, gradLog, avaliarLimites, ajustarLimites, melhorDaClasse, otimizarCompleto, reamostrar, finalOtimizacao];
+      const fns = [media, aleatorio, estimarRobusto, projetar, anualGeo, estatPesos, otimizarPesos, limitesOt, quedaPesos, gradLog, avaliarLimites, ajustarLimites, melhorDaClasse, otimizarCompleto, reamostrar, finalOtimizacao, otimizarCombos];
       const src = `const mulCv = ${mulCv.toString()};\nconst dot = ${dot.toString()};\n` + fns.map((f) => f.toString()).join('\n') +
         `\nonmessage = (e) => { const d = e.data;
   if (d.tipo === 'amostras') { const ws = []; for (let i = d.de; i < d.ate; i++) { ws.push(otimizarCompleto(reamostrar(d.R, 1, 6, 1000 + i)[0], d.op, d.rfm)); postMessage({ p: 1 }); } postMessage({ ws }); }
+  else if (d.tipo === 'combos') postMessage({ res: otimizarCombos(d) });
   else postMessage({ fim: finalOtimizacao(d) }); };`;
       otWorkerURL = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
     }
@@ -1806,6 +1807,7 @@ function prepararOtimizador() {
     $('ot-salvar').addEventListener('click', salvarOtimizada);
   }
   otMostra.forEach((f) => f());
+  prepararCombos(); contarCombos();
   if (O_.cart >= S.carteiras.length) O_.cart = 0;
   $('seg-ot-cart').innerHTML = S.carteiras.map((c, i) => `<button type="button" data-v="${i}">${esc(c.nome.slice(0, 16))}</button>`).join('');
   const marca = (id, v) => [...$(id).children].forEach((b) => { const on = String(b.dataset.v) === String(v); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
@@ -2075,7 +2077,9 @@ class Cena3D {
         if (ini.mov > 4) { this.arrastando = true; this.rot.yaw = ini.rot.yaw + dx * 0.009; this.rot.pitch = Math.max(-1.45, Math.min(1.45, ini.rot.pitch + dy * 0.009)); this.tip.hidden = true; this.hover = null; this.pedir(); return; } }
       this.mouse = q; this.pedir();
     });
-    const fim = (e) => { ptrs.delete(e.pointerId); if (ptrs.size < 2) pinca = null; if (ptrs.size === 0) { ini = null; this.arrastando = false; } this.pedir(); };
+    const fim = (e) => {
+      if (this.aoClicar && ini && ini.mov <= 4 && ptrs.size === 1) { const q = pos(e); let m = null, dm = 24 * 24; for (const a of this.alvos || []) { const dd = (a.x - q.x) ** 2 + (a.y - q.y) ** 2; if (dd < dm) { dm = dd; m = a; } } if (m) this.aoClicar(m); }
+      ptrs.delete(e.pointerId); if (ptrs.size < 2) pinca = null; if (ptrs.size === 0) { ini = null; this.arrastando = false; } this.pedir(); };
     canvas.addEventListener('pointerup', fim); canvas.addEventListener('pointercancel', fim);
     canvas.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') { this.mouse = null; this.hover = null; this.tip.hidden = true; this.pedir(); } });
     canvas.addEventListener('wheel', (e) => { e.preventDefault(); this.rot.zoom = Math.max(0.4, Math.min(6, this.rot.zoom * (e.deltaY > 0 ? 0.9 : 1.1))); this.pedir(); }, { passive: false });
@@ -2137,6 +2141,7 @@ class Cena3D {
     }
     ctx.globalAlpha = 1;
     for (const l of this.linhas) { ctx.strokeStyle = l.cor; ctx.lineWidth = l.w || 2; ctx.setLineDash(l.tracos || []); ctx.beginPath(); l.pts.forEach((q, k) => { const r = P(q[0], q[1], q[2]); k ? ctx.lineTo(r.x, r.y) : ctx.moveTo(r.x, r.y); }); ctx.stroke(); ctx.setLineDash([]); }
+    this.alvos = alvos;
     // cursor
     this.hover = null;
     if (this.mouse && !this.arrastando) {
@@ -2226,6 +2231,123 @@ function desenharFronteira3d(o) {
   const cont = {}; for (const p of pts) { const a = info(p.t); const g = a ? TIPOS[a.tipo][1] : 'rf'; cont[g] = (cont[g] || 0) + 1; }
   $('o3-leg').innerHTML = CLASSES.filter(([k]) => cont[k]).map(([k, n]) => `<span><i style="background:${cores[k]}"></i>${n} (${cont[k]})</span>`).join('') + '<span><i style="background:var(--amber)"></i>Otimizada</span><span>pontos maiores = ativos na carteira</span>';
   O3.cena.pedir();
+}
+
+// ---------------------------------------------------------------- Otimizar: mapa 3D das combinações de classes
+// Cada combinação das classes marcadas (1, 2, 3... classes) é otimizada com o objetivo e os limites
+// escolhidos; o resultado vira um ponto: retorno, volatilidade, Sharpe e queda máxima de uma vez.
+function otimizarCombos(d) {
+  const out = [];
+  for (const ix of d.combos) {
+    const sub = ix.map((k) => d.R[k]), cl = ix.map((k) => d.classe[k]), g = ix.map((k) => d.grupos[k]);
+    let w;
+    if (ix.length === 1) w = [1];
+    else w = otimizarCompleto(sub, { ...d.op, grupos: g, cadaClasse: true, reamostra: false, classe: cl }, d.rfm);
+    const e = estimarRobusto(sub, cl), est = estatPesos(w, e.mu, e.C, d.rfm), q = quedaPesos(w, sub);
+    const pesos = ix.map((k, j) => [k, w[j]]).filter((x) => x[1] > 0.005).sort((a, b) => b[1] - a[1]).slice(0, 6);
+    out.push({ ret: est.ret, vol: est.vol, sharpe: est.sharpe, dd: q.dd, cagr: q.cagr, pesos });
+    if (out.length % 5 === 0) postMessage({ p: 5 });
+  }
+  return out;
+}
+const CB_MET = {
+  vol: ['Volatilidade ao ano', (v) => pct(v)], ret: ['Retorno ao ano (estimado)', (v) => pct(v)], sharpe: ['Sharpe (retorno por risco)', (v) => num(v)],
+  dd: ['Queda máxima (histórica)', (v) => pct(-v, 0)], cagr: ['Retorno ao ano (histórico)', (v) => pct(v)], n: ['Nº de classes', (v) => num(v, 0)],
+};
+const CB_CURTO = { ret: 'retorno estimado', cagr: 'retorno histórico', vol: 'volat.', sharpe: 'Sharpe', dd: 'queda máx.', n: 'classes' };
+const CB = { escala: { x: 100, y: 100, z: 100 }, cena: null, res: null, eixos: { x: 'vol', y: 'ret', z: 'dd', cor: 'sharpe' }, k: 3, porClasse: 8 };
+let cbCancelar = null;
+function prepararCombos() {
+  if (CB.cena) return;
+  CB.cena = new Cena3D($('cb-canvas'), $('cb-tip'), { escala: CB.escala, rot: { yaw: -0.6, pitch: 0.42 } });
+  CB.cena.aoLer = (h) => { $('cb-read').innerHTML = h.replace(/<br>/g, ' · '); };
+  CB.cena.aoClicar = (alvo) => { if (alvo.ponto && alvo.ponto.p.combo) usarCombo(alvo.ponto.p.combo); };
+  controleEixos($('cb-eixos'), CB.escala, [['x', 'eixo horizontal'], ['y', 'eixo vertical'], ['z', 'profundidade']], () => CB.cena.pedir());
+  $('cb-girar').addEventListener('click', (e) => { const on = !CB.cena.girando; e.target.classList.toggle('primary', on); CB.cena.girar(on); });
+  const opts = Object.entries(CB_MET).map(([k, [n]]) => `<option value="${k}">${n}</option>`).join('');
+  for (const e of ['x', 'y', 'z', 'cor']) { const el = $(`cb-${e}`); el.innerHTML = opts; el.value = CB.eixos[e]; el.addEventListener('change', () => { CB.eixos[e] = el.value; desenharCombos(); }); }
+  ligarLivre('nj-cb-k', { obter: () => CB.k, definir: (v) => { CB.k = v; }, min: 1, max: 30, cheio: () => 30, aoMudar: contarCombos });
+  $('cb-n').value = CB.porClasse; $('cb-n').addEventListener('input', () => { const v = Math.round(lerDec($('cb-n').value)); if (v >= 1) { CB.porClasse = Math.min(v, 60); contarCombos(); } });
+  $('btn-cb').addEventListener('click', rodarCombos);
+  $('cb-tab').addEventListener('click', (e) => { const b = e.target.closest('[data-i]'); if (b && CB.res) usarCombo(CB.res.pontos[+b.dataset.i].combo); });
+}
+const cbPool = () => { const base = OT_CLASSES.map((x) => x[0]).filter((k) => !k.startsWith('fii:')); const sel = S.ot.classes.filter((k) => OT_CLASSES.some((x) => x[0] === k)); return sel.length >= 2 ? sel : base; };
+const binom = (n, k) => { let r = 1; for (let i = 1; i <= k; i++) r = r * (n - k + i) / i; return Math.round(r); };
+function contarCombos() {
+  const pool = cbPool(), k = Math.min(CB.k, pool.length); let n = 0; for (let i = 1; i <= k; i++) n += binom(pool.length, i);
+  $('cb-help').textContent = `${S.ot.classes.filter((c) => OT_CLASSES.some((x) => x[0] === c)).length >= 2 ? 'Classes marcadas no Universo' : 'Nenhuma ou só 1 classe marcada: usando todas'} (${pool.length}): ${pool.map((c) => OT_CLASSES.find((x) => x[0] === c)[1]).join(', ')}. ` +
+    `${n.toLocaleString('pt-BR')} combinações de até ${k} ${k === 1 ? 'classe' : 'classes'}, cada uma otimizada com o objetivo, os limites e a janela escolhidos acima (${CB.porClasse} maiores ativos por classe).`;
+  return n;
+}
+function* combinacoes(n, k) { const a = []; function* rec(i) { if (a.length) yield a.slice(); if (a.length === k) return; for (let j = i; j < n; j++) { a.push(j); yield* rec(j + 1); a.pop(); } } yield* rec(0); }
+function rodarCombos() {
+  if (cbCancelar) { cbCancelar(); cbCancelar = null; return; }
+  const pool = cbPool(), salvo = S.ot;
+  S.ot = { ...salvo, fonte: 'filtro', classes: pool, maxUniv: CB.porClasse * pool.length, cadaClasse: true };
+  let U; try { U = universoOtimizador(); } finally { S.ot = salvo; }
+  if (U.erro) { $('cb-read').textContent = U.erro; return; }
+  const H = preparar([{ nome: 'U', itens: U.codigos.map((t) => ({ t, p: 1 })) }], Math.floor(U.ini / 12), S.cambio, 'redistribuir');
+  if (H.erro) { $('cb-read').textContent = H.erro; return; }
+  const i0 = Math.max(0, H.meses.findIndex((mi) => mi >= U.ini)), base = H.Rc ? H.Rc[0] : H.R;
+  const R = base.map((r) => Float64Array.from(r.slice(i0), (x) => (isFinite(x) ? x : 0))), cdi = H.cdi.slice(i0), uni = H.uni, rfm = media(cdi);
+  const gU = uni.map((t) => U.grupos[U.codigos.indexOf(t)] ?? -1);
+  const classe = uni.map((t) => (t.startsWith('RF:') ? 'rf' : (TIPOS[info(t).tipo] || ['', info(t).tipo])[1]));
+  // grupos do universo → índices das classes do pool que têm ativos
+  const presentes = [...new Set(gU.filter((g) => g >= 0))].sort((a, b) => a - b);
+  const k = Math.min(CB.k, presentes.length), combos = [];
+  for (const c of combinacoes(presentes.length, k)) { const gs = c.map((i) => presentes[i]); const ix = uni.map((_, j) => j).filter((j) => gs.includes(gU[j])); if (ix.length) combos.push({ gs, ix }); }
+  const nomes = combos.map((c) => c.gs.map((g) => OT_CLASSES.find((x) => x[0] === pool[g])[1]));
+  const op = { ...S.ot, maxAtivos: S.ot.maxAtivos ? Math.max(S.ot.maxAtivos, k) : 0 };
+  const total = combos.length, t0 = performance.now(); let feitos = 0;
+  $('btn-cb-label').textContent = `Calculando 0 de ${total.toLocaleString('pt-BR')}… (toque para parar)`;
+  const partes = Math.max(1, Math.min(NUCLEOS, Math.ceil(total / 10))), por = Math.ceil(total / partes), ws = [];
+  let cancelado = false;
+  cbCancelar = () => { cancelado = true; ws.forEach((w) => w && w.terminate()); $('btn-cb-label').textContent = 'Gerar mapa'; };
+  const tarefas = [];
+  for (let a = 0; a < total; a += por) {
+    const msg = { tipo: 'combos', R, combos: combos.slice(a, a + por).map((c) => c.ix), op, rfm, classe, grupos: gU };
+    tarefas.push(new Promise((ok, falha) => {
+      const w = semWorker ? null : criarWorkerOt(); ws.push(w);
+      if (!w) { setTimeout(() => { try { ok(otimizarCombosLocal(msg)); } catch (e) { falha(e); } }, 20); return; }
+      w.onmessage = (e) => { if (e.data.p) { feitos += e.data.p; $('btn-cb-label').textContent = `Calculando ${Math.min(feitos, total).toLocaleString('pt-BR')} de ${total.toLocaleString('pt-BR')}… (toque para parar)`; return; } w.terminate(); ok(e.data.res); };
+      w.onerror = (e) => { e.preventDefault(); w.terminate(); falha(new Error(e.message || 'erro no núcleo de cálculo')); };
+      w.postMessage(msg);
+    }));
+  }
+  Promise.all(tarefas).then((rs) => {
+    if (cancelado) return;
+    const lista = rs.flat();
+    CB.res = { pontos: lista.map((r, i) => ({ ...r, n: combos[i].gs.length, nomes: nomes[i], combo: combos[i].gs.map((g) => pool[g]), pesos: r.pesos.map(([k2, w]) => [uni[k2], w]) })),
+      janela: `${rotulo(H.meses[i0])}–${rotulo(H.fim)}`, ms: performance.now() - t0 };
+    desenharCombos();
+  }).catch((e) => { if (!cancelado) $('cb-read').textContent = `Não foi possível calcular: ${e.message}`; })
+    .finally(() => { cbCancelar = null; $('btn-cb-label').textContent = CB.res ? 'Gerar de novo' : 'Gerar mapa'; });
+}
+function otimizarCombosLocal(msg) { const pm = window.postMessage; window.postMessage = () => {}; try { return otimizarCombos(msg); } finally { window.postMessage = pm; } }
+function desenharCombos() {
+  if (!CB.res) return;
+  const P = CB.res.pontos.filter((p) => ['x', 'y', 'z', 'cor'].every((e) => isFinite(p[CB.eixos[e]])));
+  if (!P.length) return;
+  const fx = (k) => { const v = P.map((p) => p[k]).sort((a, b) => a - b); let lo = quantil(v, 0.01), hi = quantil(v, 0.99); if (hi - lo < 1e-9) { lo -= 0.5; hi += 0.5; } return [lo, hi]; };
+  const E = CB.eixos, fX = fx(E.x), fY = fx(E.y), fZ = fx(E.z), fC = fx(E.cor), nX = norm3d(...fX), nY = norm3d(...fY), nZ = norm3d(...fZ);
+  const melhor = P.reduce((a, p) => (p.sharpe > a.sharpe ? p : a), P[0]);
+  const cor = (v) => { const t = Math.max(0, Math.min(1, (v - fC[0]) / (fC[1] - fC[0] || 1))); return `hsl(${215 - t * 175} 72% ${46 + t * 8}%)`; };
+  const html = (p) => `<b>${esc(p.nomes.join(' + '))}</b><br>${Object.entries(CB_CURTO).map(([k, n]) => `<span class="k">${n}</span> ${CB_MET[k][1](p[k])}`).join(' · ')}<br><span class="k">pesos:</span> ${p.pesos.map(([t, w]) => `${esc(rotuloAtivo(t).slice(0, 10))} ${pct(w, 0)}`).join(' · ')}<br><span class="k">toque/clique para otimizar esta combinação</span>`;
+  CB.cena.pontos = P.map((p) => ({ X: nX(p[E.x]), Y: nY(p[E.y]), Z: nZ(p[E.z]), cor: cor(p[E.cor]), r: 2.4 + p.n * 1.1, destaque: p === melhor, rotulo: p === melhor ? `Maior Sharpe: ${p.nomes.join(' + ').slice(0, 40)}` : '', html: html(p), combo: p.combo }));
+  CB.cena.rotulos = { x: `${CB_MET[E.x][0].replace(/ \(.*\)/, '')} →`, y: CB_MET[E.y][0].replace(/ \(.*\)/, ''), z: `${CB_MET[E.z][0].replace(/ \(.*\)/, '')} →` };
+  CB.cena.ticks = { x: ticks3d(...fX, CB_MET[E.x][1]), y: ticks3d(...fY, CB_MET[E.y][1]), z: ticks3d(...fZ, CB_MET[E.z][1]) };
+  CB.cena.pedir();
+  $('cb-meta').textContent = `${P.length.toLocaleString('pt-BR')} combinações · ${CB.res.janela} · ${num(CB.res.ms / 1000, 1)} s`;
+  $('cb-leg').innerHTML = `<span><i style="background:hsl(215 72% 46%)"></i>${CB_MET[E.cor][0]} baixo</span><span><i style="background:hsl(40 72% 54%)"></i>alto</span><span>ponto maior = mais classes na combinação</span><span>retorno e volatilidade estimados; queda máxima e retorno histórico na janela</span>`;
+  $('cb-read').innerHTML = `Maior Sharpe: <b>${esc(melhor.nomes.join(' + '))}</b> · ${Object.entries(CB_MET).slice(0, 4).map(([k, [n, f]]) => `${n.replace(/ \(.*\)/, '')} ${f(melhor[k])}`).join(' · ')}. Passe o cursor nos pontos; toque ou clique para otimizar a combinação.`;
+  const top = CB.res.pontos.map((p, i) => ({ p, i })).filter((x) => isFinite(x.p.sharpe)).sort((a, b) => b.p.sharpe - a.p.sharpe).slice(0, 12);
+  $('cb-tab').innerHTML = `<thead><tr><th>Combinação (maiores Sharpe)</th><th>Retorno</th><th>Volat.</th><th>Sharpe</th><th>Queda</th><th></th></tr></thead><tbody>` +
+    top.map(({ p, i }) => `<tr><td class="t" style="white-space:normal">${esc(p.nomes.join(' + '))}</td><td>${pct(p.ret)}</td><td>${pct(p.vol, 0)}</td><td><b>${num(p.sharpe)}</b></td><td>${pct(-p.dd, 0)}</td><td><button type="button" class="btn" data-i="${i}">Usar</button></td></tr>`).join('') + '</tbody>';
+}
+function usarCombo(combo) {
+  S.ot.fonte = 'filtro'; S.ot.classes = combo.slice(); salvar(); otUltimo = null; prepararOtimizador();
+  $('ot-res').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  rodarOtimizador();
 }
 
 // ---------------------------------------------------------------- montanha 3D de probabilidades (simulação)

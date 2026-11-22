@@ -82,6 +82,11 @@ S&P 500, Global 60/40, Permanente, Big Techs, FIIs, top multimercados etc.).
 retorno × queda (Otimizar). Em todos, cada eixo X, Y e Z tem barra para aumentar/diminuir, lista fixa de
 % e campo para digitar a % que quiser; arraste para girar e passe o cursor ou o dedo para ler os valores.
 
+**Mapa 3D das combinações de classes** (Otimizar) — otimiza de uma vez todas as combinações das
+classes marcadas (1, 2, 3... classes, até o limite escolhido) com o objetivo e os limites definidos, e
+mostra cada uma como um ponto: volatilidade × retorno × queda máxima, com a cor no Sharpe (eixos
+trocáveis). Passe o cursor para ver a combinação e os pesos; toque ou clique para otimizá-la.
+
 **Superfícies intradiárias e predição (Python)** — pipeline em `python/superficie/` (ver
 `python/docs/ARQUITETURA.md`).
 

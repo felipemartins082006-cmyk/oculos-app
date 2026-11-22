@@ -391,6 +391,26 @@
         </section>
       </div>
       <div class="col" id="ot-res">
+        <section class="panel" id="cb-panel">
+          <div class="ph"><h2>Mapa 3D das combinações de classes</h2><span class="meta" id="cb-meta"></span></div>
+          <div class="pb" style="display:grid;gap:10px">
+            <p class="help" id="cb-help"></p>
+            <div class="form">
+              <div class="field"><span class="lbl">Classes por combinação (até)</span><div class="livre" id="nj-cb-k"><div class="inp"><input inputmode="numeric" autocomplete="off" aria-label="Máximo de classes por combinação"><span>classes</span></div><button type="button" class="btn" data-max>Todas</button></div></div>
+              <div class="field"><label class="lbl" for="cb-n">Ativos por classe</label><div class="inp"><input id="cb-n" inputmode="numeric" autocomplete="off"><span>maiores</span></div></div>
+              <div class="field"><label class="lbl" for="cb-x">Eixo horizontal</label><select id="cb-x" class="sel"></select></div>
+              <div class="field"><label class="lbl" for="cb-y">Eixo vertical</label><select id="cb-y" class="sel"></select></div>
+              <div class="field"><label class="lbl" for="cb-z">Profundidade</label><select id="cb-z" class="sel"></select></div>
+              <div class="field"><label class="lbl" for="cb-cor">Cor</label><select id="cb-cor" class="sel"></select></div>
+            </div>
+            <button class="run" id="btn-cb" type="button"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z M12 12l8-4.5 M12 12v9 M12 12L4 7.5"/></svg><span id="btn-cb-label">Gerar mapa</span></button>
+          </div>
+          <div class="readout" id="cb-read">Cada ponto é uma combinação de classes já otimizada. Gere o mapa para ver retorno, volatilidade, Sharpe e queda máxima de todas as combinações de uma vez.</div>
+          <div class="ex-box c3d-box"><canvas id="cb-canvas" aria-label="Mapa 3D das combinações de classes"></canvas><div class="ex-tip" id="cb-tip" hidden></div><div class="ex-ctl"><button type="button" class="btn" id="cb-girar">Girar sozinho</button></div></div>
+          <div class="legend" id="cb-leg"></div>
+          <div id="cb-eixos"></div>
+          <div class="tbl-wrap"><table id="cb-tab"></table></div>
+        </section>
         <div class="runline" id="ot-runline"></div>
         <div class="kpis" id="ot-kpis"></div>
         <section class="panel">
