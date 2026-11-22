@@ -135,23 +135,20 @@ abaixo (configurável em `trocas_novas_por_nivel`). Só vale para aldeões que a
 
 | Profissão | Novato (1) | Aprendiz (2) | Qualificado (3) | Especialista (4) | Mestre (5) |
 |---|---|---|---|---|---|
-| **Armeiro** | compra cobre; vende escudo | armadura de lobo; compra escama de tatu | peitoral de ferro Proteção III; botas Queda Suave III | capacete de ferro Respiração I; molde de acabamento sorteado | bigorna; peitoral de diamante Proteção II |
+| **Armeiro** | compra cobre; vende escudo | armadura de lobo; compra escama de tatu | peitoral de ferro Proteção III; botas Queda Suave III | capacete de diamante Respiração III + Afinidade Aquática; molde de acabamento sorteado | **molde de melhoria de netherite**; peitoral de diamante Proteção IV + Inquebrável III |
 | **Açougueiro** | cenouras douradas; compra ossos | ensopado de coelho; bolo | bifes; compra couro de coelho | pé de coelho; torta de abóbora | maçã dourada; garrafas de mel |
-| **Cartógrafo** | bússola; compra penas | luneta; molduras brilhantes | padrão de estandarte sorteado; magnetita | molduras; mapas | relógio; padrão "Coisa" |
-| **Clérigo** | pó de blaze; compra olho de aranha | poção de Cura; pó de pedra luminosa | lágrima de ghast; membrana de phantom | poção de Regeneração; Resistência ao Fogo; creme de magma | suporte de poções; poção arremessável de Cura II |
-| **Fazendeiro** | frutas doces; frutas brilhantes | cacau; bambu; compra cactos | musgo; muda de cerejeira; azaleia florida | semente de flor-tocha; vagem de jarro | melancias; cenouras douradas |
-| **Pescador** | vitórias-régias; balde com peixe tropical | fragmentos e cristais de prismarinho | esponja; balde com axolote | concha de náutilo; vara de pesca Isca II | lanternas do mar; escama de tartaruga |
-| **Flecheiro** | flechas espectrais; compra penas | cargas de vento; flechas de Lentidão | arco Força III; flechas de Veneno | besta Recarga Rápida I; flechas de Dano | arco Força II; flechas espectrais |
-| **Curtidor** | laço; compra couro de coelho | armadura de cavalo de ferro; molduras | etiqueta; armadura de cavalo de ouro | armadura de cavalo de diamante; armadura de lobo | casco de tartaruga; botas Passos Profundos II |
-| **Bibliotecário** | bolsas de tinta brilhante; livro e pena | estante entalhada; frascos de experiência | livros Eficiência IV / Proteção IV / Afiação IV | livros Inquebrável III / Fortuna III / Pilhagem III | livros Remendo (48) / Toque Suave / Queda Suave IV |
+| **Cartógrafo** | bússola; compra penas | luneta; molduras brilhantes | padrão de estandarte sorteado; magnetita | fragmento de eco; mapas | **bússola de recuperação**; padrão "Coisa" |
+| **Clérigo** | pó de blaze; compra olho de aranha | poção de Cura; pó de pedra luminosa | lágrima de ghast; membrana de phantom | poção de Regeneração; Resistência ao Fogo; sopro do dragão | **totem da imortalidade**; poção arremessável de Cura II |
+| **Fazendeiro** | frutas doces; frutas brilhantes | cacau; bambu; compra cactos | musgo; muda de cerejeira; azaleia florida | semente de flor-tocha; vagem de jarro | **ovo de farejador**; cenouras douradas |
+| **Pescador** | vitórias-régias; balde com peixe tropical | fragmentos e cristais de prismarinho | esponja; **balde com axolote** | concha de náutilo; vara de pesca Sorte do Mar III + Isca III | **coração do mar**; **tridente** |
+| **Flecheiro** | flechas espectrais; compra penas | cargas de vento; flechas de Lentidão | arco Força III; flechas de Veneno | besta Rajada + Recarga Rápida II; flechas de Dano | arco Infinidade + Força IV; flechas espectrais |
+| **Curtidor** | laço; compra couro de coelho | armadura de cavalo de ferro; molduras | etiqueta; armadura de cavalo de ouro | armadura de cavalo de diamante; armadura de lobo | casco de tartaruga; botas Passos Profundos III + Queda Suave IV |
+| **Bibliotecário** | bolsas de tinta brilhante; livro e pena | estante entalhada; frascos de experiência | livros Eficiência IV / Proteção IV / Afiação IV | livros Inquebrável III / Fortuna III / Pilhagem III | livros **Remendo** / Toque Suave / Agachamento Ágil III |
 | **Pedreiro** | calcita; tijolos de tufo | obsidiana; tijolos de lama | obsidiana chorona; aglomerados de ametista | tijolos de pedra do End; purpur; espeleotemas | lanternas do mar; luzes de sapo |
-| **Pastor** | teias; compra linha | lã colorida sorteada; pinturas | velas coloridas; tear | padrões "Focinho" e "Globo" | disco de música sorteado; toca-discos |
-| **Ferramenteiro** | pincel; compra cobre | luneta; tesoura | picareta de ferro Eficiência III; pá Eficiência III + Inquebrável II | picareta de ferro Fortuna I; machado de ferro Eficiência II | picareta de diamante Eficiência III; rebolo |
-| **Armeiro de armas** | escudo; compra ferro | espada de ferro Afiação II; cargas de vento | machado Afiação III; isqueiro | espada de ferro Afiação III | mesa de ferraria; espada de diamante Afiação II |
-| **Mascate** | frascos de experiência; vagem de jarro; semente de flor-tocha | fragmento de cerâmica sorteado; etiqueta (raras) | | | |
-
-Nada de totem, tridente, coração do mar, núcleo pesado, netherite, ovo de farejador, fragmento de eco
-ou encantamentos exclusivos (Agachamento Ágil): esses continuam tendo que ser conquistados no jogo.
+| **Pastor** | teias; compra linha | lã colorida sorteada; pinturas | velas coloridas; tear | padrões "Focinho" e "Globo" | **disco de música sorteado**; toca-discos |
+| **Ferramenteiro** | pincel; compra cobre | luneta; tesoura | picareta de ferro Eficiência III; pá Eficiência III + Inquebrável II | picareta de diamante Fortuna III; machado Eficiência IV | picareta Eficiência V + Inquebrável III; **fragmento de netherite** |
+| **Armeiro de armas** | escudo; compra ferro | espada de ferro Afiação II; cargas de vento | machado Afiação III; vara de breeze | espada de diamante Afiação IV + Pilhagem II | **núcleo pesado** (para a maça); espada Afiação V + Aspecto Flamejante II |
+| **Mascate** | frascos de experiência; vagem de jarro; semente de flor-tocha | fragmento de cerâmica sorteado; etiqueta; ovo de farejador (raras) | | | |
 
 ![Bibliotecário mestre com trocas novas](docs/4_bibliotecario.png)
 
