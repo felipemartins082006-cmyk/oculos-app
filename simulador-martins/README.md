@@ -82,6 +82,10 @@ S&P 500, Global 60/40, Permanente, Big Techs, FIIs, top multimercados etc.).
 retorno × queda (Otimizar). Em todos, cada eixo X, Y e Z tem barra para aumentar/diminuir, lista fixa de
 % e campo para digitar a % que quiser; arraste para girar e passe o cursor ou o dedo para ler os valores.
 
+**Navegar dentro dos gráficos 3D** — em todos os gráficos 3D, clique no gráfico e ande com W/S (frente e
+trás), A/D (lados), E/Q (sobe e desce); setas giram, +/− aproximam, Shift acelera e R volta ao início.
+No mapa 2D, W/A/S/D movem a vista. No celular, o controle na tela faz o mesmo.
+
 **Mapa 3D das combinações de classes** (Otimizar) — otimiza de uma vez todas as combinações das
 classes marcadas (1, 2, 3... classes, até o limite escolhido) com o objetivo e os limites definidos, e
 mostra cada uma como um ponto: volatilidade × retorno × queda máxima, com a cor no Sharpe (eixos

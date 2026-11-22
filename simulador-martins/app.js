@@ -2059,6 +2059,63 @@ function controleEixos(box, estado, eixos, aoMudar) {
   return { mostra, mostrarEixo: (e, on) => { const l = box.querySelector(`[data-e="${e}"]`); if (l) l.hidden = !on; } };
 }
 
+// ---------------------------------------------------------------- navegação livre nos gráficos 3D (W A S D)
+// W/S: avança e recua para onde a câmera olha · A/D: para os lados · E/Q: sobe e desce ·
+// setas: gira · +/−: aproxima e afasta · Shift: mais rápido · R: volta ao início.
+// No celular: o controle na tela faz o mesmo (segure o botão).
+const NAV_TECLAS = { w: 'w', a: 'a', s: 's', d: 'd', q: 'q', e: 'e', arrowup: 'cima', arrowdown: 'baixo', arrowleft: 'esq', arrowright: 'dir', '+': 'mais', '=': 'mais', '-': 'menos', _: 'menos' };
+function ligarNav3d(canvas, obj, pedir, op = {}) {
+  if (!obj.alvo) obj.alvo = { x: 0, y: 0, z: 0 };
+  canvas.tabIndex = 0;
+  canvas.setAttribute('aria-keyshortcuts', 'W A S D Q E ArrowUp ArrowDown ArrowLeft ArrowRight + - R');
+  const segurando = new Set(); let rapido = false, ultimo = 0, laco = 0;
+  const passo = (t) => {
+    if (!segurando.size) { laco = 0; ultimo = 0; return; }
+    const dt = ultimo ? Math.min(0.05, (t - ultimo) / 1000) : 0.016; ultimo = t;
+    if (op.plano && op.plano()) { op.mover2d(segurando, dt * (rapido ? 3 : 1)); pedir(); laco = requestAnimationFrame(passo); return; }
+    const v = (rapido ? 2.4 : 0.8) * dt / Math.max(0.5, obj.rot.zoom), yaw = obj.rot.yaw, A = obj.alvo;
+    const fx = Math.sin(yaw), fz = Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
+    if (segurando.has('w')) { A.x += fx * v; A.z += fz * v; }
+    if (segurando.has('s')) { A.x -= fx * v; A.z -= fz * v; }
+    if (segurando.has('d')) { A.x += rx * v; A.z += rz * v; }
+    if (segurando.has('a')) { A.x -= rx * v; A.z -= rz * v; }
+    if (segurando.has('e')) A.y += v;
+    if (segurando.has('q')) A.y -= v;
+    const g = (rapido ? 2.2 : 1.2) * dt;
+    if (segurando.has('esq')) obj.rot.yaw -= g;
+    if (segurando.has('dir')) obj.rot.yaw += g;
+    if (segurando.has('cima')) obj.rot.pitch = Math.min(1.5, obj.rot.pitch + g);
+    if (segurando.has('baixo')) obj.rot.pitch = Math.max(-1.5, obj.rot.pitch - g);
+    if (segurando.has('mais')) obj.rot.zoom = Math.min(8, obj.rot.zoom * (1 + dt * 1.5));
+    if (segurando.has('menos')) obj.rot.zoom = Math.max(0.3, obj.rot.zoom / (1 + dt * 1.5));
+    pedir(); laco = requestAnimationFrame(passo);
+  };
+  const inicia = () => { if (!laco) laco = requestAnimationFrame(passo); };
+  const reinicia = () => { obj.alvo.x = obj.alvo.y = obj.alvo.z = 0; if (op.reiniciar) op.reiniciar(); pedir(); };
+  canvas.addEventListener('keydown', (e) => {
+    const k = e.key.toLowerCase(); rapido = e.shiftKey;
+    if (k === 'r' || k === '0') { e.preventDefault(); reinicia(); return; }
+    const n = NAV_TECLAS[k]; if (!n) return;
+    e.preventDefault(); segurando.add(n); inicia();
+  });
+  canvas.addEventListener('keyup', (e) => { rapido = e.shiftKey; const n = NAV_TECLAS[e.key.toLowerCase()]; if (n) segurando.delete(n); });
+  canvas.addEventListener('blur', () => segurando.clear());
+  canvas.addEventListener('pointerdown', () => canvas.focus({ preventScroll: true }));
+  // controle na tela (celular e quem prefere o mouse)
+  const box = canvas.parentElement, pad = document.createElement('div');
+  pad.className = 'nav3d';
+  pad.innerHTML = '<span class="nav-dica">Clique no gráfico e use <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> · <kbd>Q</kbd>/<kbd>E</kbd> desce/sobe · setas giram · <kbd>R</kbd> volta</span>' +
+    '<div class="nav-pad" role="group" aria-label="Navegar no gráfico 3D">' +
+    [['q', 'Descer', '▾'], ['w', 'Avançar', 'W'], ['e', 'Subir', '▴'], ['a', 'Esquerda', 'A'], ['s', 'Recuar', 'S'], ['d', 'Direita', 'D']]
+      .map(([k, t, l]) => `<button type="button" data-nav="${k}" title="${t}" aria-label="${t}">${l}</button>`).join('') +
+    '<button type="button" data-nav="r" class="nav-r" title="Voltar ao início" aria-label="Voltar ao início">↺</button></div>';
+  box.appendChild(pad);
+  const solta = () => { for (const k of ['w', 'a', 's', 'd', 'q', 'e']) segurando.delete(k); };
+  pad.addEventListener('pointerdown', (e) => { const b = e.target.closest('[data-nav]'); if (!b) return; e.preventDefault(); if (b.dataset.nav === 'r') { reinicia(); return; } segurando.add(b.dataset.nav); inicia(); });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => pad.addEventListener(ev, solta));
+  return { reinicia };
+}
+
 // ---------------------------------------------------------------- cena 3D genérica (canvas): pontos e superfícies
 // Coordenadas normalizadas em [-1, 1]; Y é a altura. Arraste para girar, role/pince para aproximar,
 // passe o cursor para a dica. A escala de cada eixo (%) estica ou encolhe o eixo.
@@ -2083,7 +2140,9 @@ class Cena3D {
     canvas.addEventListener('pointerup', fim); canvas.addEventListener('pointercancel', fim);
     canvas.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') { this.mouse = null; this.hover = null; this.tip.hidden = true; this.pedir(); } });
     canvas.addEventListener('wheel', (e) => { e.preventDefault(); this.rot.zoom = Math.max(0.4, Math.min(6, this.rot.zoom * (e.deltaY > 0 ? 0.9 : 1.1))); this.pedir(); }, { passive: false });
-    canvas.addEventListener('dblclick', () => { this.rot = { yaw: -0.7, pitch: 0.45, zoom: 1, ...(op.rot || {}) }; this.pedir(); });
+    canvas.addEventListener('dblclick', () => { this.rot = { yaw: -0.7, pitch: 0.45, zoom: 1, ...(op.rot || {}) }; this.alvo = { x: 0, y: 0, z: 0 }; this.pedir(); });
+    this.alvo = { x: 0, y: 0, z: 0 };
+    ligarNav3d(canvas, this, () => this.pedir(), { reiniciar: () => { this.rot = { yaw: -0.7, pitch: 0.45, zoom: 1, ...(op.rot || {}) }; } });
     new ResizeObserver(() => this.pedir()).observe(canvas);
   }
   girar(on) { this.girando = on; const passo = () => { if (!this.girando) return; if (!this.arrastando && this.cv.offsetParent) { this.rot.yaw += 0.005; this.desenhar(); } requestAnimationFrame(passo); }; if (on) passo(); }
@@ -2091,7 +2150,10 @@ class Cena3D {
   proj(W, H) {
     const { yaw, pitch, zoom } = this.rot, cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
     const kx = this.escala.x / 100, ky = this.escala.y / 100, kz = this.escala.z / 100, f = Math.min(W, H * 1.3) * 0.27 * zoom, d = 3.8;
-    return (X, Y, Z) => { X *= kx; Y *= ky; Z *= kz; const x1 = X * cy - Z * sy, z1 = X * sy + Z * cy, y2 = Y * cp - z1 * sp, z2 = Y * sp + z1 * cp, s = f * d / (d + z2); return { x: W / 2 + x1 * s, y: H / 2 + 14 - y2 * s, z: z2, s: s / f }; };
+    const A = this.alvo || { x: 0, y: 0, z: 0 };
+    return (X, Y, Z) => { X = (X - A.x) * kx; Y = (Y - A.y) * ky; Z = (Z - A.z) * kz; const x1 = X * cy - Z * sy, z1 = X * sy + Z * cy, y2 = Y * cp - z1 * sp, z2 = Y * sp + z1 * cp;
+      if (d + z2 < 0.25) return { x: NaN, y: NaN, z: z2, s: 0 };   // atrás da câmera
+      const s = f * d / (d + z2); return { x: W / 2 + x1 * s, y: H / 2 + 14 - y2 * s, z: z2, s: s / f }; };
   }
   desenhar() {
     const cv = this.cv, W = cv.clientWidth, H = cv.clientHeight, dpr = window.devicePixelRatio || 1; if (!W || !H) return;
@@ -2118,6 +2180,7 @@ class Cena3D {
       for (let i = 0; i < nx - 1; i++) for (let j = 0; j < nz - 1; j++) {
         const h = [Y[i][j], Y[i + 1][j], Y[i + 1][j + 1], Y[i][j + 1]]; if (h.some((v) => !isFinite(v))) continue;
         const v = [P(X[i], h[0], Z[j]), P(X[i + 1], h[1], Z[j]), P(X[i + 1], h[2], Z[j + 1]), P(X[i], h[3], Z[j + 1])];
+        if (v.some((q) => !isFinite(q.x))) continue;
         const luz = 0.6 + 0.4 * Math.max(0, Math.min(1, 0.5 + ((h[0] + h[3]) - (h[1] + h[2])) * 0.9 + ((h[0] + h[1]) - (h[2] + h[3])) * 0.5));
         quads.push({ v, z: (v[0].z + v[1].z + v[2].z + v[3].z) / 4, i, j, hm: (h[0] + h[1] + h[2] + h[3]) / 4, luz });
       }
@@ -2132,7 +2195,7 @@ class Cena3D {
       ctx.globalAlpha = 1;
     }
     // pontos (com neblina pela profundidade)
-    const pts = this.pontos.map((p) => ({ p, ...P(p.X, p.Y, p.Z) })).sort((a, b) => b.z - a.z);
+    const pts = this.pontos.map((p) => ({ p, ...P(p.X, p.Y, p.Z) })).filter((q) => isFinite(q.x)).sort((a, b) => b.z - a.z);
     for (const d of pts) {
       ctx.globalAlpha = d.p.destaque ? 1 : Math.max(0.2, Math.min(1, 0.78 - d.z * 0.3));
       ctx.fillStyle = d.p.cor; ctx.beginPath(); ctx.arc(d.x, d.y, (d.p.r || 3) * d.s, 0, 7); ctx.fill();
@@ -2158,7 +2221,7 @@ class Cena3D {
       } else this.tip.hidden = true;
     }
     ctx.fillStyle = C.muted; ctx.font = '10.5px "IBM Plex Sans", sans-serif'; ctx.textAlign = 'left';
-    ctx.fillText('Arraste para girar · role ou pince para aproximar · toque duplo volta', 10, H - 8);
+    ctx.textAlign = 'right'; ctx.fillText('Arraste para girar · role para aproximar · W A S D para andar', W - 10, H - 8);
   }
 }
 const ticks3d = (lo, hi, fmt, n = 3) => Array.from({ length: n }, (_, i) => { const v = -1 + 2 * i / (n - 1); return { v, txt: fmt(lo + (hi - lo) * i / (n - 1)) }; });
@@ -2354,9 +2417,11 @@ function usarCombo(combo) {
 // Superfície feita das trajetórias simuladas guardadas: para cada ano, que fração dos cenários termina em
 // cada faixa de patrimônio. Arraste para girar; passe o cursor para ler a faixa.
 const MT = { escala: { x: 100, y: 100, z: 100 }, rot: { yaw: -0.42, pitch: 0.62, zoom: 1 }, girar: false, malha: null, pronto: false, quadro: 0, hover: null, arr: false };
-function proj3d(W, H, rot, esc0 = 0.3, k = { x: 100, y: 100, z: 100 }) {
+function proj3d(W, H, rot, esc0 = 0.3, k = { x: 100, y: 100, z: 100 }, A = { x: 0, y: 0, z: 0 }) {
   const cy = Math.cos(rot.yaw), sy = Math.sin(rot.yaw), cp = Math.cos(rot.pitch), sp = Math.sin(rot.pitch), f = Math.min(W, H * 1.25) * esc0 * rot.zoom, d = 3.6;
-  return (X, Y, Z) => { X *= k.x / 100; Y *= k.y / 100; Z *= k.z / 100; const x1 = X * cy - Z * sy, z1 = X * sy + Z * cy, y2 = Y * cp - z1 * sp, z2 = Y * sp + z1 * cp, s = f * d / (d + z2); return { x: W / 2 + x1 * s, y: H / 2 + 10 - y2 * s, z: z2 }; };
+  return (X, Y, Z) => { X = (X - A.x) * k.x / 100; Y = (Y - A.y) * k.y / 100; Z = (Z - A.z) * k.z / 100; const x1 = X * cy - Z * sy, z1 = X * sy + Z * cy, y2 = Y * cp - z1 * sp, z2 = Y * sp + z1 * cp;
+    if (d + z2 < 0.25) return { x: NaN, y: NaN, z: z2 };
+    const s = f * d / (d + z2); return { x: W / 2 + x1 * s, y: H / 2 + 10 - y2 * s, z: z2 }; };
 }
 function montarMontanha() {
   if (!ultimo) return null;
@@ -2404,6 +2469,7 @@ function desenharMontanha() {
     cv.addEventListener('wheel', (e) => { e.preventDefault(); MT.rot.zoom = Math.max(0.5, Math.min(4, MT.rot.zoom * (e.deltaY > 0 ? 0.9 : 1.1))); pedirMontanha(); }, { passive: false });
     $('mt-girar').addEventListener('click', () => { MT.girar = !MT.girar; $('mt-girar').classList.toggle('primary', MT.girar); if (MT.girar) girarMontanha(); });
     new ResizeObserver(() => pedirMontanha()).observe(cv);
+    ligarNav3d(cv, MT, pedirMontanha, { reiniciar: () => { MT.rot = { yaw: -0.42, pitch: 0.62, zoom: 1 }; } });
     controleEixos($('mt-eixos'), MT.escala, [['x', 'tempo (anos)'], ['y', 'concentração'], ['z', 'patrimônio']], pedirMontanha);
   }
   MT.malha = montarMontanha();
@@ -2421,7 +2487,7 @@ function pintarMontanha() {
   const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
   const C = { ink: exCor('--ink'), muted: exCor('--muted'), rule: exCor('--rule'), rule2: exCor('--rule-2'), amber: exCor('--amber'), panel: exCor('--panel') };
   if (!M) { ctx.fillStyle = C.muted; ctx.font = '12px "IBM Plex Sans", sans-serif'; ctx.fillText('Rode a simulação para ver a montanha.', 16, 28); return; }
-  const P = proj3d(W, H, MT.rot, 0.3, MT.escala), T = M.ks.length, B = M.B;
+  const P = proj3d(W, H, MT.rot, 0.3, MT.escala, MT.alvo), T = M.ks.length, B = M.B;
   const X = (t) => -1 + 2 * t / Math.max(1, T - 1), Z = (b) => -1 + 2 * b / (B - 1), Y = (h) => -1 + 1.7 * h;
   const zVal = (v) => (v > 0 ? -1 + 2 * ((Math.log(v) - M.lo) / (M.hi - M.lo) * B - 0.5) / (B - 1) : -1);
   // chão: grade, eixos e linhas de meta e aportado
@@ -2444,6 +2510,7 @@ function pintarMontanha() {
   for (let t = 0; t < T - 1; t++) for (let b = 0; b < B - 1; b++) {
     const h = [M.dens[t].alt[b], M.dens[t + 1].alt[b], M.dens[t + 1].alt[b + 1], M.dens[t].alt[b + 1]];
     const v = [P(X(t), Y(h[0]), Z(b)), P(X(t + 1), Y(h[1]), Z(b)), P(X(t + 1), Y(h[2]), Z(b + 1)), P(X(t), Y(h[3]), Z(b + 1))];
+    if (v.some((q) => !isFinite(q.x))) continue;
     const hm = (h[0] + h[1] + h[2] + h[3]) / 4, luz = 0.55 + 0.45 * Math.max(0, Math.min(1, 0.5 + ((h[0] + h[3]) - (h[1] + h[2])) * 1.2 + ((h[0] + h[1]) - (h[2] + h[3])) * 0.6));
     quads.push({ v, z: (v[0].z + v[1].z + v[2].z + v[3].z) / 4, hm, luz, t, b });
   }
@@ -2471,7 +2538,7 @@ function pintarMontanha() {
     } else tip.hidden = true;
   }
   ctx.fillStyle = C.muted; ctx.font = '10.5px "IBM Plex Sans", sans-serif'; ctx.textAlign = 'left';
-  ctx.fillText('Arraste para girar · role para aproximar', 10, H - 8);
+  ctx.textAlign = 'right'; ctx.fillText('Arraste para girar · role para aproximar · W A S D para andar', W - 10, H - 8);
 }
 
 // ---------------------------------------------------------------- EXPLORAR: mapa 2D, nuvem 3D e ranking de todos os ativos
@@ -2690,7 +2757,10 @@ function exProjetar3d(W, H) {
   const E = S.ex, { yaw, pitch, zoom } = EX.rot, cy = Math.cos(yaw), sy_ = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
   const f = Math.min(W, H) * 0.235 * zoom, d = 3.6, cx = W / 2, cyy = H / 2 + 18;
   const k = S.ex.escala || { x: 100, y: 100, z: 100 }, kx = k.x / 100, ky = k.y / 100, kz = k.z / 100;
-  return (X, Y, Z) => { X *= kx; Y *= ky; Z *= kz; const x1 = X * cy - Z * sy_, z1 = X * sy_ + Z * cy, y2 = Y * cp - z1 * sp, z2 = Y * sp + z1 * cp, s = f * d / (d + z2); return { x: cx + x1 * s, y: cyy - y2 * s, z: z2, s }; };
+  const A = EX.alvo || { x: 0, y: 0, z: 0 };
+  return (X, Y, Z) => { X = (X - A.x) * kx; Y = (Y - A.y) * ky; Z = (Z - A.z) * kz; const x1 = X * cy - Z * sy_, z1 = X * sy_ + Z * cy, y2 = Y * cp - z1 * sp, z2 = Y * sp + z1 * cp;
+    if (d + z2 < 0.25) return { x: NaN, y: NaN, z: z2, s: 0 };
+    const s = f * d / (d + z2); return { x: cx + x1 * s, y: cyy - y2 * s, z: z2, s }; };
 }
 function exDesenhar3d(ctx, W, H, C, cores, escala) {
   const E = S.ex;
@@ -2717,7 +2787,7 @@ function exDesenhar3d(ctx, W, H, C, cores, escala) {
   // pontos: do mais longe para o mais perto, com neblina
   const pts = [];
   for (const p of EX.vis) { const vx = p[E.x], vy = p[E.y], vz = p[E.z]; if (!isFinite(vx) || !isFinite(vy) || !isFinite(vz)) continue;
-    const q = P(nrm('x', vx), nrm('y', vy), nrm('z', vz)); pts.push({ p, x: q.x, y: q.y, z: q.z, s: q.s, X: nrm('x', vx), Z: nrm('z', vz) }); }
+    const q = P(nrm('x', vx), nrm('y', vy), nrm('z', vz)); if (!isFinite(q.x)) continue; pts.push({ p, x: q.x, y: q.y, z: q.z, s: q.s, X: nrm('x', vx), Z: nrm('z', vz) }); }
   pts.sort((a, b) => b.z - a.z);
   const r0 = EX.vis.length > 3000 ? 1.9 : EX.vis.length > 600 ? 2.5 : 3.4, busca = EX.nAchou > 0;
   for (const d of pts) {
@@ -2735,7 +2805,7 @@ function exDesenhar3d(ctx, W, H, C, cores, escala) {
   if (h && h.X !== undefined) { const ch = P(h.X, -1, h.Z); ctx.strokeStyle = C.accent; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(h.x, h.y); ctx.lineTo(ch.x, ch.y); ctx.stroke(); ctx.setLineDash([]); ctx.beginPath(); ctx.arc(ch.x, ch.y, 3, 0, 7); ctx.fillStyle = C.accent; ctx.fill(); }
   exMarcaHover(ctx, C, r0);
   ctx.fillStyle = C.muted; ctx.font = '10.5px "IBM Plex Sans", sans-serif'; ctx.textAlign = 'left';
-  ctx.fillText('Arraste para girar · role ou pince para aproximar', 10, H - 8);
+  ctx.textAlign = 'right'; ctx.fillText('Arraste para girar · role para aproximar · W A S D para andar', W - 10, H - 8);
 }
 function exMaisPerto(x, y, raio = 14) {
   let melhor = null, dm = raio * raio;
@@ -2791,7 +2861,18 @@ function exInteracao() {
   cv.addEventListener('pointerup', fim); cv.addEventListener('pointercancel', fim);
   cv.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') { EX.mouse = null; EX.hover = null; $('ex-tip').hidden = true; exPedir(); } });
   cv.addEventListener('wheel', (e) => { e.preventDefault(); const q = pos(e); exZoom(e.deltaY > 0 ? 1.15 : 1 / 1.15, q.x, q.y); }, { passive: false });
-  cv.addEventListener('dblclick', () => { EX.view = null; EX.rot = { yaw: -0.65, pitch: 0.38, zoom: 1 }; exPedir(); });
+  cv.addEventListener('dblclick', () => { EX.view = null; EX.rot = { yaw: -0.65, pitch: 0.38, zoom: 1 }; EX.alvo = { x: 0, y: 0, z: 0 }; exPedir(); });
+  ligarNav3d(cv, EX, exPedir, {
+    reiniciar: () => { EX.view = null; EX.rot = { yaw: -0.65, pitch: 0.38, zoom: 1 }; },
+    plano: () => S.ex.modo !== '3d',
+    mover2d: (k, dt) => { // no mapa 2D: W/A/S/D movem a vista, Q/E e +/− aproximam
+      const V = EX.view; if (!V) return; const wx = V.x1 - V.x0, wy = V.y1 - V.y0, v = 0.6 * dt;
+      const dx = (k.has('d') || k.has('dir') ? 1 : 0) - (k.has('a') || k.has('esq') ? 1 : 0), dy = (k.has('w') || k.has('cima') ? 1 : 0) - (k.has('s') || k.has('baixo') ? 1 : 0);
+      const z = k.has('e') || k.has('mais') ? 1 - dt * 1.2 : k.has('q') || k.has('menos') ? 1 + dt * 1.2 : 1;
+      const cx = (V.x0 + V.x1) / 2 + dx * wx * v, cy = (V.y0 + V.y1) / 2 + dy * wy * v;
+      EX.view = { x0: cx - wx * z / 2, x1: cx + wx * z / 2, y0: cy - wy * z / 2, y1: cy + wy * z / 2 };
+    },
+  });
 }
 function exZoom(f, x, y, base) {
   if (S.ex.modo === '3d') { EX.rot.zoom = Math.max(0.4, Math.min(8, (base ? base.zoom : EX.rot.zoom) / f)); exPedir(); return; }
