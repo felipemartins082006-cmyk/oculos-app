@@ -91,40 +91,58 @@ public class TestesMercador implements FabricGameTest {
 		VillagerEntity v = ctx.spawnEntity(EntityType.VILLAGER, new BlockPos(2, 1, 2));
 		v.setVillagerData(v.getVillagerData().withProfession(ModRegistro.MERCADOR).withLevel(1));
 		FakePlayer p = FakePlayer.get(ctx.getWorld());
+		p.getInventory().clear();
 		p.refreshPositionAndAngles(v.getX() + 1, v.getY(), v.getZ(), 0, 0);
 		v.setCustomer(p);
 		MercadorScreenHandler h = new MercadorScreenHandler(1, p.getInventory(), v);
+		int saida = MercadorScreenHandler.SAIDA;
 
-		h.getSlot(1).setStack(new ItemStack(Items.DIRT, 64));
-		h.getSlot(2).setStack(new ItemStack(Items.DIRT, 36));
+		// 100 terras nos 2 espaços de pagamento: faltam 25 para 1 esmeralda
+		h.getSlot(0).setStack(new ItemStack(Items.DIRT, 64));
+		h.getSlot(1).setStack(new ItemStack(Items.DIRT, 36));
 		Cotacao c = h.cotacaoCliente();
 		ctx.assertTrue(c.status() == Cotacao.Status.INSUFICIENTE, "100 terras: insuficiente, veio " + c);
 		igual(ctx, 25, c.faltam(), "faltam com 100 terras");
-		ctx.assertTrue(h.getSlot(0).getStack().isEmpty(), "sem proposta não pode haver esmeralda na saída");
-		ctx.assertFalse(h.getSlot(0).canTakeItems(p), "não pode pegar a saída sem proposta");
+		ctx.assertTrue(h.getSlot(saida).getStack().isEmpty(), "sem proposta não pode haver esmeralda na saída");
+		ctx.assertFalse(h.getSlot(saida).canTakeItems(p), "não pode pegar a saída sem proposta");
 
-		h.getSlot(3).setStack(new ItemStack(Items.DIRT, 30));
+		h.getSlot(1).setStack(new ItemStack(Items.DIRT, 64));
 		c = h.cotacaoCliente();
-		ctx.assertTrue(c.ok(), "130 terras: 1 esmeralda, veio " + c);
-		ctx.assertTrue(h.getSlot(0).getStack().isOf(Items.EMERALD) && h.getSlot(0).getStack().getCount() == 1, "saída = 1 esmeralda");
+		ctx.assertTrue(c.ok() && c.esmeraldas() == 1 && c.usados() == 125, "128 terras: 1 esmeralda usando 125, veio " + c);
 
 		int xpAntes = v.getExperience();
-		h.onSlotClick(0, 0, SlotActionType.PICKUP, p);
+		h.onSlotClick(saida, 0, SlotActionType.PICKUP, p);
 		ctx.assertTrue(h.getCursorStack().isOf(Items.EMERALD) && h.getCursorStack().getCount() == 1, "cursor com 1 esmeralda");
-		int sobra = 0;
-		for (int i = 1; i <= 9; i++) sobra += h.getSlot(i).getStack().getCount();
-		igual(ctx, 5, sobra, "terras que sobraram no balcão");
+		igual(ctx, 3, h.getSlot(0).getStack().getCount() + h.getSlot(1).getStack().getCount(), "terras que sobraram");
 		ctx.assertTrue(v.getExperience() > xpAntes, "o Mercador deveria ganhar experiência");
-		ctx.assertTrue(h.cotacaoCliente().status() == Cotacao.Status.INSUFICIENTE, "5 terras: insuficiente");
 		h.setCursorStack(ItemStack.EMPTY);
+		h.getSlot(0).setStack(ItemStack.EMPTY);
+		h.getSlot(1).setStack(ItemStack.EMPTY);
 
-		// shift-clique vende tudo de uma vez
-		for (int i = 1; i <= 9; i++) h.getSlot(i).setStack(new ItemStack(Items.DIAMOND, 10));
-		h.quickMove(p, 0);
-		int esmeraldas = p.getInventory().count(Items.EMERALD);
-		ctx.assertTrue(esmeraldas == 64, "esperava 64 esmeraldas no inventário, veio " + esmeraldas);
+		// lista de trocas montada a partir do inventário
+		p.getInventory().insertStack(new ItemStack(Items.DIRT, 64));
+		p.getInventory().insertStack(new ItemStack(Items.DIRT, 64));
+		p.getInventory().insertStack(new ItemStack(Items.DIRT, 64));
+		p.getInventory().insertStack(new ItemStack(Items.DIRT, 64));
+		p.getInventory().insertStack(new ItemStack(Items.DIRT, 44));
+		p.getInventory().insertStack(new ItemStack(Items.BEDROCK, 1));
+		h.sendContentUpdates();
+		var ofertas = h.getOfertas();
+		igual(ctx, 1, ofertas.size(), "só a terra deveria aparecer na lista (bedrock não)");
+		var o = ofertas.get(0);
+		ctx.assertTrue(o.item().isOf(Items.DIRT) && o.quantidade() == 125 && o.esmeraldas() == 1 && o.temJogador() == 300,
+			"oferta da terra: " + o);
 
-		h.getSlot(1).setStack(new ItemStack(Items.STONE, 3));
+		// clicar na troca enche os espaços; shift-clique vende tudo o que dá
+		h.escolherOferta(0);
+		igual(ctx, 128, h.getSlot(0).getStack().getCount() + h.getSlot(1).getStack().getCount(), "espaços cheios ao escolher");
+		h.onSlotClick(saida, 0, SlotActionType.QUICK_MOVE, p);
+		igual(ctx, 2, p.getInventory().count(Items.EMERALD), "esmeraldas depois do shift-clique");
+		igual(ctx, 50, p.getInventory().count(Items.DIRT) + h.getSlot(0).getStack().getCount() + h.getSlot(1).getStack().getCount(),
+			"terras que sobraram depois do shift-clique");
+
+		h.getSlot(0).setStack(new ItemStack(Items.STONE, 3));
+		h.getSlot(1).setStack(new ItemStack(Items.DIRT, 3));
 		ctx.assertTrue(h.cotacaoCliente().status() == Cotacao.Status.MISTURADO, "itens misturados");
 
 		h.onClosed(p);

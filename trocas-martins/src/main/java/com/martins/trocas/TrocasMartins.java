@@ -5,7 +5,12 @@ import com.martins.trocas.mercador.InteracaoMercador;
 import com.martins.trocas.mercador.MercadorConfig;
 import com.martins.trocas.mercador.PrecoMercador;
 import com.martins.trocas.trocas.NovasTrocas;
+import com.martins.trocas.mercador.MercadorScreenHandler;
+import com.martins.trocas.rede.EscolherOfertaPayload;
+import com.martins.trocas.rede.OfertasPayload;
 import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.player.UseEntityCallback;
@@ -26,6 +31,14 @@ public class TrocasMartins implements ModInitializer {
 		MercadorConfig.carregar();
 		ModRegistro.registrar();
 		NovasTrocas.registrar();
+
+		PayloadTypeRegistry.playS2C().register(OfertasPayload.ID, OfertasPayload.CODEC);
+		PayloadTypeRegistry.playC2S().register(EscolherOfertaPayload.ID, EscolherOfertaPayload.CODEC);
+		ServerPlayNetworking.registerGlobalReceiver(EscolherOfertaPayload.ID, (payload, ctx) -> {
+			if (ctx.player().currentScreenHandler instanceof MercadorScreenHandler h) {
+				h.escolherOferta(payload.indice());
+			}
+		});
 
 		UseEntityCallback.EVENT.register(InteracaoMercador::aoInteragir);
 		CommandRegistrationCallback.EVENT.register(ComandoMercador::registrar);

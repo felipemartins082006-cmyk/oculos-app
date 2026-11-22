@@ -34,7 +34,8 @@ public final class ModRegistro {
 		.instrument(NoteBlockInstrument.BASS)
 		.strength(2.5f)
 		.sounds(BlockSoundGroup.WOOD)
-		.burnable());
+		.burnable()
+		.nonOpaque());
 
 	public static final Item BALCAO_DO_MERCADOR_ITEM = new BlockItem(BALCAO_DO_MERCADOR, new Item.Settings());
 

@@ -31,29 +31,29 @@ Em servidor: o mod precisa estar no servidor **e** nos jogadores (por causa da t
 | Tábuas | Tábuas | Tábuas |
 
 Coloque o Balcão perto de um aldeão desempregado e ele vira **Mercador** (chapéu marrom e túnica verde),
-igual acontece com a mesa de cartografia, o atril etc. Ele fica na aba "Blocos funcionais" do criativo.
+igual acontece com a mesa de cartografia, o atril etc. O Balcão é um armário de abeto com pano verde,
+esmeraldas e moedas de ouro em cima, e fica na aba "Blocos funcionais" do criativo.
 
 ### Como vender
 
-Clique com o botão direito no Mercador. Abre o balcão de vendas:
+Clique com o botão direito no Mercador. Abre a **mesma tela de trocas dos aldeões**:
 
-- **9 espaços** à esquerda: coloque o que quer vender (um tipo de item por vez, até 576 unidades).
-- O Mercador avalia e mostra a proposta na hora:
-
-| Situação | O que aparece |
-|---|---|
-| Vale 1 esmeralda ou mais | Seta verde e as esmeraldas na saída. Ele usa **só os itens necessários**; o resto fica no balcão. O campo amarelo mostra quantos faltam para ganhar **+1 esmeralda**. |
-| Não vale 1 esmeralda | **X vermelho** (troca impossível) e o campo **"Faltam: N"** com quantos itens ainda faltam. |
-| Itens de tipos diferentes | X vermelho: "Coloque só um tipo de item". |
-| Item que ele não compra | X vermelho (esmeraldas, bedrock, blocos de comando, ovos de criação...). |
-
-Pegue as esmeraldas para fechar a venda. **Shift + clique** nas esmeraldas vende tudo de uma vez.
-Ao fechar a tela, o que sobrou volta para o seu inventário.
+- **À esquerda, a lista de trocas**: um item de cada tipo que você tem no inventário e que o Mercador
+  compra, com a quantidade que ele pede e as esmeraldas que paga (ex.: 64 + 48 terras → 1 esmeralda).
+  Se você não tem o suficiente, a seta vira o **X vermelho**; passe o mouse nele para ver
+  **quantos itens faltam**.
+- **Clicar numa troca** coloca os itens nos 2 espaços de pagamento, como numa troca normal.
+  Você também pode arrastar os itens para lá com a mão.
+- **No resultado** aparecem as esmeraldas. Ele usa só os itens necessários e o resto fica no pagamento.
+- Se o que está no pagamento não fecha 1 esmeralda, aparece o **X vermelho grande** (o mesmo das trocas
+  esgotadas) e, embaixo dele, o aviso **"Faltam N itens"**. Também avisa se você misturar itens
+  diferentes ou colocar algo que ele não compra.
+- **Shift + clique** nas esmeraldas vende tudo daquele item que estiver no seu inventário.
+- A barra de experiência do aldeão funciona como nas trocas normais: vender sobe o nível do Mercador.
 
 | Faltam itens | Proposta aceita |
 |---|---|
 | ![Faltam itens](docs/2_faltam.png) | ![Proposta](docs/3_proposta.png) |
-| ![Diamantes](docs/4_diamantes.png) | ![Itens misturados](docs/5_misturado.png) |
 
 ### Como o preço é calculado
 
@@ -62,6 +62,7 @@ Ao fechar a tela, o que sobrou volta para o seu inventário.
 - **Itens fabricados** valem a soma dos ingredientes da receita × 90%. Isso funciona sozinho para
   todos os itens do jogo, **inclusive itens de outros mods** que tenham receita.
 - Itens sem receita e sem preço usam um valor pela raridade.
+- Nada vale menos que 1 esmeralda a cada 125 itens, para sempre caber nos 2 espaços de pagamento.
 - **Durabilidade**: ferramenta gasta vale menos. **Encantamentos** aumentam o valor
   (maldições não contam). **Caixas de shulker** contam o que tem dentro.
 - O Mercador paga no máximo **64 esmeraldas por item**.
@@ -121,7 +122,7 @@ abaixo (configurável em `trocas_novas_por_nivel`). Só vale para aldeões que a
 | **Armeiro de armas** | escudo; compra ferro | espada de ferro Afiação II; cargas de vento | machado Afiação III; vara de breeze | espada de diamante Afiação IV + Pilhagem II | **núcleo pesado** (para a maça); espada Afiação V + Aspecto Flamejante II |
 | **Mascate** | frascos de experiência; vagem de jarro; semente de flor-tocha | fragmento de cerâmica sorteado; etiqueta; ovo de farejador (raras) | | | |
 
-![Bibliotecário mestre com trocas novas](docs/6_bibliotecario.png)
+![Bibliotecário mestre com trocas novas](docs/4_bibliotecario.png)
 
 ## Para desenvolvedores
 
@@ -132,12 +133,12 @@ Requer Java 21.
 ./gradlew runClient      # abre o jogo com o mod
 ./gradlew runGametest    # testes automáticos num servidor de verdade
 xvfb-run ./gradlew runFotos   # tira as fotos da pasta docs/ (opcional)
-python3 tools/gerar_texturas.py   # recria as texturas
+python3 tools/gerar_texturas.py   # recria a roupa do Mercador
 ```
 
 Código principal em `src/main/java/com/martins/trocas`:
 
 - `mercador/PrecoMercador.java` — cálculo dos preços e da proposta.
 - `mercador/TabelaPrecos.java` — preços-base das matérias-primas.
-- `mercador/MercadorScreenHandler.java` / `client/MercadorScreen.java` — a tela do balcão.
+- `mercador/MercadorScreenHandler.java` / `client/MercadorScreen.java` — a tela de trocas do Mercador.
 - `trocas/NovasTrocas.java` — as trocas novas de cada profissão.

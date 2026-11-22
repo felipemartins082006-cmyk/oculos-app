@@ -51,6 +51,13 @@ public class FotosCliente implements ClientModInitializer {
 	private void mouse(MinecraftClient c, double guiX, double guiY) {
 		double s = c.getWindow().getScaleFactor();
 		GLFW.glfwSetCursorPos(c.getWindow().getHandle(), guiX * s, guiY * s);
+		try {
+			var m = net.minecraft.client.Mouse.class.getDeclaredMethod("onCursorPos", long.class, double.class, double.class);
+			m.setAccessible(true);
+			m.invoke(c.mouse, c.getWindow().getHandle(), guiX * s, guiY * s);
+		} catch (ReflectiveOperationException e) {
+			throw new RuntimeException(e);
+		}
 	}
 
 	private void cmd(MinecraftServer server, ServerPlayerEntity p, String comando) {
@@ -126,69 +133,48 @@ public class FotosCliente implements ClientModInitializer {
 				c.options.hudHidden = false;
 				ServerPlayerEntity p = server.getPlayerManager().getPlayer(c.player.getUuid());
 				server.execute(() -> {
+					p.getInventory().clear();
 					p.getInventory().setStack(0, new ItemStack(Items.DIRT, 64));
-					p.getInventory().setStack(1, new ItemStack(Items.DIAMOND, 12));
-					p.getInventory().setStack(2, new ItemStack(Items.WHEAT, 40));
-					p.getInventory().setStack(3, new ItemStack(Items.IRON_INGOT, 20));
+					p.getInventory().setStack(1, new ItemStack(Items.DIRT, 36));
+					p.getInventory().setStack(2, new ItemStack(Items.DIAMOND, 5));
+					p.getInventory().setStack(3, new ItemStack(Items.WHEAT, 40));
+					p.getInventory().setStack(4, new ItemStack(Items.IRON_INGOT, 20));
+					p.getInventory().setStack(5, new ItemStack(Items.ROTTEN_FLESH, 23));
+					p.getInventory().setStack(6, new ItemStack(Items.OAK_LOG, 64));
+					p.getInventory().setStack(7, new ItemStack(Items.BREAD, 16));
 					InteracaoMercador.aoInteragir(p, p.getWorld(), Hand.MAIN_HAND, mercador, null);
-					if (p.currentScreenHandler instanceof MercadorScreenHandler h) {
-						h.getSlot(1).setStack(new ItemStack(Items.DIRT, 64));
-						h.getSlot(2).setStack(new ItemStack(Items.DIRT, 36));
-						h.sendContentUpdates();
-					}
 				});
 				etapa = 4;
-				espera = 30;
+				espera = 20;
 			}
 			case 4 -> {
-				int x = (c.getWindow().getScaledWidth() - 176) / 2, y = (c.getWindow().getScaledHeight() - 192) / 2;
-				mouse(c, x + 101, y + 42);
+				ServerPlayerEntity p = server.getPlayerManager().getPlayer(c.player.getUuid());
+				server.execute(() -> {
+					if (p.currentScreenHandler instanceof MercadorScreenHandler h) {
+						h.sendContentUpdates();
+						h.escolherOferta(0); // terra: 100 de 112
+					}
+				});
+				int x = (c.getWindow().getScaledWidth() - 276) / 2, y = (c.getWindow().getScaledHeight() - 166) / 2;
+				mouse(c, x + 64, y + 24);
 				etapa = 5;
-				espera = 10;
+				espera = 20;
 			}
 			case 5 -> {
 				foto(c, "2_faltam");
 				ServerPlayerEntity p = server.getPlayerManager().getPlayer(c.player.getUuid());
 				server.execute(() -> {
 					if (p.currentScreenHandler instanceof MercadorScreenHandler h) {
-						h.getSlot(3).setStack(new ItemStack(Items.DIRT, 64));
-						h.getSlot(4).setStack(new ItemStack(Items.DIRT, 64));
-						h.sendContentUpdates();
+						for (int i = 0; i < h.getOfertas().size(); i++)
+							if (h.getOfertas().get(i).item().isOf(Items.DIAMOND)) h.escolherOferta(i);
 					}
 				});
-				mouse(c, 2, 2);
+				mouse(c, 1, 1);
 				etapa = 6;
 				espera = 20;
 			}
 			case 6 -> {
 				foto(c, "3_proposta");
-				ServerPlayerEntity p = server.getPlayerManager().getPlayer(c.player.getUuid());
-				server.execute(() -> {
-					if (p.currentScreenHandler instanceof MercadorScreenHandler h) {
-						for (int i = 1; i <= 9; i++) h.getSlot(i).setStack(ItemStack.EMPTY);
-						h.getSlot(5).setStack(new ItemStack(Items.DIAMOND, 3));
-						h.sendContentUpdates();
-					}
-				});
-				etapa = 7;
-				espera = 20;
-			}
-			case 7 -> {
-				foto(c, "4_diamantes");
-				ServerPlayerEntity p = server.getPlayerManager().getPlayer(c.player.getUuid());
-				server.execute(() -> {
-					if (p.currentScreenHandler instanceof MercadorScreenHandler h) {
-						for (int i = 1; i <= 9; i++) h.getSlot(i).setStack(ItemStack.EMPTY);
-						h.getSlot(1).setStack(new ItemStack(Items.DIRT, 10));
-						h.getSlot(2).setStack(new ItemStack(Items.COBBLESTONE, 10));
-						h.sendContentUpdates();
-					}
-				});
-				etapa = 8;
-				espera = 20;
-			}
-			case 8 -> {
-				foto(c, "5_misturado");
 				ServerPlayerEntity p = server.getPlayerManager().getPlayer(c.player.getUuid());
 				server.execute(() -> {
 					p.closeHandledScreen();
@@ -198,7 +184,7 @@ public class FotosCliente implements ClientModInitializer {
 				espera = 30;
 			}
 			case 9 -> {
-				foto(c, "6_bibliotecario");
+				foto(c, "4_bibliotecario");
 				etapa = 10;
 				espera = 10;
 			}

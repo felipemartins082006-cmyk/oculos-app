@@ -157,5 +157,5 @@ def aldeao():
     salvar(img, 'entity', 'villager', 'profession', 'mercador.png')
     salvar(img, 'entity', 'zombie_villager', 'profession', 'mercador.png')
 
-gui(); bloco(); aldeao()
+aldeao()
 print('texturas geradas')

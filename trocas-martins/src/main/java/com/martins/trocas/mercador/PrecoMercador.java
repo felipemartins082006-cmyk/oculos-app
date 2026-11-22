@@ -39,6 +39,8 @@ import java.util.Map;
 public final class PrecoMercador {
 	public static final TagKey<Item> NAO_COMPRA = TagKey.of(RegistryKeys.ITEM, TrocasMartins.id("nao_compra"));
 	public static final long UMA_ESMERALDA = 1000;
+	/** 8 milésimos = 125 itens por esmeralda: cabe nos 2 espaços de pagamento. */
+	public static final long VALOR_MINIMO = 8;
 	/** Itens criados valem 90% da soma dos ingredientes (o Mercador prefere matéria-prima). */
 	public static final double FATOR_RECEITA = 0.9;
 	/** Guardado em itens únicos comprados de aldeões: esmeraldas pagas. */
@@ -243,6 +245,19 @@ public final class PrecoMercador {
 		return Math.max(0.01, cfg.multiplicador_global * bonus);
 	}
 
+	/**
+	 * Quanto o Mercador paga por UM item desta pilha (milésimos de esmeralda), já com o multiplicador.
+	 * Nunca menos que {@link #VALOR_MINIMO}, para que os 2 espaços de pagamento (128 itens)
+	 * sempre consigam fechar pelo menos 1 esmeralda. 0 = não compra.
+	 */
+	public static long valorEfetivo(ItemStack stack, double multiplicador) {
+		long valor = valorUnitario(stack);
+		if (valor <= 0) return 0;
+		valor = Math.max(VALOR_MINIMO, Math.round(valor * multiplicador));
+		int maxPorItem = Math.max(1, Math.min(64, MercadorConfig.atual.max_esmeraldas_por_item));
+		return Math.min(valor, maxPorItem * UMA_ESMERALDA);
+	}
+
 	public static Cotacao cotar(List<ItemStack> pilhas, double multiplicador) {
 		ItemStack referencia = ItemStack.EMPTY;
 		int total = 0;
@@ -257,11 +272,8 @@ public final class PrecoMercador {
 		}
 		if (referencia.isEmpty()) return Cotacao.VAZIA;
 
-		long valor = valorUnitario(referencia);
+		long valor = valorEfetivo(referencia, multiplicador);
 		if (valor <= 0) return Cotacao.simples(Cotacao.Status.NAO_COMPRA, total);
-		valor = Math.max(1, Math.round(valor * multiplicador));
-		int maxPorItem = Math.max(1, Math.min(64, MercadorConfig.atual.max_esmeraldas_por_item));
-		valor = Math.min(valor, maxPorItem * UMA_ESMERALDA);
 
 		int itensPorEsmeralda = valor < UMA_ESMERALDA ? (int) teto(UMA_ESMERALDA, valor) : 0;
 		int esmPorItemX10 = valor >= UMA_ESMERALDA ? (int) (valor / 100) : 0;
@@ -276,7 +288,7 @@ public final class PrecoMercador {
 		return new Cotacao(Cotacao.Status.OK, (int) esmeraldas, usados, total, faltamProxima, itensPorEsmeralda, esmPorItemX10);
 	}
 
-	private static long teto(long a, long b) {
+	public static long teto(long a, long b) {
 		return (a + b - 1) / b;
 	}
 }

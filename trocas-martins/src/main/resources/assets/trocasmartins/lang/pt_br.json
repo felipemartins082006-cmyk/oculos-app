@@ -2,16 +2,8 @@
   "block.trocasmartins.balcao_do_mercador": "Balcão do Mercador",
   "entity.minecraft.villager.mercador": "Mercador",
   "entity.minecraft.villager.trocasmartins.mercador": "Mercador",
-  "gui.trocasmartins.vazio": "Coloque os itens que quer vender",
-  "gui.trocasmartins.vazio2": "O Mercador compra quase tudo!",
-  "gui.trocasmartins.misturado": "Coloque só um tipo de item",
-  "gui.trocasmartins.misturado2": "Retire os itens diferentes",
-  "gui.trocasmartins.nao_compra": "O Mercador não compra este item",
-  "gui.trocasmartins.nao_compra2": "Tente outro item",
-  "gui.trocasmartins.insuficiente": "%s itens não valem 1 esmeralda",
-  "gui.trocasmartins.oferta": "Compra %s itens por %s esmeralda(s)",
-  "gui.trocasmartins.faltam": "Faltam: %s",
-  "gui.trocasmartins.proxima": "+1: faltam %s",
-  "gui.trocasmartins.faltam_longo": "Faltam %s itens para 1 esmeralda",
-  "gui.trocasmartins.impossivel": "Compra não é possível"
+  "gui.trocasmartins.faltam_itens": "Faltam %s itens",
+  "gui.trocasmartins.misturado": "Só um tipo de item",
+  "gui.trocasmartins.nao_compra": "Não compro isso",
+  "gui.trocasmartins.impossivel": "Troca impossível"
 }
