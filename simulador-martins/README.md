@@ -84,7 +84,9 @@ retorno × queda (Otimizar). Em todos, cada eixo X, Y e Z tem barra para aumenta
 
 **Navegar dentro dos gráficos 3D** — em todos os gráficos 3D, clique no gráfico e ande com W/S (frente e
 trás), A/D (lados), E/Q (sobe e desce); setas giram, +/− aproximam, Shift acelera e R volta ao início.
-No mapa 2D, W/A/S/D movem a vista. No celular, o controle na tela faz o mesmo.
+No mapa 2D, W/A/S/D movem a vista. No celular, o controle na tela faz o mesmo. **Modo jogo** (tecla F ou
+botão): o cursor trava e o mouse gira a câmera em primeira pessoa; W voa para onde você olha; a mira
+no centro mostra o ponto apontado e o clique abre ele; Esc sai.
 
 **Mapa 3D das combinações de classes** (Otimizar) — otimiza de uma vez todas as combinações das
 classes marcadas (1, 2, 3... classes, até o limite escolhido) com o objetivo e os limites definidos, e

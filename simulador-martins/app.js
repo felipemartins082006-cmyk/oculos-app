@@ -2069,14 +2069,26 @@ function ligarNav3d(canvas, obj, pedir, op = {}) {
   canvas.tabIndex = 0;
   canvas.setAttribute('aria-keyshortcuts', 'W A S D Q E ArrowUp ArrowDown ArrowLeft ArrowRight + - R');
   const segurando = new Set(); let rapido = false, ultimo = 0, laco = 0;
+  const D = op.d || 3.6, esc = () => (op.escala ? op.escala() : obj.escala) || { x: 100, y: 100, z: 100 };
+  // direção para onde a câmera olha (no espaço do gráfico)
+  const frente = () => { const cy = Math.cos(obj.rot.yaw), sy = Math.sin(obj.rot.yaw), cp = Math.cos(obj.rot.pitch), sp = Math.sin(obj.rot.pitch); return { x: cp * sy, y: sp, z: cp * cy }; };
+  // olhar como num jogo: gira em torno da própria câmera (o ponto central acompanha)
+  const olhar = (dx, dy) => {
+    const a = frente(), k = esc();
+    obj.rot.yaw += dx * 0.0028; obj.rot.pitch = Math.max(-1.5, Math.min(1.5, obj.rot.pitch - dy * 0.0028));
+    const b = frente();
+    obj.alvo.x += D * (b.x - a.x) / (k.x / 100); obj.alvo.y += D * (b.y - a.y) / (k.y / 100); obj.alvo.z += D * (b.z - a.z) / (k.z / 100);
+    if (op.mira) op.mira(canvas.clientWidth / 2, canvas.clientHeight / 2);
+    pedir();
+  };
   const passo = (t) => {
     if (!segurando.size) { laco = 0; ultimo = 0; return; }
     const dt = ultimo ? Math.min(0.05, (t - ultimo) / 1000) : 0.016; ultimo = t;
     if (op.plano && op.plano()) { op.mover2d(segurando, dt * (rapido ? 3 : 1)); pedir(); laco = requestAnimationFrame(passo); return; }
     const v = (rapido ? 2.4 : 0.8) * dt / Math.max(0.5, obj.rot.zoom), yaw = obj.rot.yaw, A = obj.alvo;
-    const fx = Math.sin(yaw), fz = Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
-    if (segurando.has('w')) { A.x += fx * v; A.z += fz * v; }
-    if (segurando.has('s')) { A.x -= fx * v; A.z -= fz * v; }
+    const fw = frente(), rx = Math.cos(yaw), rz = -Math.sin(yaw);
+    if (segurando.has('w')) { A.x += fw.x * v; A.y += fw.y * v; A.z += fw.z * v; }
+    if (segurando.has('s')) { A.x -= fw.x * v; A.y -= fw.y * v; A.z -= fw.z * v; }
     if (segurando.has('d')) { A.x += rx * v; A.z += rz * v; }
     if (segurando.has('a')) { A.x -= rx * v; A.z -= rz * v; }
     if (segurando.has('e')) A.y += v;
@@ -2092,8 +2104,19 @@ function ligarNav3d(canvas, obj, pedir, op = {}) {
   };
   const inicia = () => { if (!laco) laco = requestAnimationFrame(passo); };
   const reinicia = () => { obj.alvo.x = obj.alvo.y = obj.alvo.z = 0; if (op.reiniciar) op.reiniciar(); pedir(); };
+  // modo jogo: trava o cursor (pointer lock) e o mouse gira a câmera; Esc sai
+  const jogando = () => document.pointerLockElement === canvas;
+  const entrarJogo = () => { try { const r = canvas.requestPointerLock && canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (e) { /* sem suporte */ } };
+  document.addEventListener('mousemove', (e) => { if (jogando()) olhar(e.movementX || 0, e.movementY || 0); });
+  document.addEventListener('pointerlockchange', () => {
+    const on = jogando(); box.classList.toggle('jogando', on);
+    const b = pad.querySelector('[data-nav="jogo"]'); if (b) { b.classList.toggle('on', on); b.textContent = on ? 'Esc para sair' : 'Modo jogo (F)'; }
+    if (on) { canvas.focus({ preventScroll: true }); if (op.mira) op.mira(canvas.clientWidth / 2, canvas.clientHeight / 2); } else segurando.clear();
+    pedir();
+  });
   canvas.addEventListener('keydown', (e) => {
     const k = e.key.toLowerCase(); rapido = e.shiftKey;
+    if (k === 'f') { e.preventDefault(); jogando() ? document.exitPointerLock() : entrarJogo(); return; }
     if (k === 'r' || k === '0') { e.preventDefault(); reinicia(); return; }
     const n = NAV_TECLAS[k]; if (!n) return;
     e.preventDefault(); segurando.add(n); inicia();
@@ -2103,15 +2126,19 @@ function ligarNav3d(canvas, obj, pedir, op = {}) {
   canvas.addEventListener('pointerdown', () => canvas.focus({ preventScroll: true }));
   // controle na tela (celular e quem prefere o mouse)
   const box = canvas.parentElement, pad = document.createElement('div');
+  canvas.addEventListener('dblclick', () => { if (!jogando()) return; });
   pad.className = 'nav3d';
-  pad.innerHTML = '<span class="nav-dica">Clique no gráfico e use <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> · <kbd>Q</kbd>/<kbd>E</kbd> desce/sobe · setas giram · <kbd>R</kbd> volta</span>' +
+  pad.innerHTML = '<span class="nav-dica">Clique no gráfico e use <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> · <kbd>Q</kbd>/<kbd>E</kbd> desce/sobe · <kbd>F</kbd> modo jogo (mouse gira) · <kbd>R</kbd> volta</span>' +
     '<div class="nav-pad" role="group" aria-label="Navegar no gráfico 3D">' +
     [['q', 'Descer', '▾'], ['w', 'Avançar', 'W'], ['e', 'Subir', '▴'], ['a', 'Esquerda', 'A'], ['s', 'Recuar', 'S'], ['d', 'Direita', 'D']]
       .map(([k, t, l]) => `<button type="button" data-nav="${k}" title="${t}" aria-label="${t}">${l}</button>`).join('') +
-    '<button type="button" data-nav="r" class="nav-r" title="Voltar ao início" aria-label="Voltar ao início">↺</button></div>';
+    '<button type="button" data-nav="r" class="nav-r" title="Voltar ao início" aria-label="Voltar ao início">↺</button></div>' +
+    '<button type="button" data-nav="jogo" class="nav-jogo" title="O mouse gira a câmera como num jogo; Esc sai">Modo jogo (F)</button>';
   box.appendChild(pad);
+  const mira = document.createElement('div'); mira.className = 'mira3d'; mira.setAttribute('aria-hidden', 'true'); box.appendChild(mira);
   const solta = () => { for (const k of ['w', 'a', 's', 'd', 'q', 'e']) segurando.delete(k); };
-  pad.addEventListener('pointerdown', (e) => { const b = e.target.closest('[data-nav]'); if (!b) return; e.preventDefault(); if (b.dataset.nav === 'r') { reinicia(); return; } segurando.add(b.dataset.nav); inicia(); });
+  pad.addEventListener('pointerdown', (e) => { const b = e.target.closest('[data-nav]'); if (!b) return; e.preventDefault(); if (b.dataset.nav === 'r') { reinicia(); return; }
+    if (b.dataset.nav === 'jogo') { jogando() ? document.exitPointerLock() : entrarJogo(); return; } segurando.add(b.dataset.nav); inicia(); });
   ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => pad.addEventListener(ev, solta));
   return { reinicia };
 }
@@ -2128,6 +2155,7 @@ class Cena3D {
     canvas.addEventListener('pointerdown', (e) => { e.preventDefault(); canvas.setPointerCapture(e.pointerId); const q = pos(e); ptrs.set(e.pointerId, q); ini = { ...q, rot: { ...this.rot }, mov: 0 };
       if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinca = { d: Math.hypot(a.x - b.x, a.y - b.y), zoom: this.rot.zoom }; } });
     canvas.addEventListener('pointermove', (e) => {
+      if (document.pointerLockElement === canvas) return;
       const q = pos(e); if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, q);
       if (pinca && ptrs.size === 2) { const [a, b] = [...ptrs.values()]; this.rot.zoom = Math.max(0.4, Math.min(6, pinca.zoom * Math.hypot(a.x - b.x, a.y - b.y) / (pinca.d || 1))); this.pedir(); return; }
       if (ini && ptrs.size === 1) { const dx = q.x - ini.x, dy = q.y - ini.y; ini.mov = Math.max(ini.mov, Math.abs(dx) + Math.abs(dy));
@@ -2135,14 +2163,14 @@ class Cena3D {
       this.mouse = q; this.pedir();
     });
     const fim = (e) => {
-      if (this.aoClicar && ini && ini.mov <= 4 && ptrs.size === 1) { const q = pos(e); let m = null, dm = 24 * 24; for (const a of this.alvos || []) { const dd = (a.x - q.x) ** 2 + (a.y - q.y) ** 2; if (dd < dm) { dm = dd; m = a; } } if (m) this.aoClicar(m); }
+      if (this.aoClicar && ini && ini.mov <= 4 && ptrs.size === 1) { const q = document.pointerLockElement === canvas ? { x: canvas.clientWidth / 2, y: canvas.clientHeight / 2 } : pos(e); let m = null, dm = 24 * 24; for (const a of this.alvos || []) { const dd = (a.x - q.x) ** 2 + (a.y - q.y) ** 2; if (dd < dm) { dm = dd; m = a; } } if (m) this.aoClicar(m); }
       ptrs.delete(e.pointerId); if (ptrs.size < 2) pinca = null; if (ptrs.size === 0) { ini = null; this.arrastando = false; } this.pedir(); };
     canvas.addEventListener('pointerup', fim); canvas.addEventListener('pointercancel', fim);
     canvas.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') { this.mouse = null; this.hover = null; this.tip.hidden = true; this.pedir(); } });
     canvas.addEventListener('wheel', (e) => { e.preventDefault(); this.rot.zoom = Math.max(0.4, Math.min(6, this.rot.zoom * (e.deltaY > 0 ? 0.9 : 1.1))); this.pedir(); }, { passive: false });
     canvas.addEventListener('dblclick', () => { this.rot = { yaw: -0.7, pitch: 0.45, zoom: 1, ...(op.rot || {}) }; this.alvo = { x: 0, y: 0, z: 0 }; this.pedir(); });
     this.alvo = { x: 0, y: 0, z: 0 };
-    ligarNav3d(canvas, this, () => this.pedir(), { reiniciar: () => { this.rot = { yaw: -0.7, pitch: 0.45, zoom: 1, ...(op.rot || {}) }; } });
+    ligarNav3d(canvas, this, () => this.pedir(), { d: 3.8, mira: (x, y) => { this.mouse = { x, y }; }, reiniciar: () => { this.rot = { yaw: -0.7, pitch: 0.45, zoom: 1, ...(op.rot || {}) }; } });
     new ResizeObserver(() => this.pedir()).observe(canvas);
   }
   girar(on) { this.girando = on; const passo = () => { if (!this.girando) return; if (!this.arrastando && this.cv.offsetParent) { this.rot.yaw += 0.005; this.desenhar(); } requestAnimationFrame(passo); }; if (on) passo(); }
@@ -2458,6 +2486,7 @@ function desenharMontanha() {
     let ini = null;
     cv.addEventListener('pointerdown', (e) => { e.preventDefault(); cv.setPointerCapture(e.pointerId); ini = { ...pos(e), rot: { ...MT.rot }, mov: 0 }; });
     cv.addEventListener('pointermove', (e) => {
+      if (document.pointerLockElement === cv) return;
       const q = pos(e);
       if (ini) { const dx = q.x - ini.x, dy = q.y - ini.y; ini.mov = Math.max(ini.mov, Math.abs(dx) + Math.abs(dy));
         if (ini.mov > 4) { MT.arr = true; MT.rot.yaw = ini.rot.yaw + dx * 0.009; MT.rot.pitch = Math.max(0.05, Math.min(1.45, ini.rot.pitch + dy * 0.009)); $('mt-tip').hidden = true; MT.hover = null; pedirMontanha(); return; } }
@@ -2469,7 +2498,7 @@ function desenharMontanha() {
     cv.addEventListener('wheel', (e) => { e.preventDefault(); MT.rot.zoom = Math.max(0.5, Math.min(4, MT.rot.zoom * (e.deltaY > 0 ? 0.9 : 1.1))); pedirMontanha(); }, { passive: false });
     $('mt-girar').addEventListener('click', () => { MT.girar = !MT.girar; $('mt-girar').classList.toggle('primary', MT.girar); if (MT.girar) girarMontanha(); });
     new ResizeObserver(() => pedirMontanha()).observe(cv);
-    ligarNav3d(cv, MT, pedirMontanha, { reiniciar: () => { MT.rot = { yaw: -0.42, pitch: 0.62, zoom: 1 }; } });
+    ligarNav3d(cv, MT, pedirMontanha, { d: 3.6, mira: (x, y) => { MT.mouse = { x, y }; }, reiniciar: () => { MT.rot = { yaw: -0.42, pitch: 0.62, zoom: 1 }; } });
     controleEixos($('mt-eixos'), MT.escala, [['x', 'tempo (anos)'], ['y', 'concentração'], ['z', 'patrimônio']], pedirMontanha);
   }
   MT.malha = montarMontanha();
@@ -2830,6 +2859,7 @@ function exInteracao() {
   cv.addEventListener('pointerdown', (e) => { e.preventDefault(); cv.setPointerCapture(e.pointerId); const q = pos(e); ptrs.set(e.pointerId, q); ini = { ...q, view: EX.view && { ...EX.view }, rot: { ...EX.rot }, mov: 0, tipo: e.pointerType };
     if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinca = { d: Math.hypot(a.x - b.x, a.y - b.y), view: EX.view && { ...EX.view }, zoom: EX.rot.zoom, cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 }; } });
   cv.addEventListener('pointermove', (e) => {
+    if (document.pointerLockElement === cv) return;
     const q = pos(e);
     if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, q);
     if (pinca && ptrs.size === 2) { const [a, b] = [...ptrs.values()], f = Math.hypot(a.x - b.x, a.y - b.y) / (pinca.d || 1); exZoom(1 / f, pinca.cx, pinca.cy, pinca); return; }
@@ -2846,7 +2876,7 @@ function exInteracao() {
     if (e.pointerType === 'mouse' || ini) { EX.mouse = q; const d = exMaisPerto(q.x, q.y); EX.hover = d; exDica(d, q.x, q.y); exPedir(); }
   });
   const fim = (e) => {
-    const q = pos(e); ptrs.delete(e.pointerId);
+    const q = document.pointerLockElement === cv ? { x: cv.clientWidth / 2, y: cv.clientHeight / 2 } : pos(e); ptrs.delete(e.pointerId);
     if (ptrs.size < 2) pinca = null;
     if (ini && ini.mov <= 4 && ptrs.size === 0) { // toque/clique: abre o ativo
       const d = exMaisPerto(q.x, q.y, e.pointerType === 'mouse' ? 14 : 22);
@@ -2863,6 +2893,8 @@ function exInteracao() {
   cv.addEventListener('wheel', (e) => { e.preventDefault(); const q = pos(e); exZoom(e.deltaY > 0 ? 1.15 : 1 / 1.15, q.x, q.y); }, { passive: false });
   cv.addEventListener('dblclick', () => { EX.view = null; EX.rot = { yaw: -0.65, pitch: 0.38, zoom: 1 }; EX.alvo = { x: 0, y: 0, z: 0 }; exPedir(); });
   ligarNav3d(cv, EX, exPedir, {
+    d: 3.6, escala: () => S.ex.escala,
+    mira: (x, y) => { EX.mouse = { x, y }; const d = exMaisPerto(x, y, 26); EX.hover = d; exDica(d, x, y); },
     reiniciar: () => { EX.view = null; EX.rot = { yaw: -0.65, pitch: 0.38, zoom: 1 }; },
     plano: () => S.ex.modo !== '3d',
     mover2d: (k, dt) => { // no mapa 2D: W/A/S/D movem a vista, Q/E e +/− aproximam
