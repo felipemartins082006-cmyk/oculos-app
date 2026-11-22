@@ -201,12 +201,24 @@ public class FotosCliente implements ClientModInitializer {
 			}
 			case 9 -> {
 				foto(c, "6_comprar_diamante");
+				ServerPlayerEntity p = server.getPlayerManager().getPlayer(c.player.getUuid());
+				server.execute(() -> {
+					p.closeHandledScreen();
+					bibliotecario.setExperience(com.martins.trocas.trocas.NiveisExtras.xpPara(2) + 120);
+					com.martins.trocas.trocas.NiveisExtras.verificar(bibliotecario);
+					bibliotecario.interactMob(p, Hand.MAIN_HAND);
+				});
+				etapa = 11;
+				espera = 30;
+			}
+			case 11 -> {
+				foto(c, "7_mestre_iii");
 				etapa = 10;
-				espera = 10;
+				espera = 5;
 			}
 			case 10 -> {
 				c.scheduleStop();
-				etapa = 11;
+				etapa = 12;
 			}
 			default -> {
 			}

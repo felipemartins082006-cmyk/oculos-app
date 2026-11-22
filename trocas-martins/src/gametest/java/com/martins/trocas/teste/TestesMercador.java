@@ -235,6 +235,20 @@ public class TestesMercador implements FabricGameTest {
 				v.discard();
 			}
 		}
+		// níveis depois de Mestre: precisa completar a experiência de cada nível
+		VillagerEntity mestre = ctx.spawnEntity(EntityType.VILLAGER, new BlockPos(3, 1, 3));
+		mestre.setVillagerData(mestre.getVillagerData().withProfession(VillagerProfession.LIBRARIAN).withLevel(5));
+		int antes = mestre.getOffers().size();
+		mestre.setExperience(com.martins.trocas.trocas.NiveisExtras.xpPara(1) - 1);
+		mestre.trade(new TradeOffer(new TradedItem(Items.EMERALD, 1), new ItemStack(Items.BOOK), 1, 0, 0f));
+		igual(ctx, 0, com.martins.trocas.trocas.NiveisExtras.nivelExtra(mestre), "ainda não completou Mestre");
+		mestre.trade(new TradeOffer(new TradedItem(Items.EMERALD, 1), new ItemStack(Items.BOOK), 1,
+			com.martins.trocas.trocas.NiveisExtras.xpPara(2) - mestre.getExperience(), 0f));
+		igual(ctx, 2, com.martins.trocas.trocas.NiveisExtras.nivelExtra(mestre), "deveria estar em Mestre III");
+		igual(ctx, antes + 2, mestre.getOffers().size(), "uma troca nova por nível extra");
+		for (int n = 1; n <= 40; n++) ctx.assertTrue(com.martins.trocas.trocas.NiveisExtras.xpPara(n + 1) > com.martins.trocas.trocas.NiveisExtras.xpPara(n), "níveis cada vez mais difíceis");
+		mestre.discard();
+
 		VillagerEntity m = ctx.spawnEntity(EntityType.VILLAGER, new BlockPos(3, 1, 3));
 		m.setVillagerData(m.getVillagerData().withProfession(ModRegistro.MERCADOR));
 		ctx.assertTrue(m.getOffers().isEmpty(), "o Mercador não usa a tela de trocas normal");

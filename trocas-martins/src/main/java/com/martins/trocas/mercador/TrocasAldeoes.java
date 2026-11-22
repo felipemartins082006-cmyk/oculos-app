@@ -60,6 +60,10 @@ public final class TrocasAldeoes {
 				for (TradeOffers.Factory f : nivel) ler(f, aldeao, r);
 			}
 		}
+		for (Map.Entry<VillagerProfession, List<TradeOffers.Factory>> e : com.martins.trocas.trocas.NiveisExtras.todas().entrySet()) {
+			aldeao.setVillagerData(aldeao.getVillagerData().withProfession(e.getKey()));
+			for (TradeOffers.Factory f : e.getValue()) ler(f, aldeao, r);
+		}
 		aldeao.setVillagerData(aldeao.getVillagerData().withProfession(VillagerProfession.NONE));
 		for (TradeOffers.Factory[] nivel : TradeOffers.WANDERING_TRADER_TRADES.values()) {
 			for (TradeOffers.Factory f : nivel) ler(f, aldeao, r);

@@ -150,6 +150,36 @@ abaixo (configurável em `trocas_novas_por_nivel`). Só vale para aldeões que a
 | **Armeiro de armas** | escudo; compra ferro | espada de ferro Afiação II; cargas de vento | machado Afiação III; vara de breeze | espada de diamante Afiação IV + Pilhagem II | **núcleo pesado** (para a maça); espada Afiação V + Aspecto Flamejante II |
 | **Mascate** | frascos de experiência; vagem de jarro; semente de flor-tocha | fragmento de cerâmica sorteado; etiqueta; ovo de farejador (raras) | | | |
 
+### Níveis infinitos depois de Mestre
+
+Depois de **Mestre**, os aldeões continuam evoluindo: **Mestre II, Mestre III, Mestre IV...** sem fim.
+
+- Para subir, é preciso **completar a barra de experiência do nível atual** trocando com ele
+  (a barra continua aparecendo depois de Mestre).
+- Cada nível pede mais experiência que o anterior: Mestre II = 450, III = 700, IV = 1000, V = 1350...
+- Cada nível novo traz **uma troca mais forte** da profissão (as apelonas):
+
+| Profissão | Trocas dos níveis Mestre II em diante (em ordem) |
+|---|---|
+| **Armeiro** | capacete de diamante Proteção IV + Respiração III; calças Proteção IV + Inquebrável III; botas Queda Suave IV + Passos Profundos III; molde de netherite; peitoral Proteção IV + Inquebrável III + Remendo; lingote de netherite |
+| **Açougueiro** | 3 maçãs douradas; 16 cenouras douradas; 4 pés de coelho; maçã dourada encantada |
+| **Cartógrafo** | bússola de recuperação; fragmentos de eco; magnetitas; **élitro** |
+| **Clérigo** | 16 frascos de experiência; olhos do Ender; sopro do dragão; **totem**; cascos de shulker; **estrela do Nether** |
+| **Fazendeiro** | melancias reluzentes; ovo de farejador; 32 cenouras douradas; maçã dourada encantada |
+| **Pescador** | conchas de náutilo; vara Sorte do Mar III + Isca III + Remendo; coração do mar; **tridente** Lealdade III + Empalamento III; **conduíte** |
+| **Flecheiro** | flechas de Dano II; arco Força V + Infinidade + Chama; besta Rajada + Recarga Rápida III + Remendo; varas de breeze; arco Força V + Infinidade + Inquebrável III + Impacto II |
+| **Curtidor** | selas; casco de tartaruga encantado; cascos de shulker; **élitro** |
+| **Bibliotecário** | livros Afiação V; Eficiência V; Proteção IV; Agachamento Ágil III; Velocidade das Almas III; Passos Gelados II; Remendo (mais barato) |
+| **Pedreiro** | obsidiana chorona; catalisador de sculk; detrito ancestral; **sinalizador** |
+| **Pastor** | discos Pigstep, Otherside e Relic; cabeça de dragão |
+| **Ferramenteiro** | picaretas de diamante Eficiência V com Fortuna III ou Toque Suave; fragmentos de netherite; molde de netherite; picareta Eficiência V + Fortuna III + Inquebrável III + Remendo |
+| **Armeiro de armas** | espada Afiação V + Pilhagem III; **núcleo pesado**; machado Afiação V; **maça**; espada Afiação V + Aspecto Flamejante II + Pilhagem III + Remendo |
+
+Quando a lista da profissão acaba, as mesmas trocas voltam **15% mais baratas** (e com mais usos)
+a cada volta. A progressão nunca termina, mas fica cada vez mais demorada.
+
+![Bibliotecário Mestre III](docs/7_mestre_iii.png)
+
 ![Bibliotecário mestre com trocas novas](docs/4_bibliotecario.png)
 
 ## Para desenvolvedores

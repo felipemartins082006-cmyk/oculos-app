@@ -32,9 +32,11 @@ public class TrocasMartins implements ModInitializer {
 		MercadorConfig.carregar();
 		ModRegistro.registrar();
 		NovasTrocas.registrar();
+		com.martins.trocas.trocas.NiveisExtras.registrar();
 
 		PayloadTypeRegistry.playS2C().register(OfertasPayload.ID, OfertasPayload.CODEC);
 		PayloadTypeRegistry.playS2C().register(CatalogoPayload.ID, CatalogoPayload.CODEC);
+		PayloadTypeRegistry.playS2C().register(com.martins.trocas.rede.NivelPayload.ID, com.martins.trocas.rede.NivelPayload.CODEC);
 		PayloadTypeRegistry.playC2S().register(EscolherOfertaPayload.ID, EscolherOfertaPayload.CODEC);
 		ServerPlayNetworking.registerGlobalReceiver(EscolherOfertaPayload.ID, (payload, ctx) -> {
 			if (ctx.player().currentScreenHandler instanceof MercadorScreenHandler h) {

@@ -46,6 +46,12 @@ public final class ModRegistro {
 			.initializer(java.util.HashMap::new)
 			.buildAndRegister(TrocasMartins.id("usos"));
 
+	/** Níveis depois de Mestre (0 = Mestre, 1 = Mestre II...). */
+	public static final net.fabricmc.fabric.api.attachment.v1.AttachmentType<Integer> NIVEL_EXTRA =
+		net.fabricmc.fabric.api.attachment.v1.AttachmentRegistry.<Integer>builder()
+			.persistent(com.mojang.serialization.Codec.INT)
+			.buildAndRegister(TrocasMartins.id("nivel_extra"));
+
 	public static PointOfInterestType MERCADOR_POI;
 	public static VillagerProfession MERCADOR;
 
