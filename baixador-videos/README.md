@@ -4,6 +4,8 @@ Programa para computador: cole o link de um vídeo, clique em **Baixar** e pront
 Funciona com YouTube, Instagram, TikTok, X/Twitter, Facebook, Vimeo, Reddit e
 [mais de mil sites](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md).
 
+![Tela do programa](tela.png)
+
 ## Como usar (Windows)
 
 1. Instale o **Python**: https://www.python.org/downloads/

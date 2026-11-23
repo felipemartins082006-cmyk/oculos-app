@@ -215,6 +215,12 @@ class App(tk.Tk):
             self.fila.put(("fim", True, f"✅ Pronto! \"{titulo}\" salvo em {pasta}"))
         except Exception as e:
             msg = str(e).replace("ERROR: ", "")
+            if "Unsupported URL" in msg:
+                msg = ("este site não é suportado. Veja a lista de sites compatíveis "
+                       "em github.com/yt-dlp/yt-dlp (supportedsites.md).")
+            elif "403" in msg or "Sign in" in msg:
+                msg = ("o site recusou o download (vídeo privado, com login ou "
+                       "bloqueado). Tente atualizar o programa.")
             self.fila.put(("fim", False, f"❌ Não foi possível baixar: {msg}"))
 
     def _processar_fila(self):
