@@ -353,9 +353,9 @@ fun TelaDados(
         }
         val auto = Backup.ultimoAutomatico(ctx)
         Text(
-            (if (auto != null) "Backup automático: todo dia em Downloads/Logbook (último ${
+            (if (auto != null) "Backup automático: a cada 24 horas em Downloads/Logbook, mesmo com o app fechado (último ${
               java.time.Instant.ofEpochMilli(auto).atZone(java.time.ZoneId.systemDefault()).toLocalDateTime().let { "${dataCurta(it.toLocalDate())} às ${"%02d:%02d".format(it.hour, it.minute)}" }
-            })." else "Backup automático: todo dia, ao abrir o app, em Downloads/Logbook.") +
+            })." else "Backup automático: a cada 24 horas em Downloads/Logbook, mesmo com o app fechado.") +
                 "\n\nPara restaurar (celular novo ou se precisar reinstalar): Importar → Escolher arquivo do celular, ou " +
                 "Compartilhar o arquivo com o Logbook. Aceita backup de qualquer versão do app, planilhas (.csv), texto, PDF " +
                 "e exportações de outros apps. Para atualizar o app, é só instalar a versão nova por cima: os dados continuam.",

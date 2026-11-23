@@ -101,6 +101,9 @@ fun LazyListScope.conteudoPeso(dias: Map<LocalDate, Dia>, onAbrirDia: (LocalDate
             vazio = "Sem pesagens ${tipo.titulo.lowercase()}.",
         )
       }
+      // Calorias por dia (do que você anotou na aba Dia), com a média dos últimos 7 dias.
+      CartaoCalorias(dias, pontos)
+
       // Diferença típica entre as duas pesagens (roupa, comida e água do dia).
       val ambos = dias.values.mapNotNull { d ->
         val j = d.pesagens.firstOrNull { it.tipo == TipoPesagem.JEJUM }
@@ -276,4 +279,49 @@ private fun forcaRelacao(r: Double): String = when {
   kotlin.math.abs(r) >= 0.7 -> "forte"
   kotlin.math.abs(r) >= 0.4 -> "moderada"
   else -> "fraca"
+}
+
+/** Calorias por dia (soma das refeições anotadas), média de 7 dias e a relação com o peso. */
+@Composable
+private fun CartaoCalorias(dias: Map<LocalDate, Dia>, pesoJejum: List<Pair<LocalDate, Double>>) {
+  val kcal = dias.values.filter { it.kcal > 0 }.map { it.data to it.kcal }.sortedBy { it.first }
+  Cartao {
+    Rotulo("Calorias por dia")
+    if (kcal.isEmpty()) {
+      Text(
+          "Anote as refeições com as calorias na aba Dia (ex.: arroz 150g 195kcal) e o gráfico aparece aqui.",
+          color = Cinza, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp),
+      )
+      return@Cartao
+    }
+    val hoje = LocalDate.now()
+    val sete = kcal.filter { it.first > hoje.minusDays(7) }.map { it.second }
+    val trinta = kcal.filter { it.first > hoje.minusDays(30) }.map { it.second }
+    Row(Modifier.fillMaxWidth().padding(top = 6.dp)) {
+      Column(Modifier.weight(1f)) {
+        Text(if (sete.isEmpty()) "—" else "${sete.average().toInt()}", color = Texto, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+        Text("kcal/dia · 7 dias", color = Cinza, fontSize = 11.sp)
+      }
+      Column(Modifier.weight(1f)) {
+        Text(if (trinta.isEmpty()) "—" else "${trinta.average().toInt()}", color = Texto, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+        Text("kcal/dia · 30 dias", color = Cinza, fontSize = 11.sp)
+      }
+    }
+    Grafico(
+        kcal.map { (d, k) -> Ponto(d, k, "${k.toInt()} kcal") },
+        "calorias anotadas em cada dia · tracejado: média dos últimos 7 dias",
+        extra = mediaMovel(kcal).map { (d, k) -> Ponto(d, k, "") },
+        modifier = Modifier.padding(top = 8.dp),
+    )
+    // Peso em jejum no mesmo período das calorias dos últimos 30 dias.
+    val pesoMes = pesoJejum.filter { it.first > hoje.minusDays(30) }
+    if (trinta.size >= 3 && pesoMes.size >= 2) {
+      val dif = pesoMes.last().second - pesoMes.first().second
+      Text(
+          "Nos últimos 30 dias: média de ${trinta.average().toInt()} kcal/dia e o peso em jejum " +
+              "${if (dif >= 0) "subiu" else "caiu"} ${fmtPeso(Math.round(abs(dif) * 10) / 10.0)} kg.",
+          color = Texto, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp),
+      )
+    }
+  }
 }

@@ -229,7 +229,9 @@ fun TelaTreino(
     // Dia sem séries: dá para marcar como descanso (descanso também conta no coeficiente).
     if (porExercicio.isEmpty() && !colando) {
       item {
-        val descanso = diario.de(dia).descanso == true
+        val marcado = diario.de(dia).descanso == true
+        // Dia que já passou sem treino também conta como descanso.
+        val descanso = ehDiaDeDescanso(dia, todas, diario.de(dia))
         Cartao {
           Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -238,8 +240,10 @@ fun TelaTreino(
               Text(if (descanso) "Descansar também conta: entra no coeficiente e nas estatísticas."
                   else "Marque como descanso: a recuperação também conta.", color = Cinza, fontSize = 12.sp)
             }
-            if (descanso) {
+            if (descanso && marcado) {
               TextButton(onClick = { diario.alterar(dia) { it.copy(descanso = null) } }) { Text("Desfazer") }
+            } else if (descanso) {
+              Text("automático", color = Cinza, fontSize = 12.sp)
             } else {
               OutlinedButton(onClick = { diario.alterar(dia) { it.copy(descanso = true) } }) { Text("Marcar descanso") }
             }
@@ -558,11 +562,13 @@ private fun TopoTreino(
   val seq = remember(todas) { calcularEstatisticas(todas, emptyMap(), null, hoje).sequenciaAtual }
   val noMes = todas.map { it.data }.distinct().count { it.year == dia.year && it.month == dia.month }
   val ce = coeficienteDoDia(dia, todas, diario.dias.value).valor
-  val branco = SobreDestaque
+  // Minimalista: topo sem fundo, só tipografia. Vibrante: cartão em degradê.
+  val minimal = Aparencia.minimalista
+  val branco = if (minimal) Texto else SobreDestaque
   Column(
       Modifier.fillMaxWidth().clip(RoundedCornerShape(32.dp))
-          .background(Brush.linearGradient(listOf(Coral, Destaque, DestaqueEscuro)))
-          .padding(horizontal = 10.dp, vertical = 16.dp),
+          .let { if (minimal) it else it.background(Brush.linearGradient(listOf(Coral, Destaque, DestaqueEscuro))) }
+          .padding(horizontal = 10.dp, vertical = if (minimal) 4.dp else 16.dp),
   ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
       TextButton(onClick = onAnterior) { Text("‹", fontSize = 30.sp, color = branco.copy(alpha = 0.85f)) }
@@ -570,7 +576,7 @@ private fun TopoTreino(
         Text(saudacao, color = branco.copy(alpha = 0.85f), fontSize = 14.sp)
         Text(
             if (dia == hoje) "Hoje · ${diaDaSemana(dia)}" else diaDaSemana(dia),
-            fontSize = 26.sp, fontWeight = FontWeight.Bold, color = branco,
+            fontSize = 22.sp, fontWeight = FontWeight.Bold, color = branco, maxLines = 1,
         )
         Text(dataLonga(dia), color = branco.copy(alpha = 0.85f), fontSize = 14.sp)
       }
@@ -587,7 +593,7 @@ private fun TopoTreino(
       ce?.let { ChipTopo("CE ${it.toInt()}") }
       Text(
           "🎨", fontSize = 14.sp,
-          modifier = Modifier.clip(RoundedCornerShape(50)).background(Color(0x33FFFFFF)).clickable(onClick = onAparencia)
+          modifier = Modifier.clip(RoundedCornerShape(50)).background(if (Aparencia.minimalista) Superficie2 else Color(0x33FFFFFF)).clickable(onClick = onAparencia)
               .semantics { contentDescription = "Aparência" }.padding(horizontal = 9.dp, vertical = 4.dp),
       )
     }
@@ -597,7 +603,7 @@ private fun TopoTreino(
 @Composable
 private fun ChipTopo(texto: String) {
   Text(
-      texto, color = SobreDestaque, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
-      modifier = Modifier.clip(RoundedCornerShape(50)).background(Color(0x33FFFFFF)).padding(horizontal = 10.dp, vertical = 5.dp),
+      texto, color = if (Aparencia.minimalista) Texto else SobreDestaque, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
+      modifier = Modifier.clip(RoundedCornerShape(50)).background(if (Aparencia.minimalista) Superficie2 else Color(0x33FFFFFF)).padding(horizontal = 10.dp, vertical = 5.dp),
   )
 }

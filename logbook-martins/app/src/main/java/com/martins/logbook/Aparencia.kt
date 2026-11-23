@@ -69,6 +69,8 @@ object Aparencia {
   var desfoque by mutableFloatStateOf(6f)
   /** Opacidade dos cartões de vidro. */
   var vidro by mutableFloatStateOf(0.11f)
+  /** Estilo minimalista (padrão): cores chapadas, sem brilhos nem degradês. Desligado = estilo vibrante. */
+  var minimalista by mutableStateOf(true)
 
   val paleta: Paleta
     get() = paletaFoto?.takeIf { usarCoresDaFoto && fundoImagem != null } ?: PALETAS.firstOrNull { it.id == paletaId } ?: PALETAS[0]
@@ -83,6 +85,7 @@ object Aparencia {
     escurecer = p.getFloat("escurecer", 0.55f)
     desfoque = p.getFloat("desfoque", 6f)
     vidro = p.getFloat("vidro", 0.11f)
+    minimalista = p.getBoolean("minimalista", true)
     val f = arquivo(ctx)
     val bmp = if (f.exists()) runCatching { BitmapFactory.decodeFile(f.path) }.getOrNull() else null
     fundoImagem = bmp?.asImageBitmap()
@@ -93,6 +96,7 @@ object Aparencia {
     prefs(ctx).edit()
         .putString("paleta", paletaId).putBoolean("coresDaFoto", usarCoresDaFoto)
         .putFloat("escurecer", escurecer).putFloat("desfoque", desfoque).putFloat("vidro", vidro)
+        .putBoolean("minimalista", minimalista)
         .apply()
   }
 
@@ -115,7 +119,7 @@ object Aparencia {
   }
 
   fun padrao(ctx: Context) {
-    paletaId = "rubi"; escurecer = 0.55f; desfoque = 6f; vidro = 0.11f; usarCoresDaFoto = false
+    paletaId = "rubi"; escurecer = 0.55f; desfoque = 6f; vidro = 0.11f; usarCoresDaFoto = false; minimalista = true
     salvar(ctx)
   }
 

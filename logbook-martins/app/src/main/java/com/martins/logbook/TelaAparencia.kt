@@ -83,6 +83,27 @@ fun TelaAparencia(onVoltar: () -> Unit) {
       }
     }
 
+    // Estilo
+    item {
+      Cartao {
+        Rotulo("Estilo")
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+          Column(Modifier.weight(1f)) {
+            Text("Minimalista", color = Texto, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                if (Aparencia.minimalista) "cores chapadas, sem brilhos nem degradês" else "desligado: estilo vibrante, com degradês e brilhos",
+                color = Cinza, fontSize = 12.sp,
+            )
+          }
+          Switch(
+              checked = Aparencia.minimalista,
+              onCheckedChange = { Aparencia.minimalista = it; mudou() },
+              modifier = Modifier.semantics { contentDescription = "Estilo minimalista" },
+          )
+        }
+      }
+    }
+
     // Temas prontos
     item {
       Cartao {

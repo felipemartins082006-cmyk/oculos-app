@@ -6,6 +6,8 @@
     <!-- Temporizador: avisar no fim (notificação) e tocar na hora certa (alarme exato), mesmo com o app fechado. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <!-- Mostrar a tela "Tempo!" por cima de tudo (até na tela bloqueada) quando o descanso acaba. -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
     <application
         android:allowBackup="false"
@@ -54,6 +56,16 @@
         </activity>
 
         <receiver android:name=".AlarmeTemporizador" android:exported="false" />
+        <receiver android:name=".AcaoTemporizador" android:exported="false" />
+        <activity
+            android:name=".AlarmeActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleInstance"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:taskAffinity=""
+            android:theme="@style/LogbookTheme" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

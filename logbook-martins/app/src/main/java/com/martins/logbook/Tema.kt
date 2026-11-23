@@ -30,6 +30,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -60,9 +61,12 @@ val Verde = Color(0xFF6EE7B7)
 val Vermelho = Color(0xFFFF6B7D)
 
 /** O degradê principal (botões, linha do gráfico, destaques). */
-val DegradeDestaque: Brush get() = Brush.linearGradient(listOf(Coral, Destaque, DestaqueEscuro))
+val DegradeDestaque: Brush
+  get() = if (Aparencia.minimalista) SolidColor(Destaque) else Brush.linearGradient(listOf(Coral, Destaque, DestaqueEscuro))
 /** Borda bem leve dos cartões de vidro, puxando para a cor do tema. */
-val DegradeBorda: Brush get() = Brush.linearGradient(listOf(Color(0x26FFFFFF), Color(0x0AFFFFFF), Destaque.copy(alpha = 0.16f)))
+val DegradeBorda: Brush
+  get() = if (Aparencia.minimalista) SolidColor(Color(0x12FFFFFF))
+  else Brush.linearGradient(listOf(Color(0x26FFFFFF), Color(0x0AFFFFFF), Destaque.copy(alpha = 0.16f)))
 /** Preenchimento dos cartões: um pouco mais claro em cima (efeito de vidro). */
 val DegradeCartao: Brush
   get() = Brush.verticalGradient(listOf(Color.White.copy(alpha = Aparencia.vidro + 0.05f), Color.White.copy(alpha = Aparencia.vidro * 0.55f)))
@@ -102,7 +106,10 @@ fun Tema(content: @Composable () -> Unit) {
 }
 
 /** Fundo do app (sem foto): degradê do tema com brilhos suaves nas cores da paleta. */
-fun Modifier.fundoDoApp(): Modifier = this
+fun Modifier.fundoDoApp(): Modifier = if (Aparencia.minimalista) {
+  // Minimalista: quase chapado, só um leve tom da paleta no alto.
+  this.background(Brush.verticalGradient(0f to Aparencia.paleta.fundoMeio, 0.4f to Fundo, 1f to Fundo))
+} else this
     .background(Brush.verticalGradient(0f to FundoTopo, 0.35f to Aparencia.paleta.fundoMeio, 1f to Fundo))
     .drawBehind {
       fun brilho(cor: Color, x: Float, y: Float, raio: Float) = drawCircle(
@@ -138,11 +145,11 @@ fun FundoApp() {
 /** Cartão de vidro: translúcido, cantos arredondados e borda em degradê. */
 @Composable
 fun Cartao(modifier: Modifier = Modifier, onClick: (() -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) {
-  val forma = RoundedCornerShape(28.dp)
+  val forma = RoundedCornerShape(if (Aparencia.minimalista) 20.dp else 28.dp)
   Column(
       modifier.fillMaxWidth()
           .clip(forma)
-          .background(DegradeCartao)
+          .background(if (Aparencia.minimalista) SolidColor(Color.White.copy(alpha = Aparencia.vidro * 0.6f)) else DegradeCartao)
           .border(0.7.dp, DegradeBorda, forma)
           .let { if (onClick != null) it.clickable(onClick = onClick) else it }
           .padding(horizontal = 20.dp, vertical = 18.dp),

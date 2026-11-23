@@ -45,6 +45,8 @@ class MainActivity : ComponentActivity() {
     val diario = Diario(applicationContext)
     // Backup automático (uma vez por dia) em Downloads/Logbook, fora da tela principal.
     Thread { runCatching { Backup.automatico(applicationContext, logbook, diario, figuras) } }.start()
+    // E a cada 24 horas, mesmo com o app fechado.
+    BackupDiario.agendar(applicationContext)
     // Temporizador salvo (continua de onde estava, mesmo se o Android fechou o app).
     SistemaTemporizador.configurar(applicationContext)
     if (savedInstanceState == null) {

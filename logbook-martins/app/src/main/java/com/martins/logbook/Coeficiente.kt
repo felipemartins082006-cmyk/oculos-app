@@ -36,6 +36,13 @@ const val PESO_DESEMPENHO = 0.4
 fun ehDiaDeTreino(data: LocalDate, series: List<Serie>, dia: Dia?): Boolean =
     series.any { it.data == data } || dia?.descanso == false
 
+/**
+ * Dia de descanso: marcado por você, ou um dia que já passou sem treino declarado
+ * (todo dia sem treino conta como descanso).
+ */
+fun ehDiaDeDescanso(data: LocalDate, series: List<Serie>, dia: Dia?, hoje: LocalDate = LocalDate.now()): Boolean =
+    !ehDiaDeTreino(data, series, dia) && (dia?.descanso == true || data < hoje)
+
 /** Quantos dias sem treinar antes deste dia (null se não há treino anterior). */
 fun diasDeDescansoAntes(data: LocalDate, datasTreino: Collection<LocalDate>): Int? {
   val anterior = datasTreino.filter { it < data }.maxOrNull() ?: return null

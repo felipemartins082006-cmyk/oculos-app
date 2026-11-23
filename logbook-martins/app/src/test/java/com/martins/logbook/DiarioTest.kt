@@ -137,7 +137,7 @@ class DiarioTest {
       rolarTexto("Na sessão você costuma pesar", true)
       regra.onNodeWithText("Na sessão você costuma pesar", substring = true).assertExists()
       foto(cena, "d4-peso")
-      regra.onNodeWithText("Insights").performClick()
+      rolarTexto("Insights"); regra.onNodeWithText("Insights").performClick()
       rolarTexto("Dormiu 7h ou mais"); regra.onNodeWithText("Dormiu 7h ou mais").assertExists()
       foto(cena, "d5-insights")
       rolarTexto("Dia com evento marcado"); regra.onNodeWithText("Dia com evento marcado").assertExists()

@@ -67,7 +67,7 @@ fun TelaExercicios(
     item {
       Rotulo("Evolução")
       Text(
-          listOf("Seus exercícios", "Seus números", "Peso corporal", "O que mexe no seu treino")[secao],
+          listOf("Seus exercícios", "Seus números", "Peso e calorias", "O que mexe no seu treino")[secao],
           fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Texto,
       )
     }

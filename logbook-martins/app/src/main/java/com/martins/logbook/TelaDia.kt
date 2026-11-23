@@ -80,7 +80,8 @@ fun TelaDia(diario: Diario, series: List<Serie>, dia: LocalDate, onDia: (LocalDa
     item {
       val treino = ehDiaDeTreino(dia, series, d)
       Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Segmentos(listOf("🏋 Dia de treino", "😴 Dia de descanso"), if (treino) 0 else if (d.descanso == true) 1 else -1) { i ->
+        Segmentos(listOf("🏋 Dia de treino", "😴 Dia de descanso"),
+            if (treino) 0 else if (ehDiaDeDescanso(dia, series, d)) 1 else -1) { i ->
           diario.alterar(dia) { it.copy(descanso = i == 1) }
         }
         if (d.descanso == true && series.any { it.data == dia }) {

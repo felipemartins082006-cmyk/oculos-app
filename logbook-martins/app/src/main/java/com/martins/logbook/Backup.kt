@@ -107,12 +107,16 @@ object Backup {
   }
 
   /**
-   * Backup automático: uma vez por dia, ao abrir o app, atualiza Downloads/Logbook/logbook-backup-automatico.json.
+   * Backup automático: a cada 24 horas (tarefa agendada no Android, ver BackupDiario) e também ao abrir o app
+   * se o último tiver mais de 20 horas, atualiza Downloads/Logbook/logbook-backup-automatico.json.
    * Assim, mesmo sem lembrar, sempre existe uma cópia recente fora do app.
    */
-  fun automatico(ctx: Context, lb: Logbook, diario: Diario, figuras: Figuras?, agora: Long = System.currentTimeMillis()): String? {
+  fun automatico(
+      ctx: Context, lb: Logbook, diario: Diario, figuras: Figuras?,
+      agora: Long = System.currentTimeMillis(), forcar: Boolean = false,
+  ): String? {
     val prefs = ctx.getSharedPreferences("backup", Context.MODE_PRIVATE)
-    if (agora - prefs.getLong("auto", 0) < 20 * 3600_000L) return null
+    if (!forcar && agora - prefs.getLong("auto", 0) < 20 * 3600_000L) return null
     if (lb.series.value.isEmpty() && diario.dias.value.isEmpty()) return null
     val onde = salvarEmDownloads(ctx, "logbook-backup-automatico.json", gerar(lb, diario, figuras).toString().toByteArray(), "application/json")
     if (onde != null) prefs.edit().putLong("auto", agora).apply()

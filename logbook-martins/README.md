@@ -48,6 +48,14 @@ lê o que aparece na tela: não usa token, senha nem a API, e não envia nada pa
    digite `logbookSalvar()` no console para baixar o PDF completo.
 4. Mande o arquivo para o celular e use Importar → Escolher arquivo.
 
+## Minimalista, backup diário e alarme (versão 3.2)
+
+- **Backup automático a cada 24 horas**: o Android agenda uma cópia completa (treinos, diário, figuras) em Downloads/Logbook, mesmo com o app fechado.
+- **Gráfico de calorias junto do peso**: Evolução → Peso mostra kcal por dia (médias de 7 e 30 dias) e quanto o peso mudou no período.
+- **Dia sem treino = descanso**: todo dia passado em que você não registrou treino conta como descanso automático (no Dia, no Treino e no calendário).
+- **Fim do timer fora do app**: tela cheia "Tempo!" (aparece até com o celular bloqueado) e notificação com +30s / Fechar. No Android 14+, se a tela cheia não abrir, permita "Notificações em tela cheia" para o Logbook nas configurações.
+- **Estilo minimalista** como padrão: cores chapadas, sem brilhos e cartões mais limpos. O estilo vibrante continua em Aparência → Minimalista (desligar).
+
 ## Temas e temporizador (versão 3.1)
 
 **Aparência** (aba Dados → Aparência e tema, ou o 🎨 no topo do Treino): temas prontos (Rubi, Brasa, Oceano,

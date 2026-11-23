@@ -131,6 +131,15 @@ object SistemaTemporizador {
 
   fun notificarFim(ctx: Context) {
     if (!podeNotificar(ctx)) return
+    // Tela de aviso por cima de tudo (até na tela bloqueada); com a tela ligada, aparece como pop-up no topo.
+    val telaCheia = PendingIntent.getActivity(
+        ctx, 2, Intent(ctx, AlarmeActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_USER_ACTION),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+    fun acao(nome: String, codigo: Int) = PendingIntent.getBroadcast(
+        ctx, codigo, Intent(ctx, AcaoTemporizador::class.java).setAction(nome),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
     val n = NotificationCompat.Builder(ctx, CANAL_FIM)
         .setSmallIcon(R.drawable.ic_timer)
         .setContentTitle("Tempo! ⏱")
@@ -138,6 +147,10 @@ object SistemaTemporizador {
         .setPriority(NotificationCompat.PRIORITY_HIGH)
         .setCategory(NotificationCompat.CATEGORY_ALARM)
         .setAutoCancel(true)
+        .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+        .setFullScreenIntent(telaCheia, true)
+        .addAction(0, "+30s", acao(AcaoTemporizador.MAIS_30, 3))
+        .addAction(0, "Fechar", acao(AcaoTemporizador.FECHAR, 4))
         .setContentIntent(abrirApp(ctx))
         .build()
     runCatching { NotificationManagerCompat.from(ctx).notify(NOTIF_ID, n) }
@@ -156,5 +169,22 @@ class AlarmeTemporizador : BroadcastReceiver() {
       Temporizador.alarmeAgendado = false
       Temporizador.acabou()
     }
+  }
+}
+
+/** Botões da notificação de fim: "+30s" (mais um descanso curto) e "Fechar". */
+class AcaoTemporizador : BroadcastReceiver() {
+  override fun onReceive(ctx: Context, intent: Intent?) {
+    SistemaTemporizador.configurar(ctx)
+    NotificationManagerCompat.from(ctx).cancel(SistemaTemporizador.NOTIF_ID)
+    when (intent?.action) {
+      MAIS_30 -> { Temporizador.iniciar(30_000); Temporizador.aberto = false }
+      FECHAR -> Temporizador.zerar()
+    }
+  }
+
+  companion object {
+    const val MAIS_30 = "com.martins.logbook.MAIS_30"
+    const val FECHAR = "com.martins.logbook.FECHAR"
   }
 }

@@ -14,8 +14,8 @@ android {
     applicationId = "com.martins.logbook"
     minSdk = 26
     targetSdk = 36
-    versionCode = 12
-    versionName = "3.1"
+    versionCode = 13
+    versionName = "3.2"
   }
 
   // Chave fixa de assinatura: assim cada versão nova instala por cima da anterior
@@ -58,9 +58,12 @@ dependencies {
   implementation(libs.androidx.material3)
   // Ler o texto de arquivos PDF na importação.
   implementation(libs.pdfbox.android)
+  // Backup automático diário, mesmo com o app fechado.
+  implementation(libs.work.runtime)
   testImplementation(libs.junit)
   testImplementation(libs.orgjson)
   testImplementation(libs.robolectric)
+  testImplementation(libs.work.testing)
   testImplementation(platform(libs.androidx.compose.bom))
   testImplementation(libs.androidx.ui.test.junit4)
   debugImplementation(libs.androidx.ui.test.manifest)

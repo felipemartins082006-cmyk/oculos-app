@@ -121,9 +121,15 @@ fun BarraFlutuante(itens: List<ItemNav>, selecionado: Int, onEscolher: (Int) -> 
       ) {
         Box(
             Modifier.width(48.dp).height(30.dp).clip(RoundedCornerShape(50))
-                .background(if (sel) DegradeDestaque else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))),
+                .background(
+                    when {
+                      !sel -> Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))
+                      Aparencia.minimalista -> Brush.linearGradient(listOf(Destaque.copy(alpha = 0.16f), Destaque.copy(alpha = 0.16f)))
+                      else -> DegradeDestaque
+                    },
+                ),
             contentAlignment = Alignment.Center,
-        ) { Icone(item.desenho, if (sel) SobreDestaque else Cinza) }
+        ) { Icone(item.desenho, if (!sel) Cinza else if (Aparencia.minimalista) Destaque else SobreDestaque) }
         Text(
             item.titulo, color = if (sel) Texto else Cinza, fontSize = 11.sp, maxLines = 1,
             fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal, modifier = Modifier.padding(top = 3.dp),

@@ -309,7 +309,10 @@ private fun CartaoMusculos(series: List<Serie>) {
   }
 }
 
-/** Últimas 16 semanas: cada quadrado é um dia (treino, descanso marcado ou sem registro). Toque para abrir. */
+/**
+ * Últimas 16 semanas: cada quadrado é um dia. Dia sem treino conta como descanso (a partir do primeiro registro;
+ * antes disso, "sem registro"). Toque para abrir.
+ */
 @Composable
 private fun CartaoCalendario(series: List<Serie>, dias: Map<LocalDate, Dia>, onAbrirDia: (LocalDate) -> Unit) {
   val hoje = LocalDate.now()
@@ -319,10 +322,13 @@ private fun CartaoCalendario(series: List<Serie>, dias: Map<LocalDate, Dia>, onA
   val maxVol = volume.values.maxOrNull()?.coerceAtLeast(1.0) ?: 1.0
   val datas = generateSequence(inicio) { it.plusDays(1) }.takeWhile { it <= hoje }.toList()
   val nTreino = datas.count { ehDiaDeTreino(it, series.filter { s -> s.data == it }, dias[it]) }
-  val nDescanso = datas.count { dias[it]?.descanso == true && volume[it] == null }
+  val primeiro = (series.map { it.data } + dias.keys).minOrNull() ?: hoje
+  fun descansoEm(d: LocalDate) = d >= primeiro && ehDiaDeDescanso(d, emptyList(), dias[d]) && volume[d] == null
+  val nDescanso = datas.count { descansoEm(it) }
   Cartao {
     Rotulo("Treino e descanso · 16 semanas")
-    Text("$nTreino dias de treino · $nDescanso de descanso marcados · ${datas.size - nTreino - nDescanso} sem registro",
+    Text("$nTreino dias de treino · $nDescanso de descanso" +
+        (datas.size - nTreino - nDescanso).let { if (it > 0) " · $it antes do primeiro registro" else "" },
         color = Cinza, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
     Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
       Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -335,7 +341,7 @@ private fun CartaoCalendario(series: List<Serie>, dias: Map<LocalDate, Dia>, onA
           (0 until 7).forEach { dow ->
             val d = inicio.plusWeeks(w.toLong()).plusDays(dow.toLong())
             val v = volume[d]
-            val descanso = v == null && dias[d]?.descanso == true
+            val descanso = v == null && descansoEm(d)
             val cor = when {
               d > hoje -> Color.Transparent
               v != null -> Destaque.copy(alpha = (0.35f + 0.65f * (v / maxVol).toFloat()).coerceIn(0.35f, 1f))
