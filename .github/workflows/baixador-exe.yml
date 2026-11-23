@@ -1,0 +1,51 @@
+name: Gerar .exe do Baixador de Vídeos
+
+on:
+  push:
+    paths:
+      - "baixador-videos/**"
+      - ".github/workflows/baixador-exe.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: baixador-videos
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependências
+        run: python -m pip install -U yt-dlp pyinstaller
+
+      - name: Baixar FFmpeg
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg-tmp
+          Get-ChildItem ffmpeg-tmp -Recurse -Filter ffmpeg.exe | Select-Object -First 1 | Copy-Item -Destination .
+          Get-ChildItem ffmpeg-tmp -Recurse -Filter ffprobe.exe | Select-Object -First 1 | Copy-Item -Destination .
+
+      - name: Gerar .exe
+        run: python -m PyInstaller --onefile --windowed --name BaixadorDeVideos --add-binary "ffmpeg.exe;." --add-binary "ffprobe.exe;." baixador.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BaixadorDeVideos
+          path: baixador-videos/dist/BaixadorDeVideos.exe
+
+      - name: Publicar na página de Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: baixador-v${{ github.run_number }}
+          name: Baixador de Vídeos (build ${{ github.run_number }})
+          body: Baixe o arquivo BaixadorDeVideos.exe abaixo e abra com dois cliques. FFmpeg já incluído.
+          files: baixador-videos/dist/BaixadorDeVideos.exe

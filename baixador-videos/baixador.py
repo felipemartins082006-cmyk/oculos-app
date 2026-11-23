@@ -26,9 +26,17 @@ FORMATOS = {
 }
 
 
+def ffmpeg_embutido():
+    """Pasta do FFmpeg que vem dentro do .exe (quando existe)."""
+    import sys
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    nome = "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
+    return base if os.path.isfile(os.path.join(base, nome)) else None
+
+
 def tem_ffmpeg() -> bool:
     from shutil import which
-    return which("ffmpeg") is not None
+    return ffmpeg_embutido() is not None or which("ffmpeg") is not None
 
 
 def opcoes_formato(escolha: str) -> dict:
@@ -196,6 +204,8 @@ class App(tk.Tk):
             "no_warnings": True,
             "windowsfilenames": True,
         }
+        if ffmpeg_embutido():
+            opts["ffmpeg_location"] = ffmpeg_embutido()
         opts.update(opcoes_formato(formato))
 
         try:
