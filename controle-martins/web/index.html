@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b0d12">
+<title>Controle Martins</title>
+<link rel="icon" href="icon.svg">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ================= Lista de computadores ================= -->
+<section id="home" class="view active">
+  <header class="top">
+    <div class="brand"><img src="icon.svg" alt=""><span>Controle</span></div>
+  </header>
+  <div class="scroll">
+    <div id="pcList" class="pc-list"></div>
+    <div id="emptyHome" class="empty">
+      <h2>Controle seu computador pelo celular</h2>
+      <ol class="steps">
+        <li><b>No computador (Windows):</b> abra o <b>ControleMartins.exe</b>. Ele mostra o
+          <b>código de pareamento</b> e fica num ícone perto do relógio.</li>
+        <li><b>Para usar fora de casa:</b> instale o <b>Tailscale</b> no computador e neste celular,
+          entrando com a mesma conta nos dois.</li>
+        <li>Toque em <b>Adicionar computador</b> e digite o endereço e o código que aparecem no PC.</li>
+      </ol>
+    </div>
+    <button id="addBtn" class="btn primary wide">+ Adicionar computador</button>
+  </div>
+</section>
+
+<!-- ================= Adicionar computador ================= -->
+<section id="add" class="view">
+  <header class="top">
+    <button class="icon-btn" data-back aria-label="Voltar">‹</button>
+    <h1>Adicionar computador</h1>
+  </header>
+  <div class="scroll">
+    <form id="addForm" class="form" autocomplete="off">
+      <label>Endereço do computador
+        <input id="fHost" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="ex.: 100.101.12.34" required>
+        <small>Aparece quando você clica no ícone do Controle Martins no PC. Use o endereço que começa com
+          <b>100.</b> (Tailscale) para funcionar fora de casa.</small>
+      </label>
+      <label>Código de pareamento
+        <input id="fCode" autocapitalize="characters" spellcheck="false" placeholder="ABCD-EF23" maxlength="12" required>
+      </label>
+      <label>Nome deste celular
+        <input id="fDevice" maxlength="40" placeholder="Celular">
+        <small>Aparece no computador, para você saber quem está conectado.</small>
+      </label>
+      <details class="more">
+        <summary>Mais opções</summary>
+        <label>Porta
+          <input id="fPort" inputmode="numeric" value="47800">
+        </label>
+      </details>
+      <p id="addErr" class="err" hidden></p>
+      <button id="addSubmit" class="btn primary wide" type="submit">Parear</button>
+    </form>
+  </div>
+</section>
+
+<!-- ================= Computador conectado ================= -->
+<section id="pc" class="view">
+  <header class="top">
+    <button class="icon-btn" data-back aria-label="Voltar">‹</button>
+    <div class="title">
+      <h1 id="pcName">Computador</h1>
+      <div id="pcStatus" class="status"><i></i><span>Conectando…</span></div>
+    </div>
+    <button id="settingsBtn" class="icon-btn" aria-label="Ajustes">
+      <svg viewBox="0 0 24 24"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.6 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
+    </button>
+  </header>
+
+  <div class="panels">
+    <!-- Tela -->
+    <div id="pTela" class="panel active">
+      <div id="screenWrap" class="screen-wrap">
+        <canvas id="screen"></canvas>
+        <div id="screenMsg" class="screen-msg">Carregando a tela…</div>
+      </div>
+      <div class="screen-bar">
+        <div class="seg" id="touchMode">
+          <button data-mode="toque" class="on">Toque</button>
+          <button data-mode="cursor">Cursor</button>
+        </div>
+        <button id="monBtn" class="chip" hidden>Monitor 1</button>
+        <button id="zoomReset" class="chip" hidden>Tamanho normal</button>
+        <span class="grow"></span>
+        <button class="chip kbd-open" aria-label="Teclado">⌨</button>
+        <button id="fullBtn" class="chip" aria-label="Tela cheia">⛶</button>
+      </div>
+      <div class="hint" id="telaHint">Toque = clique · Segurar = botão direito · Arrastar = arrastar · Dois dedos = rolar ou dar zoom</div>
+    </div>
+
+    <!-- Mouse (touchpad) -->
+    <div id="pMouse" class="panel">
+      <div class="pad-area">
+        <div id="pad" class="pad">
+          <span>Deslize para mover o mouse<br>Toque = clique · Dois dedos = rolar<br>Toque com dois dedos = botão direito<br>Dois toques e arrastar = arrastar</span>
+        </div>
+        <div id="scrollStrip" class="strip" aria-label="Rolar"><span>⇕</span></div>
+      </div>
+      <div class="mouse-btns">
+        <button id="mbL" class="mbtn">Esquerdo</button>
+        <button id="mbM" class="mbtn small">Meio</button>
+        <button id="mbR" class="mbtn">Direito</button>
+      </div>
+      <button class="btn wide kbd-open">⌨  Teclado</button>
+    </div>
+
+    <!-- Atalhos -->
+    <div id="pAtalhos" class="panel">
+      <div class="scroll">
+        <h3>Som e mídia</h3>
+        <div class="grid g3">
+          <button class="tile" data-act="voldown"><b>🔉</b>Volume −</button>
+          <button class="tile" data-act="mute"><b>🔇</b>Mudo</button>
+          <button class="tile" data-act="volup"><b>🔊</b>Volume +</button>
+          <button class="tile" data-act="prev"><b>⏮</b>Anterior</button>
+          <button class="tile" data-act="play"><b>⏯</b>Tocar/Pausar</button>
+          <button class="tile" data-act="next"><b>⏭</b>Próxima</button>
+        </div>
+
+        <h3>Janelas</h3>
+        <div class="grid g3">
+          <button class="tile" data-key="d" data-mods="win"><b>🖥</b>Área de trabalho</button>
+          <button class="tile" data-key="tab" data-mods="alt"><b>⇆</b>Trocar janela</button>
+          <button class="tile" data-key="f4" data-mods="alt"><b>✕</b>Fechar janela</button>
+          <button class="tile" data-key="up" data-mods="win"><b>▢</b>Maximizar</button>
+          <button class="tile" data-key="down" data-mods="win"><b>▁</b>Minimizar</button>
+          <button class="tile" data-key="f11"><b>⛶</b>Tela cheia</button>
+          <button class="tile" data-key="c" data-mods="ctrl"><b>⧉</b>Copiar</button>
+          <button class="tile" data-key="v" data-mods="ctrl"><b>📋</b>Colar</button>
+          <button class="tile" data-key="z" data-mods="ctrl"><b>↶</b>Desfazer</button>
+          <button class="tile" data-key="s" data-mods="win,shift"><b>✂</b>Recorte de tela</button>
+          <button class="tile" data-key="esc" data-mods="ctrl,shift"><b>📊</b>Gerenciador de tarefas</button>
+          <button class="tile" data-key="win"><b>⊞</b>Menu Iniciar</button>
+        </div>
+
+        <h3 class="row-h">Programas e sites <button id="progEdit" class="link">Editar</button></h3>
+        <div id="progGrid" class="grid g3"></div>
+
+        <h3>Energia</h3>
+        <div class="grid g2">
+          <button class="tile" data-act="bloquear"><b>🔒</b>Bloquear</button>
+          <button class="tile" data-act="tela_off"><b>🌙</b>Desligar a tela</button>
+          <button class="tile warn" data-act="reiniciar"><b>↻</b>Reiniciar</button>
+          <button class="tile danger" data-act="desligar"><b>⏻</b>Desligar</button>
+        </div>
+        <div class="pad-bottom"></div>
+      </div>
+    </div>
+  </div>
+
+  <nav class="tabs">
+    <button data-tab="pTela" class="on"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>Tela</button>
+    <button data-tab="pMouse"><svg viewBox="0 0 24 24"><rect x="6" y="3" width="12" height="18" rx="6"/><path d="M12 7v4"/></svg>Mouse</button>
+    <button data-tab="pAtalhos"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>Atalhos</button>
+  </nav>
+
+  <!-- Teclado -->
+  <div id="kbd" class="kbd" hidden>
+    <div class="kbd-row">
+      <button data-k="esc">Esc</button>
+      <button data-k="tab">Tab</button>
+      <button data-mod="ctrl">Ctrl</button>
+      <button data-mod="alt">Alt</button>
+      <button data-mod="win">Win</button>
+      <button data-mod="shift">Shift</button>
+      <button id="kbdMore">Fn…</button>
+      <button id="kbdClose" class="close">✕</button>
+    </div>
+    <div class="kbd-row">
+      <button data-k="left">←</button>
+      <button data-k="up">↑</button>
+      <button data-k="down">↓</button>
+      <button data-k="right">→</button>
+      <button data-k="backspace">⌫</button>
+      <button data-k="delete">Del</button>
+      <button data-k="enter" class="enter">Enter ⏎</button>
+    </div>
+    <div id="kbdFn" class="kbd-row wrap" hidden>
+      <button data-k="f1">F1</button><button data-k="f2">F2</button><button data-k="f3">F3</button>
+      <button data-k="f4">F4</button><button data-k="f5">F5</button><button data-k="f6">F6</button>
+      <button data-k="f7">F7</button><button data-k="f8">F8</button><button data-k="f9">F9</button>
+      <button data-k="f10">F10</button><button data-k="f11">F11</button><button data-k="f12">F12</button>
+      <button data-k="home">Home</button><button data-k="end">End</button>
+      <button data-k="pgup">PgUp</button><button data-k="pgdn">PgDn</button>
+      <button data-k="insert">Ins</button><button data-k="printscreen">PrtSc</button>
+    </div>
+    <textarea id="kbdInput" autocapitalize="off" autocomplete="off" spellcheck="false" aria-label="Digite aqui"></textarea>
+    <div class="kbd-tip">Digite com o teclado do celular: o texto vai direto para o computador.</div>
+  </div>
+
+  <button id="fullExit" class="full-exit" hidden aria-label="Sair da tela cheia">✕</button>
+</section>
+
+<!-- ================= Janelas (sheets) ================= -->
+<div id="sheetBg" class="sheet-bg" hidden></div>
+
+<div id="settings" class="sheet" hidden>
+  <h2>Ajustes deste computador</h2>
+  <label>Nome
+    <input id="sName" maxlength="40">
+  </label>
+  <div class="field">
+    <span>Qualidade da imagem</span>
+    <div class="seg full" id="sQuality">
+      <button data-q="eco">Economia</button>
+      <button data-q="normal">Normal</button>
+      <button data-q="alta">Alta</button>
+    </div>
+    <small>Use <b>Economia</b> no 4G fraco ou para gastar menos internet.</small>
+  </div>
+  <label>Velocidade do mouse <output id="sSensOut"></output>
+    <input id="sSens" type="range" min="0.5" max="4" step="0.1">
+  </label>
+  <p class="muted small" id="sAddr"></p>
+  <button id="sDone" class="btn primary wide">Pronto</button>
+  <button id="sRemove" class="btn danger-ghost wide">Remover este computador</button>
+</div>
+
+<div id="confirm" class="sheet" hidden>
+  <h2 id="cTitle"></h2>
+  <p id="cText"></p>
+  <div class="row">
+    <button id="cNo" class="btn wide">Cancelar</button>
+    <button id="cYes" class="btn primary wide">Confirmar</button>
+  </div>
+</div>
+
+<div id="progSheet" class="sheet" hidden>
+  <h2 id="pgTitle">Novo atalho</h2>
+  <label>Nome
+    <input id="pgName" maxlength="24" placeholder="ex.: YouTube">
+  </label>
+  <label>O que abrir
+    <input id="pgCmd" autocapitalize="off" spellcheck="false" placeholder="ex.: https://youtube.com ou spotify">
+    <small>Um site (https://…), um programa (notepad, calc, explorer, spotify) ou o caminho completo de um
+      arquivo/programa (C:\…\programa.exe).</small>
+  </label>
+  <div class="row">
+    <button id="pgDel" class="btn danger-ghost wide">Excluir</button>
+    <button id="pgSave" class="btn primary wide">Salvar</button>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>
