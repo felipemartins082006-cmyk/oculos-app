@@ -14,7 +14,7 @@ Robô de trade de cripto para a **Binance (Spot)**, com painel no navegador.
 - **Carteira de vários pares** (ex.: BTC, ETH, SOL…) com o mesmo dinheiro: cada par tem sua posição, seus
   sinais e seu stop, e cada compra usa no máximo a parte daquele par do patrimônio.
 - **4 estratégias** (cruzamento de médias, rompimento, momentum, reversão à média) com risco quantitativo:
-  tamanho por **volatilidade-alvo**, stop por **ATR** e **stop móvel**.
+  tamanho por **volatilidade-alvo**, stop por **ATR**, **stop móvel** e **filtro de mercado** (só compra com o Bitcoin acima da média).
 - **Laboratório quantitativo**: backtest com métricas profissionais (Sharpe, Sortino, Calmar…), **walk-forward**,
   mapa de parâmetros, **Monte Carlo** e teste em vários pares com carteira.
 
@@ -86,6 +86,12 @@ está em USDT, ou está na cripto. Nunca usa alavancagem.
 - **Stop:** "% abaixo da compra" ou **ATR** (N vezes o tamanho médio das velas, que se adapta ao mercado).
 - **Stop móvel:** o stop sobe junto com o maior fechamento desde a compra e nunca desce. Protege o lucro.
 - **Take-profit** opcional, **valor máximo por compra** e **perda máxima do dia** (padrão 5%).
+- **Filtro de mercado (novo na 2.3):** só compra quando o **Bitcoin está acima da média dos últimos N dias**
+  (recomendado: 100) e, se marcado, **vende quando o Bitcoin fecha o dia abaixo da média**. As criptos caem
+  juntas: quando o BTC entra em queda, as compras nos outros pares costumam dar errado. Usa as velas
+  **diárias e já fechadas** do BTC, qualquer que seja o tamanho de vela da estratégia (há teste automático de
+  que o filtro nunca usa um dia que ainda não fechou). Se o robô ficar 3 dias sem conseguir os dados do BTC,
+  ele para de comprar, mas não vende nada por causa disso.
 
 O sinal é conferido quando a vela **fecha**; o stop-loss é vigiado a cada 30 segundos (e fica registrado na
 Binance nos modos real e de teste). **O robô ao vivo, o backtest e o laboratório usam exatamente o mesmo código
@@ -161,6 +167,33 @@ Para ser honesto sobre o que esperar:
   XRP fizeram boa parte do ganho do momentum) e há viés de sobrevivência (a lista tem criptos grandes hoje).
 - **Monte Carlo** do momentum no BTC: a mesma estratégia, com as operações em outra ordem, teria 28% de chance
   de terminar no prejuízo e maior queda típica de 32%.
+
+### Testando melhorias sem se enganar (versão 2.3)
+
+Para não escolher uma "melhoria" só porque deu certo no passado, cada ideia foi fixada **antes** e testada em
+dois períodos separados, com os 8 pares e a simulação igual ao robô ao vivo (taxas, vendas antes das compras):
+**desenho** (nov/2020 a nov/2023, usado para decidir) e **confirmação** (nov/2023 a nov/2026, só olhado no fim).
+
+| Ideia | Desenho | Confirmação | Entrou? |
+|---|---|---|---|
+| **Filtro de mercado** (BTC acima da média de 100 dias, vende abaixo) | melhorou o momentum e o rompimento | melhorou de novo | **Sim**, como opção |
+| Momentum votando em 3 prazos (15/30/90 dias) | pior | igual ou pior | Não |
+| Rodízio: só os 3 ou 4 pares de maior momentum | retorno maior, queda bem maior, Sharpe igual ou menor | idem | Não |
+| Volatilidade-alvo também na EMA e no rompimento | menos retorno, menos queda | Sharpe melhor | Já existia (é escolha de risco) |
+
+Efeito do filtro de mercado (carteira de 8 pares, velas de 4h; Sharpe e maior queda):
+
+| Estratégia | Desenho sem → com | Confirmação sem → com |
+|---|---|---|
+| Momentum 30 dias + volatilidade-alvo 40% | 1,59 / 29% → 1,67 / 29% | 0,86 / 37% → **1,12 / 27%** |
+| Momentum 30 dias, sem stop | 1,69 / 45% → 1,87 / 44% | 0,49 / 51% → **0,87 / 37%** |
+| Rompimento (Donchian) | 1,28 / 39% → 1,35 / 38% | 0,79 / 28% → 0,89 / 31% |
+| Cruzamento de médias (já tem o filtro da EMA 200) | 1,74 / 45% → 1,74 / 35% | 0,98 / 26% → 0,86 / 24% |
+
+Em velas diárias o resultado foi parecido (momentum + volatilidade-alvo na confirmação: Sharpe 0,93 → 1,21,
+queda 35% → 25%). **Recomendação:** use o filtro com o Momentum ou o Rompimento; no Cruzamento de médias ele
+não ajudou de forma clara. A **reversão à média (RSI curto) perdeu dinheiro nos dois períodos** (−32% e −32% em 4h): evite. Mesmo melhor, nada disso é garantia: continuam sendo só 6 anos de cripto. O teste
+pode ser refeito com `RESEARCH_DIR=pasta go test -tags research -run Research -v` (arquivo `research_test.go`).
 
 Resumo: as estratégias **reduzem as quedas** em relação a segurar, principalmente numa carteira de vários pares,
 mas **nenhuma mostrou lucro comprovado**. No teste "Vários pares", o botão **Usar esta carteira no robô** aplica
@@ -273,6 +306,8 @@ O painel (`web/`) vai embutido no `.exe`.
 | `metrics.go` | Sharpe, Sortino, Calmar, maior queda, fator de lucro, significância… |
 | `lab.go` | Walk-forward, mapa de parâmetros, Monte Carlo e vários pares |
 | `portfolio.go` | Backtest de carteira: vários pares com o mesmo dinheiro, igual ao robô ao vivo |
+| `cross.go` | Filtro de mercado (BTC acima da média, com velas diárias fechadas) |
+| `research_test.go` | Pesquisa de melhorias em dois períodos (só roda com `-tags research`) |
 | `telegram_cmd.go` | Comandos pelo Telegram |
 | `binance.go` | API da Binance (normal e de teste): velas, regras do par, saldo, ordens (assinatura HMAC-SHA256) |
 | `server.go` | API do painel (só aceita pedidos do próprio painel) |

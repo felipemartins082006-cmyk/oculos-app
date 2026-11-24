@@ -73,9 +73,15 @@ func runPortfolio(syms []string, kls [][]Kline, p Params, o BTOptions) PortResul
 
 	ss := make([]*simSym, n)
 	tset := map[int64]bool{}
+	prs := make([]*Prepared, n)
+	for k, kl := range kls {
+		prs[k] = p.prepare(kl, dur)
+		prs[k].applyMarket(o.Market)
+	}
+	slots := float64(n)
 	for k, kl := range kls {
 		res.PerSymbol[k].Symbol = syms[k]
-		s := &simSym{kl: kl, pr: p.prepare(kl, dur), idx: make(map[int64]int, len(kl))}
+		s := &simSym{kl: kl, pr: prs[k], idx: make(map[int64]int, len(kl))}
 		s.first = p.warmup(dur)
 		for s.first < len(kl) && kl[s.first].OpenTime < o.TradeFrom {
 			s.first++
@@ -169,7 +175,7 @@ func runPortfolio(syms []string, kls [][]Kline, p Params, o BTOptions) PortResul
 					equity += x.qty * px
 				}
 			}
-			spend := math.Min(cash, equity/float64(n)*s.pr.fraction(s.pendingAt, o.TradePct/100))
+			spend := math.Min(cash, equity/slots*s.pr.fraction(s.pendingAt, o.TradePct/100))
 			if o.MaxBuy > 0 && spend > o.MaxBuy {
 				spend = o.MaxBuy
 			}

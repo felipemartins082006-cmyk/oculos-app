@@ -213,6 +213,7 @@ type Bot struct {
 	infos map[string]*SymbolInfo
 	preps map[string]*Prepared // indicadores da última checagem de cada par
 	lasts map[string]int       // índice da última vela fechada em preps
+	mkt   []Kline              // velas diárias fechadas do BTC (filtro de mercado), da última checagem que deu certo
 	wake  chan struct{}
 	dir   string
 
@@ -422,6 +423,24 @@ func (b *Bot) tick() {
 			got[i] = d
 		}(i, s)
 	}
+	// filtro de mercado: velas diárias do BTC (só as fechadas)
+	var mkt []Kline
+	var mktErr error
+	if days := cfg.Params.MarketDays; days > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ks, err := bn.Klines(marketSymbol, "1d", min(1000, marketCandles(days)+1), 0)
+			now := time.Now().UnixMilli()
+			for len(ks) > 0 && ks[len(ks)-1].CloseTime > now {
+				ks = ks[:len(ks)-1]
+			}
+			if err == nil && len(ks) < days {
+				err = fmt.Errorf("poucos dias de histórico do BTC (%d)", len(ks))
+			}
+			mkt, mktErr = ks, err
+		}()
+	}
 	wg.Wait()
 
 	// 2) saldo (uma vez para a carteira toda)
@@ -442,6 +461,15 @@ func (b *Bot) tick() {
 	if balErr != nil {
 		b.live.LastError = balErr.Error()
 		b.logf("err", "%s", balErr)
+	}
+
+	if cfg.Params.MarketDays > 0 {
+		if mktErr != nil {
+			// mantém as velas da última checagem; se ficarem velhas (3 dias), o filtro não libera compras
+			b.logf("err", "Filtro de mercado: %v", mktErr)
+		} else {
+			b.mkt = mkt
+		}
 	}
 
 	dur := intervalDur(cfg.Interval)
@@ -468,6 +496,7 @@ func (b *Bot) tick() {
 		closed := d.ks[:len(d.ks)-1]
 		p := d.ks[len(d.ks)-1].C // vela atual (ainda aberta) = preço agora
 		pr := cfg.Params.prepare(closed, dur)
+		pr.applyMarket(b.mkt)
 		last := len(closed) - 1
 		b.preps[d.sym], b.lasts[d.sym] = pr, last
 		pl.Base, pl.Price, pl.Candles, pl.Info = d.info.Base, p, d.ks, pr.info(last)

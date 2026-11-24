@@ -332,6 +332,14 @@ func (b *Bot) Lab(req LabRequest) (any, error) {
 	from := time.Now().Add(-time.Duration(req.Days) * 24 * time.Hour)
 	o := BTOptions{TradePct: req.TradePct, MaxBuy: req.MaxBuy, FeePct: paperFeePct, Start: req.Start,
 		StopSlipPct: backtestStopSlipPct, TradeFrom: from.UnixMilli(), Interval: dur}
+	if req.Params.MarketDays > 0 {
+		// filtro de mercado: velas diárias do BTC desde antes do aquecimento, mais a média
+		btc, err := b.history(marketSymbol, "1d", req.Days+extraDays+marketCandles(req.Params.MarketDays), 20000)
+		if err != nil {
+			return nil, fmt.Errorf("filtro de mercado: não deu para baixar as velas diárias do BTC: %v", err)
+		}
+		o.Market = btc
+	}
 
 	if req.Kind == "multi" {
 		syms := parseSymbols(req.Symbols)

@@ -26,6 +26,7 @@ type BTOptions struct {
 	StopSlipPct float64       // quanto abaixo do stop a venda sai, em média
 	TradeFrom   int64         // só opera a partir desta data; as velas antes servem para "aquecer" os indicadores
 	Interval    time.Duration // tamanho da vela (0 = descobre pelas velas)
+	Market      []Kline       // velas DIÁRIAS fechadas do BTCUSDT, para o filtro de mercado
 }
 
 const backtestStopSlipPct = 0.25
@@ -78,6 +79,7 @@ func runBacktest(kl []Kline, p Params, o BTOptions) BTResult {
 	res := BTResult{StartEquity: o.Start, Strategy: p.Strategy}
 	dur := intervalOf(kl, o)
 	pr := p.prepare(kl, dur)
+	pr.applyMarket(o.Market)
 	res.ppy = pr.ppy
 	fee := o.FeePct / 100
 	slip := o.StopSlipPct / 100

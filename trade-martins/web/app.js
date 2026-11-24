@@ -36,6 +36,9 @@ const RFIELDS = [
   { k: "atrPeriod", l: "Período do ATR (velas)", int: true, show: (p) => p.stopMode === "atr" },
   { k: "trailing", l: "Stop móvel", check: "O stop sobe junto com o maior fechamento desde a compra (nunca desce)" },
   { k: "takeProfitPct", l: "Take-profit % (0 = desliga)" },
+  { k: "marketDays", l: "Filtro de mercado: BTC acima da média de (dias, 0 = desliga)", int: true,
+    hint: "Só compra quando o Bitcoin está acima da média dos últimos N dias (as criptos caem juntas). Recomendado: 100 dias com Momentum ou Rompimento." },
+  { k: "marketExit", l: "Vender quando o BTC perder a média", check: "Com o filtro ligado, sai das posições quando o Bitcoin fecha o dia abaixo da média", show: (p) => p.marketDays > 0 },
 ];
 
 // monta os campos dentro de cada .pbox de um formulário
@@ -49,7 +52,7 @@ function buildParamBoxes(form) {
     if (f.check) return `<label class="check" data-r="${f.k}"><input type="checkbox" name="${f.k}"><span><b>${f.l}</b><small class="muted">${f.check}</small></span></label>`;
     return `<label data-r="${f.k}">${f.l}<input name="${f.k}" type="number" step="${f.int ? 1 : "any"}" min="0">${f.hint ? `<small class="muted">${f.hint}</small>` : ""}</label>`;
   }).join("") + `</div>`;
-  form.addEventListener("change", (e) => { if (["strategy", "sizeMode", "stopMode"].includes(e.target.name)) syncParamVisibility(form); });
+  form.addEventListener("change", (e) => { if (["strategy", "sizeMode", "stopMode", "marketDays"].includes(e.target.name)) syncParamVisibility(form); });
   syncParamVisibility(form);
 }
 

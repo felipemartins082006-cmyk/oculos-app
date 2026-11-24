@@ -52,6 +52,10 @@ type Params struct {
 	SizeMode      string  `json:"sizeMode"`  // fixo | vol
 	TargetVol     float64 `json:"targetVol"` // % ao ano
 	VolDays       int     `json:"volDays"`
+
+	// filtro de mercado (cross.go)
+	MarketDays int  `json:"marketDays"` // só compra com o BTC acima da média de N dias (0 = desliga)
+	MarketExit bool `json:"marketExit"` // ... e vende quando o BTC perde a média
 }
 
 var strategyNames = map[string]string{
@@ -193,6 +197,9 @@ func (p Params) validate(dur time.Duration, live bool) error {
 	if p.SizeMode == "vol" && (p.TargetVol <= 0 || p.TargetVol > 500 || p.VolDays < 2) {
 		return fmt.Errorf("volatilidade-alvo inválida")
 	}
+	if p.MarketDays < 0 || p.MarketDays == 1 || p.MarketDays > 400 {
+		return fmt.Errorf("filtro de mercado: use de 2 a 400 dias (ou 0 para desligar)")
+	}
 	if w := p.warmup(dur); live && w > liveMaxWarmup {
 		return fmt.Errorf("com velas de %s estes ajustes precisam de %d velas de histórico, mas o robô ao vivo trabalha com as últimas 1000 velas (até %d de preparo). Use velas maiores ou períodos menores", fmtInterval(dur), w, liveMaxWarmup)
 	}
@@ -220,6 +227,7 @@ type Prepared struct {
 	atr, vol, mom          []float64
 	ppy                    float64
 	momN                   int
+	gate, exit             []bool // filtro de mercado (cross.go): pode comprar? precisa sair? nil = desligado
 }
 
 func (p Params) prepare(ks []Kline, dur time.Duration) *Prepared {
@@ -269,8 +277,20 @@ const (
 	sigSell = -1
 )
 
-// signal avalia o fechamento da vela i. in = já está comprado.
+// signal avalia o fechamento da vela i. in = já está comprado. O filtro de mercado pode bloquear uma
+// compra ou forçar a venda.
 func (pr *Prepared) signal(i int, in bool) int {
+	if in && pr.exit != nil && i >= 0 && i < len(pr.exit) && pr.exit[i] {
+		return sigSell
+	}
+	s := pr.rawSignal(i, in)
+	if s == sigBuy && pr.gate != nil && (i < 0 || i >= len(pr.gate) || !pr.gate[i]) {
+		return sigNone
+	}
+	return s
+}
+
+func (pr *Prepared) rawSignal(i int, in bool) int {
 	p, c := pr.p, pr.c
 	if i < 1 || i >= len(c) {
 		return sigNone
@@ -453,6 +473,11 @@ func (pr *Prepared) info(i int) []InfoTile {
 	if p.TrendEMA > 0 && p.Strategy != "tsmom" && len(t) < 2 {
 		ok := pr.trendOK(i)
 		t = append(t, InfoTile{"Tendência", pick(ok, "Alta ▲", "Baixa ▼"), fmt.Sprintf("preço %s da EMA %d", pick(ok, "acima", "abaixo"), p.TrendEMA), tone(ok)})
+	}
+	if ok, on := pr.marketOKAt(i); on {
+		t = append(t, InfoTile{"Mercado (BTC)", pick(ok, "Alta ▲", "Baixa ▼"),
+			pick(ok, fmt.Sprintf("BTC acima da média de %d dias: compras liberadas", p.MarketDays),
+				fmt.Sprintf("BTC abaixo da média de %d dias: %s", p.MarketDays, pick(p.MarketExit, "fica de fora", "sem novas compras"))), tone(ok)})
 	}
 	if p.SizeMode == "vol" && len(t) < 2 {
 		if v := pr.annualVol(i) * 100; v > 0 {

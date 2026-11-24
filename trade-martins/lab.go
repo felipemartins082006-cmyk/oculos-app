@@ -222,7 +222,7 @@ func walkForward(ks []Kline, base Params, o BTOptions, trainDays, testDays int, 
 		var bestM Metrics
 		for _, cand := range grid {
 			r := runBacktest(ks[:trainEnd], cand, BTOptions{TradePct: o.TradePct, MaxBuy: 0, FeePct: o.FeePct,
-				Start: 1000, StopSlipPct: o.StopSlipPct, TradeFrom: trainFrom, Interval: dur})
+				Start: 1000, StopSlipPct: o.StopSlipPct, TradeFrom: trainFrom, Interval: dur, Market: o.Market})
 			if s := objectiveScore(r.Metrics, objective, 3); s > bestScore {
 				best, bestScore, bestM = cand, s, r.Metrics
 			}
@@ -233,7 +233,7 @@ func walkForward(ks []Kline, base Params, o BTOptions, trainDays, testDays int, 
 		}
 
 		r := runBacktest(ks[:testEnd], best, BTOptions{TradePct: o.TradePct, MaxBuy: o.MaxBuy, FeePct: o.FeePct,
-			Start: equity, StopSlipPct: o.StopSlipPct, TradeFrom: testFrom, Interval: dur})
+			Start: equity, StopSlipPct: o.StopSlipPct, TradeFrom: testFrom, Interval: dur, Market: o.Market})
 		if len(r.eq) < 2 {
 			break
 		}

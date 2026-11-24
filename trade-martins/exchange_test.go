@@ -49,6 +49,7 @@ type fakeBinance struct {
 	failSells int                  // quantas vendas a mercado responder com erro 503 (Binance instável)
 	prices    map[string]float64   // preço dos outros pares (BTCUSDT usa price)
 	closesOf  map[string][]float64 // fechamentos por par (como closes, para qualquer par)
+	daily     []float64            // velas DIÁRIAS do BTCUSDT (filtro de mercado); a última é o dia ainda aberto
 }
 
 // px = preço atual de um par; base = a cripto do par (ETHUSDT → ETH).
@@ -116,6 +117,19 @@ func (f *fakeBinance) handle(w http.ResponseWriter, r *http.Request) {
 				map[string]any{"filterType": "LOT_SIZE", "minQty": "0.00001000", "stepSize": "0.00001000"},
 				map[string]any{"filterType": "NOTIONAL", "minNotional": "5.00000000"},
 			}}}})
+	case path == "/api/v3/klines" && q.Get("interval") == "1d":
+		if f.daily == nil {
+			apiErr(w, -1121, "sem velas diárias")
+			return
+		}
+		var out [][]any
+		day := int64(24 * 3600000)
+		t0 := (time.Now().UnixMilli()/day - int64(len(f.daily)-1)) * day
+		for i, c := range f.daily {
+			p := strconv.FormatFloat(c, 'f', 2, 64)
+			out = append(out, []any{t0 + int64(i)*day, p, p, p, p, "1", t0 + int64(i+1)*day - 1})
+		}
+		json.NewEncoder(w).Encode(out)
 	case path == "/api/v3/klines":
 		n, _ := strconv.Atoi(q.Get("limit"))
 		sym := first(q["symbol"])
