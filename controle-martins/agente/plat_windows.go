@@ -513,6 +513,7 @@ func runTray() {
 		trayReady = true
 		updateTrayStatus()
 
+		mPanel := systray.AddMenuItem("Abrir painel (código e endereço)", "")
 		mShow := systray.AddMenuItem("Ver código de pareamento e endereços", "")
 		mNew := systray.AddMenuItem("Gerar novo código", "O código antigo deixa de funcionar para novos celulares")
 		mClear := systray.AddMenuItem("Desconectar todos os celulares", "Todos vão precisar parear de novo")
@@ -525,6 +526,8 @@ func runTray() {
 		go func() {
 			for {
 				select {
+				case <-mPanel.ClickedCh:
+					_ = openURL(fmt.Sprintf("http://localhost:%d/painel", cfg.Port))
 				case <-mShow.ClickedCh:
 					go notify("Controle Martins", pairingText())
 				case <-mNew.ClickedCh:
@@ -554,3 +557,5 @@ func runTray() {
 		os.Exit(0)
 	})
 }
+
+func openURL(u string) error { return shellOpen(u, "") }

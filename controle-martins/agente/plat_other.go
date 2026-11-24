@@ -24,8 +24,8 @@ type fakeCap struct{ mx, my int }
 
 var fakeMouse struct{ x, y int }
 
-func newCapturer() *fakeCap      { return &fakeCap{} }
-func (f *fakeCap) Close()        {}
+func newCapturer() *fakeCap { return &fakeCap{} }
+func (f *fakeCap) Close()   {}
 func (f *fakeCap) Grab(m Monitor, w int) (*image.RGBA, error) {
 	h := m.H * w / m.W
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
@@ -60,10 +60,10 @@ func mouseMoveRel(dx, dy int) {
 	fakeMouse.y += dy
 	log.Printf("mouse rel %d %d", dx, dy)
 }
-func mouseMoveAbs(x, y int)          { fakeMouse.x, fakeMouse.y = x, y; log.Printf("mouse abs %d %d", x, y) }
+func mouseMoveAbs(x, y int)           { fakeMouse.x, fakeMouse.y = x, y; log.Printf("mouse abs %d %d", x, y) }
 func mouseButton(b string, down bool) { log.Printf("botão %s down=%v", b, down) }
-func mouseWheel(dy, dx int)          { log.Printf("rodinha %d %d", dy, dx) }
-func typeText(s string)              { log.Printf("texto %q", s) }
+func mouseWheel(dy, dx int)           { log.Printf("rodinha %d %d", dy, dx) }
+func typeText(s string)               { log.Printf("texto %q", s) }
 func keyPress(k string, mods []string) error {
 	if _, ok := keyVK(k); !ok {
 		return fmt.Errorf("tecla desconhecida: %s", k)
@@ -71,8 +71,8 @@ func keyPress(k string, mods []string) error {
 	log.Printf("tecla %s %v", k, mods)
 	return nil
 }
-func action(a string) error  { log.Printf("ação %s", a); return nil }
-func openCmd(c string) error { log.Printf("abrir %q", c); return nil }
+func action(a string) error     { log.Printf("ação %s", a); return nil }
+func openCmd(c string) error    { log.Printf("abrir %q", c); return nil }
 func notify(title, text string) { fmt.Println("==", title, "==\n"+text) }
 func setAutostart(on bool)      {}
 func updateTrayStatus()         {}
@@ -81,3 +81,4 @@ func runTray() {
 	signal.Notify(ch, os.Interrupt)
 	<-ch
 }
+func openURL(u string) error { fmt.Println("abrir", u); return nil }

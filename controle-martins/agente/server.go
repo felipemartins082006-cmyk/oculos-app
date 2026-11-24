@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc32"
+	"html/template"
 	"image/jpeg"
 	"io/fs"
 	"log"
@@ -23,7 +24,7 @@ import (
 	controlemartins "controlemartins"
 )
 
-const version = "1.0"
+const version = "1.1"
 
 func hostname() string {
 	h, err := os.Hostname()
@@ -158,6 +159,7 @@ func runServer(port int) error {
 	mux.HandleFunc("/api/info", cors(handleInfo))
 	mux.HandleFunc("/api/parear", cors(handlePair))
 	mux.HandleFunc("/ws", handleWS)
+	mux.HandleFunc("/painel", handlePanel)
 	srv := &http.Server{Addr: fmt.Sprintf(":%d", port), Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	return srv.ListenAndServe()
 }
@@ -473,4 +475,39 @@ func sleepCtx(ctx context.Context, wake chan struct{}, d time.Duration) bool {
 	case <-t.C:
 		return true
 	}
+}
+
+// ---------- Painel local (só abre no próprio computador) ----------
+
+var panelTpl = template.Must(template.New("p").Parse(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Controle Martins</title>
+<style>body{font:17px/1.5 system-ui,Segoe UI,sans-serif;background:#0b0d12;color:#eef1f6;max-width:640px;margin:0 auto;padding:32px 20px}
+h1{font-size:26px;margin:0 0 4px}.ok{color:#3ecf8e;font-weight:600}.box{background:#161a22;border-radius:16px;padding:18px 20px;margin:18px 0}
+.code{font:700 40px/1.2 Consolas,monospace;letter-spacing:4px;color:#7fb0ff}.addr{font:600 22px Consolas,monospace}
+.muted{color:#8b93a3;font-size:14px}li{margin:6px 0}</style></head><body>
+<h1>Controle Martins</h1><div class="ok">● Ativo neste computador ({{.Name}})</div>
+<div class="box"><div class="muted">CÓDIGO DE PAREAMENTO</div><div class="code">{{.Code}}</div></div>
+<div class="box"><div class="muted">ENDEREÇO PARA COLOCAR NO CELULAR</div>
+{{if .TS}}{{range .TS}}<div class="addr">{{.}}</div>{{end}}<div class="muted">Tailscale: funciona de qualquer lugar.</div>{{else}}
+<p><b>O Tailscale não está ligado neste PC.</b> Sem ele, só funciona no Wi-Fi de casa.<br>
+Instale em <b>tailscale.com/download</b>, entre com a mesma conta do celular e atualize esta página: o endereço que começa com <b>100.</b> vai aparecer aqui.</p>{{end}}
+{{if .LAN}}<p class="muted">Só na rede de casa: {{range $i, $a := .LAN}}{{if $i}}, {{end}}{{$a}}{{end}}</p>{{end}}</div>
+<div class="box"><b>No celular:</b> app Controle PC › Adicionar computador › digite o endereço e o código.<br>
+<span class="muted">Celulares pareados: {{.N}} · Porta {{.Port}} · Versão {{.Ver}}</span></div>
+<p class="muted">Esta página só abre no próprio computador. Para abrir de novo: endereço <b>localhost:{{.Port}}/painel</b> no navegador, ou abra o ControleMartins.exe outra vez.</p>
+</body></html>`))
+
+func handlePanel(w http.ResponseWriter, r *http.Request) {
+	ip := net.ParseIP(remoteIP(r))
+	if ip == nil || !ip.IsLoopback() {
+		http.NotFound(w, r)
+		return
+	}
+	ts, lan := splitAddresses()
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = panelTpl.Execute(w, map[string]any{
+		"Name": hostname(), "Code": currentCode(), "TS": ts, "LAN": lan,
+		"N": deviceCount(), "Port": cfg.Port, "Ver": version,
+	})
 }

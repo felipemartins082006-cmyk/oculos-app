@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 type Monitor struct {
@@ -31,8 +32,7 @@ func setupLog() {
 }
 
 // Endereços deste PC. Os do Tailscale (100.x) vêm primeiro: funcionam de qualquer lugar.
-func addresses() []string {
-	var ts, lan []string
+func splitAddresses() (ts, lan []string) {
 	ifaces, _ := net.Interfaces()
 	for _, ifc := range ifaces {
 		if ifc.Flags&net.FlagUp == 0 || ifc.Flags&net.FlagLoopback != 0 {
@@ -57,6 +57,11 @@ func addresses() []string {
 	}
 	sort.Strings(ts)
 	sort.Strings(lan)
+	return ts, lan
+}
+
+func addresses() []string {
+	ts, lan := splitAddresses()
 	var out []string
 	for _, a := range ts {
 		out = append(out, a+"   (Tailscale: funciona de qualquer lugar)")
@@ -99,8 +104,11 @@ func main() {
 	// só um por vez: se a porta já estiver em uso, outro já está rodando
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.Port))
 	if err != nil {
-		notify("Controle Martins", fmt.Sprintf("O Controle Martins já está rodando (ou a porta %d está ocupada).\n\nProcure o ícone perto do relógio.", cfg.Port))
-		os.Exit(1)
+		// já está rodando: abre o painel no navegador, com o código e o endereço
+		if openURL(fmt.Sprintf("http://localhost:%d/painel", cfg.Port)) != nil {
+			notify("Controle Martins", fmt.Sprintf("O Controle Martins já está rodando (ou a porta %d está ocupada).\n\nAbra no navegador: localhost:%d/painel", cfg.Port, cfg.Port))
+		}
+		os.Exit(0)
 	}
 	ln.Close()
 
@@ -119,7 +127,11 @@ func main() {
 	cfgMu.Unlock()
 	if first {
 		setAutostart(true)
-		go notify("Controle Martins", pairingText()+"\n\nEle vai abrir sozinho junto com o Windows.\nPara ver este código de novo, clique no ícone do Controle Martins perto do relógio.")
+		go func() {
+			time.Sleep(700 * time.Millisecond)
+			_ = openURL(fmt.Sprintf("http://localhost:%d/painel", cfg.Port))
+			notify("Controle Martins", pairingText()+"\n\nEle vai abrir sozinho junto com o Windows.\nPara ver este código de novo, abra o ControleMartins.exe outra vez\nou clique no ícone azul perto do relógio (pode estar escondido na setinha ^).")
+		}()
 	}
 	runTray()
 }

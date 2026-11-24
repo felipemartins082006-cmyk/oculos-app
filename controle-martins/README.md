@@ -31,8 +31,12 @@ O computador fica **ligado 24 horas**. Se ele for desligado, alguém precisa lig
    - Se o Windows perguntar sobre o **Firewall**, marque **Redes privadas** e **Redes públicas** e clique em **Permitir**.
      Sem isso, o celular não consegue conectar.
 3. Aparece uma janela com o **código de pareamento** (ex.: `K7MQ-3XPA`) e os **endereços** do PC.
-4. Pronto. O programa fica num ícone azul perto do relógio e abre sozinho junto com o Windows.
-   Clique no ícone para ver o código de novo, gerar outro código, desconectar celulares ou sair.
+4. Também abre no navegador uma página (**painel**) com o código e o endereço.
+5. Pronto. O programa fica num ícone azul perto do relógio e abre sozinho junto com o Windows.
+   - **Para ver o código e o endereço de novo:** abra o `ControleMartins.exe` outra vez (ele abre o painel no
+     navegador) ou digite `localhost:47800/painel` no navegador do PC.
+   - O ícone azul pode ficar escondido na **setinha ^** ao lado do relógio. Clique nele para gerar outro
+     código, desconectar celulares ou sair.
 
 ## 2. Para usar fora de casa: Tailscale (grátis)
 
@@ -77,6 +81,7 @@ Sem o APK (iPhone, tablet, outro PC): com o Tailscale ligado, abra no navegador
 
 | Problema | O que fazer |
 |---|---|
+| Não aparece o ícone azul nem o painel | O Windows Defender pode ter bloqueado o programa: Segurança do Windows › Proteção contra vírus e ameaças › Histórico de proteção › Permitir. Depois abra o `.exe` de novo. |
 | "Não achei o computador nesse endereço" | PC ligado? Ícone do Controle Martins perto do relógio? Tailscale ligado no celular **e** no PC? Liberou no Firewall? |
 | Imagem travando ou atrasada no 4G | No app: ⚙ › Qualidade › **Economia**. |
 | Mouse rápido ou lento demais | ⚙ › Velocidade do mouse. |
