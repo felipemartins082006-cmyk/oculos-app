@@ -66,6 +66,10 @@ public final class NiveisExtras {
 	/** Chamado depois de cada troca: sobe quantos níveis extras a experiência permitir. */
 	public static void verificar(Villager v) {
 		if (v.getVillagerData().level() < 5) return;
+		if (ModRegistro.ehMercador(v)) {
+			verificarMercador(v);
+			return;
+		}
 		List<Fabrica> lista = v.getVillagerData().profession().unwrapKey().map(ELITE::get).orElse(null);
 		if (lista == null || lista.isEmpty()) return;
 		int extra = nivelExtra(v);
@@ -95,6 +99,34 @@ public final class NiveisExtras {
 			p.sendMerchantOffers(p.containerMenu.containerId, v.getOffers(), 5, v.getVillagerXp(), true, true);
 			enviar(p, v);
 		}
+	}
+
+	/**
+	 * Mercador depois de Mestre: cada nível libera um item muito forte na loja; quando a lista acaba,
+	 * alterna otimizar (uma troca forte 15% mais barata) e inovar (uma troca nova sorteada).
+	 */
+	private static void verificarMercador(Villager v) {
+		List<com.martins.trocas.mercador.LojaMercador.Oferta> elite = com.martins.trocas.mercador.LojaMercador.elite();
+		int extra = nivelExtra(v);
+		boolean subiu = false;
+		Map<String, Integer> descontos = com.martins.trocas.mercador.LojaMercador.novoMapa(v.getAttached(ModRegistro.DESCONTOS));
+		List<com.martins.trocas.mercador.LojaMercador.Oferta> inovacoes = new ArrayList<>();
+		var antigas = v.getAttached(ModRegistro.INOVACOES);
+		if (antigas != null) inovacoes.addAll(antigas);
+		while (v.getVillagerXp() >= xpPara(extra + 1)) {
+			extra++;
+			subiu = true;
+			int k = extra - elite.size();
+			if (k <= 0 || elite.isEmpty()) continue; // fase 1: o próprio nível libera o item forte
+			if (k % 2 == 1) descontos.merge(elite.get(((k - 1) / 2) % elite.size()).chave(), 1, Integer::sum);
+			else inovacoes.add(com.martins.trocas.mercador.LojaMercador.inovar(v, extra));
+		}
+		if (!subiu) return;
+		v.setAttached(ModRegistro.NIVEL_EXTRA, extra);
+		v.setAttached(ModRegistro.DESCONTOS, descontos);
+		v.setAttached(ModRegistro.INOVACOES, inovacoes);
+		v.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 200, 0));
+		v.playSound(SoundEvents.VILLAGER_CELEBRATE, 1.0f, 1.0f);
 	}
 
 	public static void enviar(ServerPlayer p, Villager v) {

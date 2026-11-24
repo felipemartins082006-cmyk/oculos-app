@@ -62,6 +62,15 @@ public final class ModRegistro {
 	public static final AttachmentType<Integer> NIVEL_EXTRA = AttachmentRegistry.create(TrocasMartins.id("nivel_extra"),
 		b -> b.persistent(Codec.INT));
 
+	/** Mercador depois de Mestre: trocas novas sorteadas (inovar). */
+	public static final AttachmentType<java.util.List<com.martins.trocas.mercador.LojaMercador.Oferta>> INOVACOES =
+		AttachmentRegistry.create(TrocasMartins.id("inovacoes"),
+			b -> b.persistent(com.martins.trocas.mercador.LojaMercador.Oferta.CODEC_SALVO.listOf()));
+
+	/** Mercador depois de Mestre: quantas vezes cada troca forte foi otimizada (15% mais barata cada). */
+	public static final AttachmentType<Map<String, Integer>> DESCONTOS = AttachmentRegistry.create(TrocasMartins.id("descontos"),
+		b -> b.persistent(Codec.unboundedMap(Codec.STRING, Codec.INT)));
+
 	public static final MenuType<MercadorMenu> MERCADOR_MENU = new ExtendedMenuType<>(MercadorMenu::new, ByteBufCodecs.VAR_INT);
 
 	private ModRegistro() {

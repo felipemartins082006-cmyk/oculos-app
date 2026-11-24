@@ -26,7 +26,7 @@ public abstract class VillagerEntityMixin {
 	@Inject(method = "rewardTradeXp", at = @At("TAIL"))
 	private void trocasmartins$niveisExtras(MerchantOffer offer, CallbackInfo ci) {
 		Villager self = (Villager) (Object) this;
-		if (!ModRegistro.ehMercador(self)) NiveisExtras.verificar(self);
+		NiveisExtras.verificar(self);
 	}
 
 	@Inject(method = "startTrading", at = @At("TAIL"))

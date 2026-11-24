@@ -183,7 +183,7 @@ public final class PrecoMercador {
 		v.forEach((item, valor) -> finais.put(item, Math.max(0, valor)));
 		custos = custo;
 		valores = finais;
-		LojaMercador.montar();
+		LojaMercador.montar(server.registryAccess());
 		TrocasMartins.LOGGER.info("Mercador: {} preços calculados em {} ms", finais.size(), System.currentTimeMillis() - inicio);
 	}
 

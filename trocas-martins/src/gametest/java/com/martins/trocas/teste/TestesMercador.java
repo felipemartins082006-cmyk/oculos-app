@@ -77,18 +77,18 @@ public class TestesMercador {
 				e.getKey() + ": aldeão paga " + e.getValue() + ", Mercador paga mais: " + pago);
 		}
 		// o que o Mercador vende não dá para revender com lucro (nem para ele, nem para aldeões)
-		ctx.assertTrue(!LojaMercador.ofertas().isEmpty(), "a loja do Mercador está vazia");
-		for (LojaMercador.Oferta o : LojaMercador.ofertas()) {
+		ctx.assertTrue(!LojaMercador.todas().isEmpty(), "a loja do Mercador está vazia");
+		for (LojaMercador.Oferta o : LojaMercador.todas()) {
 			double custoPorItem = o.esmeraldas() * 1000.0 / o.resultado().getCount();
 			double revenda = PrecoMercador.valorUnitario(o.resultado());
 			ctx.assertTrue(revenda <= custoPorItem + 1e-6, "revender " + o.resultado() + " dá lucro: " + custoPorItem + " < " + revenda);
 			var compram = TrocasAldeoes.COMPRAM.get(o.resultado().getItem());
 			if (compram != null) ctx.assertTrue(compram.porItem() * 1000 <= custoPorItem + 0.01,
 				"revender " + o.resultado() + " a um aldeão dá lucro");
-			ctx.assertTrue(!(o.resultado().is(Items.ELYTRA) || o.resultado().is(Items.TOTEM_OF_UNDYING)), "item apelão na loja");
+			ctx.assertTrue(!(o.resultado().is(Items.ELYTRA) || o.resultado().is(Items.TOTEM_OF_UNDYING)) || LojaMercador.elite().contains(o), "item apelão antes de Mestre II");
 		}
 		// itens raros com preço absurdo
-		for (LojaMercador.Oferta o : LojaMercador.ofertas()) {
+		for (LojaMercador.Oferta o : LojaMercador.todas()) {
 			if (o.resultado().is(Items.DIAMOND)) ctx.assertTrue(o.esmeraldas() >= 100, "diamante barato demais");
 			if (o.resultado().is(Items.NETHERITE_INGOT)) ctx.assertTrue(o.esmeraldas() >= 500, "netherite barato demais");
 			// mesmo preço do aldeão quando algum aldeão vende
@@ -118,7 +118,7 @@ public class TestesMercador {
 			Cotacao q = PrecoMercador.cotar(List.of(new ItemStack(item)), 1.0);
 			TrocasMartins.LOGGER.info("[preço] {} -> {}", item, Taxa.descrever(q));
 		}
-		for (LojaMercador.Oferta o : LojaMercador.ofertas()) {
+		for (LojaMercador.Oferta o : LojaMercador.todas()) {
 			TrocasMartins.LOGGER.info("[loja] {} + {} -> {}", o.custoA(), o.custoB(), o.resultado());
 		}
 		ctx.succeed();
@@ -272,6 +272,42 @@ public class TestesMercador {
 		Villager m = ctx.spawn(EntityTypes.VILLAGER, new BlockPos(3, 1, 3));
 		m.setVillagerData(m.getVillagerData().withProfession(ctx.getLevel().registryAccess(), ModRegistro.MERCADOR_KEY));
 		ctx.assertTrue(m.getOffers().isEmpty(), "o Mercador não usa a tela de trocas normal");
+		ctx.succeed();
+	}
+
+	@GameTest
+	public void lojaPorNivel(GameTestHelper ctx) {
+		piso(ctx);
+		Villager m = ctx.spawn(EntityTypes.VILLAGER, new BlockPos(2, 1, 2));
+		int anterior = 0;
+		for (int n = 1; n <= 5; n++) {
+			m.setVillagerData(m.getVillagerData().withProfession(ctx.getLevel().registryAccess(), ModRegistro.MERCADOR_KEY).withLevel(n));
+			int tamanho = LojaMercador.ofertasPara(m).size();
+			if (n == 1) igual(ctx, LojaMercador.ofertas().size(), tamanho, "Novato = a loja de antes");
+			else ctx.assertTrue(tamanho > anterior, "nível " + n + " deveria trazer trocas novas: " + anterior + " -> " + tamanho);
+			TrocasMartins.LOGGER.info("[loja] nível {}: {} trocas", n, tamanho);
+			anterior = tamanho;
+		}
+		ctx.assertTrue(LojaMercador.limiteVenda(5, 0) > LojaMercador.limiteVenda(1, 0), "o limite de venda deveria subir com o nível");
+
+		// depois de Mestre: cada nível libera um item forte
+		m.setVillagerXp(NiveisExtras.xpPara(3));
+		NiveisExtras.verificar(m);
+		igual(ctx, 3, NiveisExtras.nivelExtra(m), "Mercador em Mestre IV");
+		igual(ctx, anterior + 3, LojaMercador.ofertasPara(m).size(), "3 itens fortes liberados");
+
+		// depois da lista: otimizar (mais barato) e inovar (troca nova)
+		int elite = LojaMercador.elite().size();
+		int precoAntes = LojaMercador.elite().get(0).esmeraldas();
+		m.setVillagerXp(NiveisExtras.xpPara(elite + 2));
+		NiveisExtras.verificar(m);
+		var loja = LojaMercador.ofertasPara(m);
+		igual(ctx, anterior + elite + 1, loja.size(), "todos os fortes + 1 inovação");
+		ctx.assertTrue(loja.get(anterior).esmeraldas() < precoAntes, "a primeira troca forte deveria ficar mais barata");
+		for (var o : loja) {
+			double custo = o.esmeraldas() * 1000.0 / o.resultado().getCount();
+			ctx.assertTrue(PrecoMercador.valorUnitario(o.resultado()) <= custo + 1e-6, "revender " + o.resultado() + " daria lucro");
+		}
 		ctx.succeed();
 	}
 

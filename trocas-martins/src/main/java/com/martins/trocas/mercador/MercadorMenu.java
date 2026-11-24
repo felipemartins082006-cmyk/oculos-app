@@ -41,7 +41,8 @@ public class MercadorMenu extends AbstractContainerMenu {
 	public static final int MAX_OFERTAS = 64;
 
 	public static final int P_STATUS = 0, P_ESMERALDAS = 1, P_USADOS = 2, P_TOTAL = 3, P_FALTAM = 4,
-		P_ITENS_POR_ESM = 5, P_ESM_POR_ITEM = 6, P_NIVEL = 7, P_XP = 8, P_COMPRA = 9, P_TAMANHO = 10;
+		P_ITENS_POR_ESM = 5, P_ESM_POR_ITEM = 6, P_NIVEL = 7, P_XP = 8, P_COMPRA = 9, P_EXTRA = 10, P_XP_ATUAL = 11, P_XP_FAIXA = 12,
+		P_LIMITE = 13, P_TAMANHO = 14;
 
 	private final SimpleContainer pagamento;
 	private final SimpleContainer saida = new SimpleContainer(1);
@@ -95,7 +96,7 @@ public class MercadorMenu extends AbstractContainerMenu {
 		}
 		addDataSlots(props);
 		if (mercador != null) {
-			loja = LojaMercador.ofertas();
+			loja = LojaMercador.ofertasPara(mercador);
 			atualizarNivel();
 		}
 	}
@@ -146,6 +147,12 @@ public class MercadorMenu extends AbstractContainerMenu {
 		return mercador != null ? mercador.getAttachedOrCreate(ModRegistro.USOS) : usosCliente;
 	}
 
+	/** Quantas vendas de cada item o Mercador aceita até repor (sobe com o nível). */
+	public int limiteVenda() {
+		int l = props.get(P_LIMITE);
+		return l > 0 ? l : LojaMercador.USOS_VENDA;
+	}
+
 	/** Quantas trocas ainda dá para fazer com {@code chave} até o Mercador repor. */
 	public int restantes(String chave, int max) {
 		return Math.max(0, max - usos().getOrDefault(chave, 0));
@@ -175,8 +182,23 @@ public class MercadorMenu extends AbstractContainerMenu {
 	}
 
 	private void atualizarNivel() {
-		props.set(P_NIVEL, mercador.getVillagerData().level());
-		props.set(P_XP, mercador.getVillagerXp());
+		int nivel = mercador.getVillagerData().level();
+		int extra = com.martins.trocas.trocas.NiveisExtras.nivelExtra(mercador);
+		int xp = mercador.getVillagerXp();
+		props.set(P_NIVEL, nivel);
+		props.set(P_XP, Math.min(Short.MAX_VALUE, xp));
+		props.set(P_EXTRA, extra);
+		int min, max;
+		if (nivel < 5) {
+			min = net.minecraft.world.entity.npc.villager.VillagerData.getMinXpPerLevel(nivel);
+			max = net.minecraft.world.entity.npc.villager.VillagerData.getMaxXpPerLevel(nivel);
+		} else {
+			min = com.martins.trocas.trocas.NiveisExtras.xpPara(extra);
+			max = com.martins.trocas.trocas.NiveisExtras.xpPara(extra + 1);
+		}
+		props.set(P_XP_ATUAL, Math.max(0, Math.min(xp - min, max - min)));
+		props.set(P_XP_FAIXA, Math.max(1, max - min));
+		props.set(P_LIMITE, LojaMercador.limiteVenda(nivel, extra));
 	}
 
 	private static boolean ehEsmeralda(ItemStack s) {
@@ -202,7 +224,7 @@ public class MercadorMenu extends AbstractContainerMenu {
 		} else {
 			compra = -1;
 			ItemStack ref = !a.isEmpty() ? a : b;
-			int limite = ref.isEmpty() ? Integer.MAX_VALUE : restantes(chaveVenda(ref), LojaMercador.USOS_VENDA);
+			int limite = ref.isEmpty() ? Integer.MAX_VALUE : restantes(chaveVenda(ref), limiteVenda());
 			cotacao = PrecoMercador.cotar(List.of(a, b), multiplicador(), limite);
 			saida.setItem(0, cotacao.ok() ? new ItemStack(Items.EMERALD, cotacao.esmeraldas()) : ItemStack.EMPTY);
 		}
@@ -423,7 +445,21 @@ public class MercadorMenu extends AbstractContainerMenu {
 		mercador.notifyTrade(troca);
 		mercador.notifyTradeUpdated(recebido);
 		player.awardStat(Stats.TRADED_WITH_VILLAGER);
+		atualizarLoja();
 		recalcular();
+	}
+
+	/** Se o Mercador subiu de nível (ou otimizou/inovou), a loja muda: manda a lista nova para a tela. */
+	private void atualizarLoja() {
+		List<LojaMercador.Oferta> nova = LojaMercador.ofertasPara(mercador);
+		boolean mudou = nova.size() != loja.size();
+		for (int i = 0; !mudou && i < nova.size(); i++) {
+			mudou = !nova.get(i).chave().equals(loja.get(i).chave()) || nova.get(i).esmeraldas() != loja.get(i).esmeraldas();
+		}
+		if (mudou) {
+			loja = nova;
+			catalogoEnviado = false;
+		}
 	}
 
 	@Override

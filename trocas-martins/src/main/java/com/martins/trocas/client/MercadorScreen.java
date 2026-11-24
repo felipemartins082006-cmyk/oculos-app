@@ -170,7 +170,7 @@ public class MercadorScreen extends AbstractContainerScreen<MercadorMenu> {
 	private Linha linhaVenda(OfertasPayload.Oferta o, int tem) {
 		ItemStack a = o.item().copyWithCount(Math.min(64, o.quantidade()));
 		ItemStack b = o.quantidade() > 64 ? o.item().copyWithCount(o.quantidade() - 64) : ItemStack.EMPTY;
-		boolean esgotado = menu.restantes(MercadorMenu.chaveVenda(o.item()), LojaMercador.USOS_VENDA) <= 0;
+		boolean esgotado = menu.restantes(MercadorMenu.chaveVenda(o.item()), menu.limiteVenda()) <= 0;
 		return new Linha(a, b, new ItemStack(Items.EMERALD, o.esmeraldas()), tem >= o.quantidade() && !esgotado,
 			Math.max(0, o.quantidade() - tem), false, -1, o.item(), esgotado);
 	}
@@ -180,8 +180,11 @@ public class MercadorScreen extends AbstractContainerScreen<MercadorMenu> {
 	@Override
 	protected void extractLabels(GuiGraphicsExtractor g, int xm, int ym) {
 		int nivel = menu.getProps().get(MercadorMenu.P_NIVEL);
-		Component titulo = nivel > 0 && nivel <= 5
-			? Component.translatable("merchant.title", this.title, Component.translatable("merchant.level." + nivel))
+		int extra = menu.getProps().get(MercadorMenu.P_EXTRA);
+		Component nomeNivel = Component.translatable("merchant.level." + Math.max(1, Math.min(5, nivel))).copy();
+		if (nivel >= 5 && extra > 0) nomeNivel = nomeNivel.copy().append(" " + romano(extra + 1));
+		Component titulo = nivel > 0
+			? Component.translatable("merchant.title", this.title, nomeNivel)
 			: this.title;
 		g.text(font, titulo, 49 + imageWidth / 2 - font.width(titulo) / 2, 6, COR, false);
 		g.text(font, playerInventoryTitle, inventoryLabelX, inventoryLabelY, COR, false);
@@ -216,15 +219,26 @@ public class MercadorScreen extends AbstractContainerScreen<MercadorMenu> {
 		}
 	}
 
+	private static String romano(int n) {
+		String[] r = {"M", "CM", "D", "CD", "C", "XC", "L", "XL", "X", "IX", "V", "IV", "I"};
+		int[] v = {1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1};
+		StringBuilder sb = new StringBuilder();
+		for (int i = 0; i < v.length; i++) while (n >= v[i]) {
+			sb.append(r[i]);
+			n -= v[i];
+		}
+		return sb.toString();
+	}
+
 	private void desenharXp(GuiGraphicsExtractor g, int x, int y) {
 		int nivel = menu.getProps().get(MercadorMenu.P_NIVEL);
-		int xp = menu.getProps().get(MercadorMenu.P_XP);
-		if (nivel < 1 || nivel >= 5) return;
+		int faixa = menu.getProps().get(MercadorMenu.P_XP_FAIXA);
+		if (nivel < 1 || faixa <= 0) return;
+		// a barra continua depois de Mestre: Mestre II, III... sem fim
 		g.blitSprite(RenderPipelines.GUI_TEXTURED, XP_FUNDO, x + 136, y + 16, 102, 5);
-		int min = VillagerData.getMinXpPerLevel(nivel);
-		if (xp >= min && VillagerData.canLevelUp(nivel)) {
-			float f = 102.0F / (VillagerData.getMaxXpPerLevel(nivel) - min);
-			int atual = Math.min(Mth.floor(f * (xp - min)), 102);
+		{
+			float f = 102.0F / faixa;
+			int atual = Math.min(Mth.floor(f * menu.getProps().get(MercadorMenu.P_XP_ATUAL)), 102);
 			g.blitSprite(RenderPipelines.GUI_TEXTURED, XP_ATUAL, 102, 5, 0, 0, x + 136, y + 16, atual, 5);
 			Cotacao c = menu.cotacaoCliente();
 			if (c.ok()) {

@@ -65,6 +65,24 @@ Ele repõe trabalhando no Balcão, até 2 vezes por dia, como qualquer aldeão.
 
 ![Diamante a preço absurdo](docs/6_comprar_diamante.png)
 
+### O Mercador também evolui
+
+Vender e comprar dá experiência ao Mercador. **A cada nível novo a loja dele ganha trocas novas**
+(as anteriores continuam):
+
+| Nível | Trocas novas na loja |
+|---|---|
+| **Novato** | madeiras, pedras, plantas, comida, minérios, utilidades (e diamante/netherite a preço absurdo) |
+| **Aprendiz** | blocos de construção e decoração: quartzo, pedra luminosa, lanterna do mar, prismarinho, ametista, tijolos, mel, slime, feno, estantes, molduras, pinturas, lãs coloridas, obsidiana chorona... |
+| **Qualificado** | baldes (água, lava, leite, neve), vara de pesca, luneta, pincel, escudo, arco, besta, ferramentas e armadura de ferro, foguetes, TNT, maçã dourada, bigorna, suporte de poções... |
+| **Especialista** | vara e pó de blaze, creme de magma, lágrima de ghast, membrana de phantom, pé de coelho, concha de náutilo, esponja, escamas, olho do Ender e livros médios (Eficiência III, Proteção III, Afiação III...) |
+| **Mestre** | equipamento de diamante (caro: o preço dos diamantes da receita), livros fortes (Remendo, Afiação V, Eficiência V, Fortuna III...), casco de shulker, molde de netherite, detrito ancestral |
+| **Mestre II, III...** | um item muito forte por nível: coração do mar, totem, tridente, maçã dourada encantada, élitro, livros raros (Agachamento Ágil, Rajada de Vento, Densidade...), núcleo pesado, conduíte, armadura e armas de netherite no máximo, maça, sinalizador, estrela do Nether, ovo do dragão |
+
+Depois que ele libera todos os itens fortes, os níveis seguintes alternam **otimizar** (uma troca forte
+fica 15% mais barata) e **inovar** (aparece uma troca nova sorteada). O limite de quantas vezes ele
+compra cada item também sobe com o nível (16 no Novato, até 32 no Mestre, +2 por nível depois disso).
+
 ### Preços justos (sem lucro, sem prejuízo absurdo)
 
 O Mercador lê, quando o mundo abre, **todas as trocas de todos os aldeões** (as do Minecraft, as do
@@ -103,7 +121,7 @@ Mais detalhes:
 - O Mercador paga no máximo **64 esmeraldas por item**.
 - Itens únicos (armaduras, ferramentas...) comprados de outros aldeões: o Mercador paga no máximo
   **metade do que você pagou**.
-- Vender e comprar dá experiência ao Mercador e ele sobe de nível (o preço não muda com o nível).
+- Vender e comprar dá experiência ao Mercador e ele sobe de nível: a loja cresce, os preços continuam justos.
 
 ### Comandos
 

@@ -128,7 +128,9 @@ public class FotosCliente implements FabricClientGameTest {
 
 		mercador = EntityTypes.VILLAGER.create(w, EntitySpawnReason.COMMAND);
 		mercador.snapTo(b.getX() + 0.5 - 1.4, y, b.getZ() - 3.2, 20, 0);
-		mercador.setVillagerData(mercador.getVillagerData().withProfession(w.registryAccess(), ModRegistro.MERCADOR_KEY).withLevel(3));
+		mercador.setVillagerData(mercador.getVillagerData().withProfession(w.registryAccess(), ModRegistro.MERCADOR_KEY).withLevel(5));
+		mercador.setVillagerXp(NiveisExtras.xpPara(3) + 300);
+		NiveisExtras.verificar(mercador);
 		mercador.setNoAi(true);
 		mercador.setYHeadRot(20);
 		mercador.setYBodyRot(20);
