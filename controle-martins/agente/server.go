@@ -24,7 +24,7 @@ import (
 	controlemartins "controlemartins"
 )
 
-const version = "1.1"
+const version = "1.2"
 
 func hostname() string {
 	h, err := os.Hostname()

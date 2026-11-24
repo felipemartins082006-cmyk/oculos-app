@@ -81,4 +81,6 @@ func runTray() {
 	signal.Notify(ch, os.Interrupt)
 	<-ch
 }
-func openURL(u string) error { fmt.Println("abrir", u); return nil }
+func openURL(u string) error       { fmt.Println("abrir", u); return nil }
+func killPortOwner(port int) error { return fmt.Errorf("não suportado") }
+func autostartOn() bool            { return false }

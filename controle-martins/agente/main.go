@@ -3,10 +3,12 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -103,6 +105,9 @@ func main() {
 
 	// só um por vez: se a porta já estiver em uso, outro já está rodando
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.Port))
+	if err != nil && replaceOldVersion(cfg.Port) {
+		ln, err = net.Listen("tcp", fmt.Sprintf(":%d", cfg.Port))
+	}
 	if err != nil {
 		// já está rodando: abre o painel no navegador, com o código e o endereço
 		if openURL(fmt.Sprintf("http://localhost:%d/painel", cfg.Port)) != nil {
@@ -125,8 +130,10 @@ func main() {
 	cfg.Welcome = true
 	saveLocked()
 	cfgMu.Unlock()
+	if first || autostartOn() {
+		setAutostart(true) // aponta para este .exe (se a versão nova estiver em outra pasta)
+	}
 	if first {
-		setAutostart(true)
 		go func() {
 			time.Sleep(700 * time.Millisecond)
 			_ = openURL(fmt.Sprintf("http://localhost:%d/painel", cfg.Port))
@@ -134,4 +141,32 @@ func main() {
 		}()
 	}
 	runTray()
+}
+
+// Se uma versão diferente do Controle Martins já estiver rodando, fecha ela
+// e assume no lugar (assim atualizar é só abrir o .exe novo).
+func replaceOldVersion(port int) bool {
+	cl := &http.Client{Timeout: 2 * time.Second}
+	r, err := cl.Get(fmt.Sprintf("http://127.0.0.1:%d/api/info", port))
+	if err != nil {
+		return false
+	}
+	var info struct{ App, Version string }
+	_ = json.NewDecoder(r.Body).Decode(&info)
+	r.Body.Close()
+	if info.App != "controle-martins" || info.Version == version {
+		return false
+	}
+	log.Printf("fechando a versão antiga %s", info.Version)
+	if killPortOwner(port) != nil {
+		return false
+	}
+	for i := 0; i < 20; i++ {
+		time.Sleep(250 * time.Millisecond)
+		if l, err := net.Listen("tcp", fmt.Sprintf(":%d", port)); err == nil {
+			l.Close()
+			return true
+		}
+	}
+	return false
 }

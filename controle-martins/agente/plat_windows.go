@@ -559,3 +559,9 @@ func runTray() {
 }
 
 func openURL(u string) error { return shellOpen(u, "") }
+
+// Fecha o processo que está usando a porta (a versão antiga do Controle Martins).
+func killPortOwner(port int) error {
+	ps := fmt.Sprintf("Get-NetTCPConnection -LocalPort %d -State Listen | ForEach-Object { if ($_.OwningProcess -ne %d) { Stop-Process -Id $_.OwningProcess -Force } }", port, os.Getpid())
+	return hiddenCmd("powershell", "-NoProfile", "-NonInteractive", "-Command", ps).Run()
+}
