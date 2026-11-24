@@ -236,6 +236,9 @@ func (b *Binance) Klines(symbol, interval string, limit int, startTime int64) ([
 func (b *Binance) History(symbol, interval string, days int, maxCandles int) ([]Kline, error) {
 	dur := intervalDur(interval)
 	start := time.Now().Add(-time.Duration(days) * 24 * time.Hour).UnixMilli()
+	if min := time.Now().Add(-time.Duration(maxCandles+1) * dur).UnixMilli(); start < min {
+		start = min // mais velas do que o limite: fica com as MAIS RECENTES
+	}
 	var all []Kline
 	for len(all) < maxCandles {
 		ks, err := b.Klines(symbol, interval, 1000, start)
@@ -515,4 +518,15 @@ func (p *KeyPerms) problem() string {
 		return "a chave de API não tem permissão de negociação Spot: na Binance, edite a chave e marque \"Ativar negociação Spot e de margem\""
 	}
 	return ""
+}
+
+// TickerPrice = preço atual de um par (dado público).
+func (b *Binance) TickerPrice(symbol string) (float64, error) {
+	var r struct {
+		Price string `json:"price"`
+	}
+	if err := b.public("/api/v3/ticker/price", url.Values{"symbol": {symbol}}, &r); err != nil {
+		return 0, err
+	}
+	return strconv.ParseFloat(r.Price, 64)
 }

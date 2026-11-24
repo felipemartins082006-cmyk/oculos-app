@@ -76,7 +76,7 @@
   <section id="testar" class="tab">
     <div class="card">
       <h3>Testar a estratégia no passado (backtest)</h3>
-      <p class="muted">Usa os preços reais da Binance dos últimos dias e simula o que o robô teria feito, já descontando a taxa de 0,1% por operação. Resultado passado não garante resultado futuro.</p>
+      <p class="muted">Usa os preços reais da Binance dos últimos dias e simula o que o robô teria feito, descontando a taxa de 0,1% por operação e considerando que o stop-loss vende, em média, 0,25% abaixo do preço de stop. Resultado passado não garante resultado futuro.</p>
       <form id="bt-form" class="grid">
         <label>Par<input name="symbol" required></label>
         <label>Velas<select name="interval"></select></label>
@@ -90,6 +90,7 @@
         <label>Stop-loss % <small>(0 = desliga)</small><input name="stopLossPct" type="number" min="0" step="any"></label>
         <label>Take-profit % <small>(0 = desliga)</small><input name="takeProfitPct" type="number" min="0" step="any"></label>
         <label>% do saldo por compra<input name="tradePct" type="number" min="1" max="100" step="any"></label>
+        <label>Valor máximo por compra <small>(0 = sem limite)</small><input name="maxBuy" type="number" min="0" step="any"></label>
         <div class="form-actions">
           <button class="btn primary" type="submit" id="bt-run">Rodar teste</button>
           <button class="btn" type="button" id="bt-fill">Carregar ajustes do robô</button>
@@ -204,7 +205,7 @@
       </div>
       <div class="card">
         <h3>Avisos no celular (Telegram)</h3>
-        <p class="muted">Receba uma mensagem a cada compra, venda, erro, quando o robô liga/desliga e quando ele volta depois de ficar fora do ar.</p>
+        <p class="muted">Receba uma mensagem a cada compra, venda, erro, quando o robô liga/desliga e quando ele volta depois de ficar fora do ar. E controle o robô pelo celular: <b>/status</b>, <b>/vender</b>, <b>/parar</b>, <b>/ligar</b> (só o seu chat é obedecido).</p>
         <ol class="muted small steps">
           <li>No Telegram, abra o <b>@BotFather</b>, mande <b>/newbot</b>, escolha um nome e copie o <b>token</b> que ele dá.</li>
           <li>Cole o token abaixo. Abra o seu bot novo no Telegram e mande <b>/start</b> para ele.</li>

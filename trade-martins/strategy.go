@@ -184,28 +184,46 @@ type BTResult struct {
 	Price       []Point `json:"price"`
 }
 
+// BTOptions = como simular o dinheiro no backtest.
+type BTOptions struct {
+	TradePct    float64 // % do saldo por compra
+	MaxBuy      float64 // valor máximo por compra (0 = sem limite), igual ao robô
+	FeePct      float64 // taxa por lado (0,1% na Binance)
+	Start       float64 // saldo inicial
+	StopSlipPct float64 // quanto abaixo do stop a venda sai, em média (a ordem de stop na Binance vende até 0,5% abaixo)
+	TradeFrom   int64   // só opera a partir desta data; as velas antes servem só para "aquecer" as médias
+}
+
+const backtestStopSlipPct = 0.25
+
 // runBacktest simula a estratégia sobre velas fechadas.
 // O sinal aparece no fechamento da vela i e a ordem sai na abertura da vela i+1 (como no robô ao vivo).
-func runBacktest(kl []Kline, p Params, tradePct, feePct, start float64) BTResult {
-	res := BTResult{StartEquity: start, Candles: len(kl)}
-	if len(kl) == 0 {
-		return res
-	}
-	res.From, res.To = kl[0].OpenTime, kl[len(kl)-1].CloseTime
+func runBacktest(kl []Kline, p Params, o BTOptions) BTResult {
+	res := BTResult{StartEquity: o.Start}
 	closes := make([]float64, len(kl))
 	for i, k := range kl {
 		closes[i] = k.C
 	}
 	ind := compute(closes, p)
-	fee := feePct / 100
+	fee := o.FeePct / 100
+	slip := o.StopSlipPct / 100
 
-	cash := start
+	// primeira vela em que pode operar: depois do aquecimento das médias e a partir de TradeFrom
+	first := warmup(p)
+	for first < len(kl) && kl[first].OpenTime < o.TradeFrom {
+		first++
+	}
+	if first >= len(kl) {
+		return res
+	}
+	res.From, res.To, res.Candles = kl[first].OpenTime, kl[len(kl)-1].CloseTime, len(kl)-first
+
+	cash := o.Start
 	var qty, cost, stop, take, entry float64
 	var entryT int64
 	in := false
 	pending := sigNone
-	peak, maxDD := start, 0.0
-	w := warmup(p)
+	peak, maxDD := o.Start, 0.0
 
 	sell := func(t int64, price float64, reason string) {
 		gross := qty * price
@@ -224,13 +242,16 @@ func runBacktest(kl []Kline, p Params, tradePct, feePct, start float64) BTResult
 		qty, cost, in = 0, 0, false
 	}
 
-	step := len(kl)/600 + 1
-	for i := w; i < len(kl); i++ {
+	step := res.Candles/600 + 1
+	for i := first; i < len(kl); i++ {
 		k := kl[i]
 		// 1) executa o sinal da vela anterior na abertura desta.
 		switch {
 		case pending == sigBuy && !in:
-			spend := cash * tradePct / 100
+			spend := cash * o.TradePct / 100
+			if o.MaxBuy > 0 && spend > o.MaxBuy {
+				spend = o.MaxBuy
+			}
 			if spend > 0 {
 				f := spend * fee
 				res.FeesPaid += f
@@ -249,10 +270,11 @@ func runBacktest(kl []Kline, p Params, tradePct, feePct, start float64) BTResult
 		pending = sigNone
 
 		// 2) stop-loss / take-profit dentro da vela (se os dois forem tocados, conta o stop: visão conservadora).
+		//    O stop vende um pouco abaixo do preço de stop (derrapagem), e abaixo da abertura se a vela já abriu caindo.
 		if in {
 			switch {
 			case stop > 0 && k.L <= stop:
-				sell(k.OpenTime, math.Min(stop, k.O), "stop-loss")
+				sell(k.OpenTime, math.Min(stop, k.O)*(1-slip), "stop-loss")
 			case take > 0 && k.H >= take:
 				sell(k.OpenTime, math.Max(take, k.O), "take-profit")
 			}
@@ -264,15 +286,15 @@ func runBacktest(kl []Kline, p Params, tradePct, feePct, start float64) BTResult
 			pending = s
 		}
 
-		eq := cash + qty*k.C
-		if eq > peak {
+		// maior queda: o pico é medido no fechamento e o fundo na mínima da vela
+		if eq := cash + qty*k.C; eq > peak {
 			peak = eq
 		}
-		if dd := (peak - eq) / peak * 100; dd > maxDD {
+		if dd := (peak - (cash + qty*k.L)) / peak * 100; dd > maxDD {
 			maxDD = dd
 		}
-		if (i-w)%step == 0 || i == len(kl)-1 {
-			res.Equity = append(res.Equity, Point{k.CloseTime, eq})
+		if (i-first)%step == 0 || i == len(kl)-1 {
+			res.Equity = append(res.Equity, Point{k.CloseTime, cash + qty*k.C})
 			res.Price = append(res.Price, Point{k.CloseTime, k.C})
 		}
 	}
@@ -281,10 +303,8 @@ func runBacktest(kl []Kline, p Params, tradePct, feePct, start float64) BTResult
 		sell(last.CloseTime, last.C, "fim do teste")
 	}
 	res.EndEquity = cash
-	res.ReturnPct = (cash/start - 1) * 100
-	if w < len(kl) {
-		res.BuyHoldPct = (kl[len(kl)-1].C/kl[w].O*(1-fee)*(1-fee) - 1) * 100
-	}
+	res.ReturnPct = (cash/o.Start - 1) * 100
+	res.BuyHoldPct = (kl[len(kl)-1].C/kl[first].O*(1-fee)*(1-fee) - 1) * 100
 	res.MaxDDPct = maxDD
 	if n := res.Wins + res.Losses; n > 0 {
 		res.WinRate = float64(res.Wins) / float64(n) * 100

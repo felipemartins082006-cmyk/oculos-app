@@ -27,7 +27,7 @@ var webFS embed.FS
 const addr = "127.0.0.1:47900"
 const port = 47900
 
-var version = "1.2" // var (e não const) para os testes poderem gerar outra versão com -ldflags
+var version = "1.3" // var (e não const) para os testes poderem gerar outra versão com -ldflags
 
 func configDir() string {
 	base, err := os.UserConfigDir()
@@ -125,7 +125,11 @@ func takeOver() (net.Listener, string) {
 func main() {
 	auto := len(os.Args) > 1 && os.Args[1] == "--auto" // aberto pelo Windows ao ligar o PC
 	dir := configDir()
-	if f, err := os.OpenFile(filepath.Join(dir, "trade.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
+	logPath := filepath.Join(dir, "trade.log")
+	if st, err := os.Stat(logPath); err == nil && st.Size() > 2<<20 {
+		_ = os.Rename(logPath, logPath+".old") // guarda só o último pedaço
+	}
+	if f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
 		log.SetOutput(io.MultiWriter(f, os.Stdout))
 	}
 	url := "http://" + addr + "/"
@@ -156,6 +160,7 @@ func main() {
 	bot.applyPlatformLocked()
 	bot.mu.Unlock()
 	go bot.Run()
+	go bot.TelegramCommands(nil)
 
 	srv := &http.Server{Handler: newServer(bot), ReadHeaderTimeout: 10 * time.Second}
 	if auto {

@@ -254,12 +254,15 @@ func (b *Bot) TestKeys(which, key, secret string) (any, error) {
 
 // ---------- backtest ----------
 
+const maxBacktestCandles = 60000
+
 type BTRequest struct {
 	Symbol   string  `json:"symbol"`
 	Interval string  `json:"interval"`
 	Days     int     `json:"days"`
 	Params   Params  `json:"params"`
 	TradePct float64 `json:"tradePct"`
+	MaxBuy   float64 `json:"maxBuy"`
 	Start    float64 `json:"start"`
 }
 
@@ -283,14 +286,27 @@ func (b *Bot) Backtest(req BTRequest) (*BTResult, error) {
 	if req.Start <= 0 {
 		req.Start = 1000
 	}
-	ks, err := b.data.History(req.Symbol, req.Interval, req.Days, 60000)
+	if req.MaxBuy < 0 {
+		req.MaxBuy = 0
+	}
+	// Baixa velas a mais ANTES do período, só para "aquecer" as médias (a EMA "lembra" de onde começou).
+	// Assim os valores batem com os do robô ao vivo, que usa 1000 velas.
+	extra := 3 * warmup(req.Params)
+	dur := intervalDur(req.Interval)
+	if maxDays := int(time.Duration(maxBacktestCandles) * dur / (24 * time.Hour)); req.Days > maxDays {
+		return nil, fmt.Errorf("com velas de %s dá para testar no máximo %d dias (limite de %d velas)", req.Interval, maxDays, maxBacktestCandles)
+	}
+	extraDays := int(time.Duration(extra)*dur/(24*time.Hour)) + 1
+	from := time.Now().Add(-time.Duration(req.Days) * 24 * time.Hour)
+	ks, err := b.data.History(req.Symbol, req.Interval, req.Days+extraDays, maxBacktestCandles+extra)
 	if err != nil {
 		return nil, err
 	}
-	if len(ks) < warmup(req.Params)+10 {
-		return nil, fmt.Errorf("poucos dados para esse período: aumente os dias ou diminua as médias (precisa de pelo menos %d velas, vieram %d)", warmup(req.Params)+10, len(ks))
+	res := runBacktest(ks, req.Params, BTOptions{TradePct: req.TradePct, MaxBuy: req.MaxBuy, FeePct: paperFeePct,
+		Start: req.Start, StopSlipPct: backtestStopSlipPct, TradeFrom: from.UnixMilli()})
+	if res.Candles < 10 {
+		return nil, fmt.Errorf("poucos dados para esse período: aumente os dias ou diminua as médias")
 	}
-	res := runBacktest(ks, req.Params, req.TradePct, paperFeePct, req.Start)
 	res.Symbol, res.Interval = req.Symbol, req.Interval
 	return &res, nil
 }

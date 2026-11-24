@@ -15,6 +15,15 @@ const (
 	stopGapSell  = 0.015 // se o preço furar o stop em mais de 1,5% e a ordem não executar, o robô vende a mercado
 )
 
+// notExecutedErr = a ordem com certeza NÃO foi executada. network=true: foi falha de conexão
+// (vale tentar de novo); false: a Binance recusou (saldo, regras do par...).
+type notExecutedErr struct {
+	err     error
+	network bool
+}
+
+func (e *notExecutedErr) Error() string { return e.err.Error() }
+
 // marketOrderLocked manda a ordem e, se a conexão cair, pergunta à Binance se ela foi executada.
 func (b *Bot) marketOrderLocked(symbol, side, qty, quoteQty string) (*OrderResult, error) {
 	cid := fmt.Sprintf("tm%s%d", map[string]string{"BUY": "b", "SELL": "s"}[side], time.Now().UnixMilli())
@@ -23,20 +32,20 @@ func (b *Bot) marketOrderLocked(symbol, side, qty, quoteQty string) (*OrderResul
 		return r, nil
 	}
 	if _, refused := err.(*APIError); refused {
-		return nil, err // a Binance recusou: a ordem não existe
+		return nil, &notExecutedErr{err: err} // a Binance recusou: a ordem não existe
 	}
 	// Sem resposta: a ordem pode ou não ter entrado.
 	for i := 0; i < 4; i++ {
 		time.Sleep(time.Duration(i+1) * 2 * time.Second)
 		o, e := b.bn.GetOrder(symbol, 0, cid)
 		if ae, ok := e.(*APIError); ok && ae.Code == -2013 {
-			return nil, err // a Binance não conhece a ordem: não entrou
+			return nil, &notExecutedErr{err: err, network: true} // a Binance não conhece a ordem: não entrou
 		}
 		if e != nil {
 			continue
 		}
 		if o.ExecutedQty <= 0 {
-			return nil, fmt.Errorf("a ordem não foi executada")
+			return nil, &notExecutedErr{err: fmt.Errorf("a ordem não foi executada")}
 		}
 		comm, ce := b.bn.Commissions(symbol, o.OrderID)
 		if ce != nil {
@@ -82,7 +91,7 @@ func (b *Bot) sellExchangeLocked(price float64, reason string) {
 		b.stopRetryAt = time.Time{}
 		return
 	}
-	b.recordSaleLocked(r.ExecutedQty, r.QuoteQty-r.Commission[info.Quote], r.QuoteQty/r.ExecutedQty, reason, true)
+	b.recordSaleLocked(r.ExecutedQty, r.QuoteQty-r.Commission[info.Quote]-b.otherFeesLocked(r.Commission), r.QuoteQty/r.ExecutedQty, reason, true)
 }
 
 // cancelStopLocked tira a ordem de stop da Binance. closed=true se descobriu que ela já tinha vendido tudo.
@@ -119,7 +128,7 @@ func (b *Bot) recordStopFillLocked(o *OrderStatus, closeAll bool) {
 	comm, err := b.bn.Commissions(b.st.Position.Symbol, o.OrderID)
 	proceeds := o.QuoteQty * (1 - paperFeePct/100) // estimativa se não der para ler a taxa
 	if err == nil {
-		proceeds = o.QuoteQty - comm[info.Quote]
+		proceeds = o.QuoteQty - comm[info.Quote] - b.otherFeesLocked(comm)
 	}
 	avg := 0.0
 	if o.ExecutedQty > 0 {
@@ -229,4 +238,24 @@ func (b *Bot) syncStopLocked(price float64) {
 	pos.StopOrderID, pos.StopOrderPrice = o.OrderID, want
 	b.logf("ok", "Stop-loss registrado na Binance a %s (ordem %d). Ele funciona mesmo com o PC desligado.", fmtPrice(want), o.OrderID)
 	b.saveLocked()
+}
+
+// otherFeesLocked converte para a moeda do par as taxas cobradas em outra moeda
+// (ex.: quem paga a taxa em BNB para ter desconto). A taxa na própria cripto ou na moeda do par
+// já é tratada em quem chama.
+func (b *Bot) otherFeesLocked(comm map[string]float64) float64 {
+	info := b.info
+	total := 0.0
+	for asset, amt := range comm {
+		if amt <= 0 || asset == info.Base || asset == info.Quote {
+			continue
+		}
+		px, err := b.bn.TickerPrice(asset + info.Quote)
+		if err != nil {
+			b.logf("info", "Não consegui converter a taxa de %s %s para %s (%v); o resultado desta operação não inclui essa taxa.", fmtQty(amt), asset, info.Quote, err)
+			continue
+		}
+		total += amt * px
+	}
+	return total
 }

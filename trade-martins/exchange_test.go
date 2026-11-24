@@ -43,6 +43,9 @@ type fakeBinance struct {
 	srv       *httptest.Server
 	badSigned int
 	perms     map[string]bool // permissões da chave (apiRestrictions)
+	bnbFees   bool            // cobra as taxas em BNB (desconto de taxa ligado)
+	closes    []float64       // se preenchido, as velas usam estes fechamentos (a última é a vela aberta)
+	failSells int             // quantas vendas a mercado responder com erro 503 (Binance instável)
 }
 
 func newFake(t *testing.T) *fakeBinance {
@@ -79,6 +82,12 @@ func (f *fakeBinance) handle(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	switch {
+	case path == "/api/v3/ticker/price":
+		if first(q["symbol"]) != "BNBUSDT" {
+			apiErr(w, -1121, "Invalid symbol.")
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"price": "600.00"})
 	case path == "/sapi/v1/account/apiRestrictions":
 		json.NewEncoder(w).Encode(f.perms)
 	case path == "/api/v3/exchangeInfo":
@@ -91,10 +100,17 @@ func (f *fakeBinance) handle(w http.ResponseWriter, r *http.Request) {
 			}}}})
 	case path == "/api/v3/klines":
 		n, _ := strconv.Atoi(q.Get("limit"))
+		if f.closes != nil {
+			n = len(f.closes)
+		}
 		var out [][]any
-		t0 := time.Now().Add(-time.Duration(n) * time.Hour).UnixMilli()
+		t0 := (time.Now().Add(-time.Duration(n)*time.Hour).UnixMilli() / 3600000) * 3600000
 		for i := 0; i < n; i++ {
-			p := strconv.FormatFloat(f.price, 'f', 2, 64)
+			c := f.price
+			if f.closes != nil {
+				c = f.closes[i]
+			}
+			p := strconv.FormatFloat(c, 'f', 2, 64)
 			out = append(out, []any{t0 + int64(i)*3600000, p, p, p, p, "1", t0 + int64(i+1)*3600000 - 1})
 		}
 		json.NewEncoder(w).Encode(out)
@@ -171,7 +187,13 @@ func (f *fakeBinance) newOrder(w http.ResponseWriter, r *http.Request, q map[str
 			}
 			qty := quote / f.price
 			f.free["USDT"] -= quote
-			f.free["BTC"] += qty * 0.999 // taxa cobrada em BTC
+			fill := map[string]any{"commission": strconv.FormatFloat(qty*0.001, 'f', 8, 64), "commissionAsset": "BTC"}
+			if f.bnbFees { // taxa de 0,075% cobrada em BNB (a 600 USDT)
+				f.free["BTC"] += qty
+				fill = map[string]any{"commission": strconv.FormatFloat(quote*0.00075/600, 'f', 8, 64), "commissionAsset": "BNB"}
+			} else {
+				f.free["BTC"] += qty * 0.999 // taxa cobrada em BTC
+			}
 			o.ExecutedQty, o.QuoteQty, o.Status = qty, quote, "FILLED"
 			f.orders[o.ID] = o
 			if f.dropNext {
@@ -183,22 +205,34 @@ func (f *fakeBinance) newOrder(w http.ResponseWriter, r *http.Request, q map[str
 			}
 			json.NewEncoder(w).Encode(map[string]any{"orderId": o.ID, "status": "FILLED", "executedQty": strconv.FormatFloat(qty, 'f', 8, 64),
 				"cummulativeQuoteQty": strconv.FormatFloat(quote, 'f', 8, 64),
-				"fills":               []any{map[string]any{"commission": strconv.FormatFloat(qty*0.001, 'f', 8, 64), "commissionAsset": "BTC"}}})
+				"fills":               []any{fill}})
 			return
 		}
 		qty := pf("quantity")
+		if f.failSells > 0 {
+			f.failSells--
+			w.WriteHeader(503)
+			return
+		}
 		if qty > f.free["BTC"]+1e-12 {
 			apiErr(w, -2010, "Account has insufficient balance for requested action.")
 			return
 		}
 		gross := qty * f.price
 		f.free["BTC"] -= qty
-		f.free["USDT"] += gross * 0.999
-		o.ExecutedQty, o.QuoteQty, o.CommQuote, o.Status = qty, gross, gross*0.001, "FILLED"
+		fill := map[string]any{"commission": strconv.FormatFloat(gross*0.001, 'f', 8, 64), "commissionAsset": "USDT"}
+		if f.bnbFees {
+			f.free["USDT"] += gross
+			fill = map[string]any{"commission": strconv.FormatFloat(gross*0.00075/600, 'f', 8, 64), "commissionAsset": "BNB"}
+		} else {
+			f.free["USDT"] += gross * 0.999
+			o.CommQuote = gross * 0.001
+		}
+		o.ExecutedQty, o.QuoteQty, o.Status = qty, gross, "FILLED"
 		f.orders[o.ID] = o
 		json.NewEncoder(w).Encode(map[string]any{"orderId": o.ID, "status": "FILLED", "executedQty": first(q["quantity"]),
 			"cummulativeQuoteQty": strconv.FormatFloat(gross, 'f', 8, 64),
-			"fills":               []any{map[string]any{"commission": strconv.FormatFloat(gross*0.001, 'f', 8, 64), "commissionAsset": "USDT"}}})
+			"fills":               []any{fill}})
 	case "STOP_LOSS_LIMIT":
 		qty := pf("quantity")
 		if first(q["timeInForce"]) != "GTC" || pf("stopPrice") <= 0 || pf("price") <= 0 {
@@ -496,5 +530,92 @@ func TestTelegramAlerts(t *testing.T) {
 	}
 	if !strings.Contains(msgs[0], "COMPRA") || !strings.Contains(msgs[0], "Stop-loss: 47000.00") {
 		t.Fatalf("aviso de compra estranho: %q", msgs[0])
+	}
+}
+
+func TestExchangeBNBFeesCountInResult(t *testing.T) {
+	f := newFake(t)
+	f.bnbFees = true
+	b := newExchangeBot(t, f)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.buyLocked(50000)
+	p := b.st.Position
+	// gastou 500 USDT + taxa de 0,075% paga em BNB = 0,375 USDT
+	if p == nil || math.Abs(p.Cost-500.375) > 1e-6 || math.Abs(p.Qty-0.01) > 1e-9 {
+		t.Fatalf("custo deveria incluir a taxa em BNB: %+v", p)
+	}
+	f.setPrice(55000)
+	b.sellLocked(55000, "sinal")
+	tr := lastTrade(b)
+	gross := 0.01 * 55000.0
+	want := gross - gross*0.00075 - 500.375
+	if math.Abs(tr.PnL-want) > 1e-6 {
+		t.Fatalf("resultado = %v, quer %v (com as duas taxas em BNB)", tr.PnL, want)
+	}
+}
+
+func TestSignalSellIsRetriedAfterFailure(t *testing.T) {
+	if testing.Short() {
+		t.Skip("espera alguns segundos")
+	}
+	f := newFake(t)
+	b := newExchangeBot(t, f)
+	b.bn.client.Timeout = 2 * time.Second
+	b.cfg.Params.TrendEMA = 0
+
+	// preço subindo devagar e, na última vela fechada, uma queda de 4%: EMA rápida cruza para baixo
+	closes := make([]float64, 1000)
+	for i := range closes {
+		closes[i] = 40000 + float64(i)*10
+	}
+	closes[998] = closes[997] - 2000
+	closes[999] = closes[998] // vela aberta
+	chk := closes[:999]
+	if signalAt(compute(chk, b.cfg.Params), chk, len(chk)-1, b.cfg.Params) != sigSell {
+		t.Fatalf("pré-condição: a série deveria dar sinal de venda")
+	}
+
+	f.price = closes[997]
+	b.mu.Lock()
+	b.buyLocked(f.price)
+	b.st.Running = true
+	b.mu.Unlock()
+
+	f.mu.Lock()
+	f.closes, f.price, f.failSells = closes, closes[999], 1
+	f.mu.Unlock()
+
+	b.tick() // sinal de venda, mas a Binance falha
+	b.mu.Lock()
+	if b.st.Position == nil || !b.st.PendingSell {
+		b.mu.Unlock()
+		t.Fatalf("a venda deveria ter falhado e ficado pendente")
+	}
+	b.mu.Unlock()
+
+	b.tick() // mesma vela: não há sinal novo, mas a venda pendente é feita
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.st.Position != nil || b.st.PendingSell {
+		t.Fatalf("a venda pendente deveria ter sido feita na checagem seguinte; registro: %+v", b.st.Logs)
+	}
+	if tr := lastTrade(b); tr.Side != "VENDA" || tr.Reason != "sinal" {
+		t.Fatalf("venda errada: %+v", tr)
+	}
+	if len(f.openStops()) != 0 {
+		t.Fatalf("não deveria sobrar ordem de stop aberta")
+	}
+}
+
+func TestRepeatedLogLinesAreMerged(t *testing.T) {
+	b := NewBot(t.TempDir())
+	b.logf("err", "sem conexão")
+	b.logf("err", "sem conexão")
+	b.logf("err", "sem conexão")
+	b.logf("info", "outra coisa")
+	b.logf("err", "sem conexão")
+	if len(b.st.Logs) != 3 {
+		t.Fatalf("esperava 3 linhas, veio %d: %+v", len(b.st.Logs), b.st.Logs)
 	}
 }

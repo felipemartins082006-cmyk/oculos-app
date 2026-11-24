@@ -465,7 +465,7 @@ $("#bt-form").addEventListener("submit", (e) => {
   const f = e.target, btn = $("#bt-run");
   const req = {
     symbol: f.elements.symbol.value, interval: f.elements.interval.value, days: +f.elements.days.value,
-    params: readParams(f), tradePct: +f.elements.tradePct.value, start: +f.elements.start.value,
+    params: readParams(f), tradePct: +f.elements.tradePct.value, maxBuy: +f.elements.maxBuy.value || 0, start: +f.elements.start.value,
   };
   btn.textContent = "Baixando preços…";
   act(btn, async () => {
@@ -499,7 +499,7 @@ $("#bt-apply").addEventListener("click", (e) => act(e.target, async () => {
   if (!lastBT) return;
   const { req } = lastBT, c = S.config;
   if (!(await ask("Usar estes ajustes?", `<p>O robô passa a usar <b>${esc(req.symbol.toUpperCase())}</b>, velas de <b>${req.interval}</b> e os parâmetros do teste.</p>`, { okText: "Usar" }))) return;
-  await patchConfig({ symbol: req.symbol, interval: req.interval, params: req.params, tradePct: req.tradePct });
+  await patchConfig({ symbol: req.symbol, interval: req.interval, params: req.params, tradePct: req.tradePct, maxBuy: req.maxBuy });
   toast("Ajustes aplicados ao robô");
   fillConfig();
 }));

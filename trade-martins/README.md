@@ -65,10 +65,37 @@ Ele olha as **velas** do par (por padrão BTCUSDT, velas de 4 horas) e usa três
 
 Tudo isso pode ser mudado em **Ajustes**. Antes de mudar, teste em **Testar estratégia**.
 
+### As contas
+
+- **EMA de N velas:** começa com a média simples das N primeiras velas; depois, a cada vela,
+  `EMA = preço × k + EMA anterior × (1 − k)`, com `k = 2 / (N + 1)` (na EMA de 9, k = 0,2).
+  O robô calcula sobre as últimas 1000 velas fechadas.
+- **RSI de 14 (método de Wilder):** médias suavizadas das altas e das baixas;
+  `RSI = 100 − 100 / (1 + média das altas / média das baixas)`.
+- **Quanto compra:** saldo livre × "% do saldo por compra", limitado ao "valor máximo por compra".
+- **Taxas:** 0,1% na compra e na venda (no modo real, usa a taxa que a Binance cobrou, inclusive a paga em BNB).
+- **Stop-loss:** preço médio de compra × (1 − stop%). Take-profit: × (1 + take%).
+- **Resultado de uma operação:** valor líquido da venda − custo total da compra (as duas taxas incluídas).
+  Exemplo: compra 100 USDT a 60.000 → taxa 0,10 → 0,001665 BTC. Vende a 63.000 → 104,90 − 0,10 de taxa
+  = 104,79 → **+4,79 USDT (+4,79%)**.
+- **Patrimônio:** moeda (USDT…) + cripto × preço atual. A perda do dia compara com o patrimônio da primeira
+  checagem do dia.
+
 ## 3. Testar a estratégia (backtest)
 
 Na aba **Testar estratégia**, escolha o par, o tamanho das velas, quantos dias para trás e os parâmetros,
-e clique em **Rodar teste**. Você vê:
+e clique em **Rodar teste**. A simulação:
+
+- usa o preço de fechamento de cada vela; o sinal aparece quando a vela fecha e a ordem sai na abertura da
+  vela seguinte (igual ao robô);
+- desconta 0,1% de taxa na compra e na venda;
+- considera que o stop-loss vende, em média, 0,25% abaixo do preço de stop (como a ordem de stop na Binance);
+- se o stop e o take-profit forem tocados na mesma vela, conta o stop (a hipótese pior);
+- respeita o "% do saldo" e o "valor máximo por compra";
+- baixa velas a mais antes do período só para "aquecer" as médias, então os valores das médias batem com os do
+  robô ao vivo (que usa as últimas 1000 velas).
+
+Você vê:
 
 - **Resultado do robô** e o resultado de **só comprar e segurar** no mesmo período.
 - **Maior queda (drawdown)**: o pior tombo do patrimônio entre um pico e um fundo.
@@ -128,6 +155,20 @@ lucro. Para medir lucro, use o modo simulado e o backtest.
 Você recebe aviso de: compra (com o stop), venda (com o resultado), erros (o mesmo erro no máximo a cada
 30 minutos), robô ligado/desligado/retomado e, quando o robô volta depois de ficar fora do ar, por quanto tempo
 ele ficou parado.
+
+**Comandos** (mande para o seu bot no Telegram; o menu aparece no botão "/" do Telegram):
+
+| Comando | O que faz |
+|---|---|
+| `/status` | Preço, patrimônio, posição aberta (com resultado agora e onde está o stop) e resultado das vendas |
+| `/vender` | Pergunta se quer vender; `/vender sim` vende a posição inteira a mercado |
+| `/parar` | Desliga o robô (no modo real/teste, o stop continua na Binance) |
+| `/ligar` | Liga o robô. No modo real, é preciso mandar `/ligar real` |
+| `/ajuda` | Lista os comandos |
+
+Segurança: o robô **só obedece ao chat configurado** (mensagens de outras pessoas são ignoradas e você recebe
+um aviso). Comandos mandados há mais de 2 minutos (por exemplo, com o robô fechado) **não são executados**: o
+robô avisa e pede para mandar de novo.
 
 **Avisar se o PC desligar (opcional):** o robô não consegue avisar que morreu. Para isso, crie uma checagem
 grátis em **healthchecks.io** (período 5 minutos, tolerância 10 minutos), ative lá os avisos por Telegram ou

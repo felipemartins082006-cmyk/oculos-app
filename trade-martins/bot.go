@@ -101,7 +101,8 @@ type State struct {
 	DayKey         string    `json:"dayKey"`
 	DayStartEquity float64   `json:"dayStartEquity"`
 	DayBlocked     bool      `json:"dayBlocked"`
-	LastAlive      int64     `json:"lastAlive"` // última checagem feita (para saber se o robô ficou fora do ar)
+	LastAlive      int64     `json:"lastAlive"`   // última checagem feita (para saber se o robô ficou fora do ar)
+	PendingSell    bool      `json:"pendingSell"` // veio sinal de venda mas a venda falhou: tenta de novo a cada checagem
 }
 
 // Live = o que o painel mostra e não precisa ser salvo.
@@ -185,8 +186,14 @@ func (b *Bot) saveConfigLocked() {
 // logf grava no registro. Avisos (warn) e erros (err) também vão para o Telegram.
 func (b *Bot) logf(kind, format string, a ...any) {
 	msg := fmt.Sprintf(format, a...)
+	now := time.Now().UnixMilli()
+	// a mesma mensagem repetida em seguida (ex.: tentando de novo a cada checagem) vira uma linha só
+	if n := len(b.st.Logs); n > 0 && b.st.Logs[n-1].Msg == msg && now-b.st.Logs[n-1].T < 30*60*1000 {
+		b.st.Logs[n-1].T = now
+		return
+	}
 	log.Printf("[%s] %s", kind, msg)
-	b.st.Logs = append(b.st.Logs, LogLine{T: time.Now().UnixMilli(), Msg: msg, Kind: kind})
+	b.st.Logs = append(b.st.Logs, LogLine{T: now, Msg: msg, Kind: kind})
 	if len(b.st.Logs) > 300 {
 		b.st.Logs = b.st.Logs[len(b.st.Logs)-300:]
 	}
@@ -291,11 +298,9 @@ func (b *Bot) tick() {
 		b.mu.Unlock()
 	}
 
-	need := warmup(cfg.Params) + 150
-	if need > 1000 {
-		need = 1000
-	}
-	ks, err := bn.Klines(cfg.Symbol, cfg.Interval, need, 0)
+	// Sempre 1000 velas (o máximo da Binance): a EMA "lembra" de onde começou, e com poucas velas
+	// a média longa (200) ficava até 0,4% diferente da calculada com o histórico todo (e do backtest).
+	ks, err := bn.Klines(cfg.Symbol, cfg.Interval, 1000, 0)
 	if err != nil {
 		b.setErr(err)
 		return
@@ -382,6 +387,14 @@ func (b *Bot) tick() {
 		}
 	}
 
+	// venda pelo sinal que falhou antes: tenta de novo (mesmo que outra vela já tenha fechado)
+	if b.st.PendingSell {
+		if b.st.Position != nil {
+			b.sellLocked(price, "sinal")
+		}
+		b.st.PendingSell = b.st.Position != nil
+	}
+
 	if closed[last].OpenTime != b.st.LastCandle {
 		b.st.LastCandle = closed[last].OpenTime
 		sig := signalAt(ind, closes, last, cfg.Params)
@@ -389,11 +402,13 @@ func (b *Bot) tick() {
 		case sig == sigBuy && b.st.Position == nil:
 			if b.st.DayBlocked {
 				b.logf("info", "Sinal de compra ignorado: limite de perda do dia atingido.")
-			} else {
-				b.buyLocked(price)
+			} else if retry := b.buyLocked(price); retry {
+				// a compra não chegou a ser feita (falha de conexão): tenta de novo enquanto esta vela valer
+				b.st.LastCandle = 0
 			}
 		case sig == sigSell && b.st.Position != nil:
 			b.sellLocked(price, "sinal")
+			b.st.PendingSell = b.st.Position != nil
 		}
 	}
 	b.saveLocked()
@@ -417,7 +432,9 @@ func (b *Bot) setErr(err error) {
 	b.live.Updated = time.Now().UnixMilli()
 }
 
-func (b *Bot) buyLocked(price float64) {
+// buyLocked compra. Devolve retry=true quando a compra com certeza NÃO foi feita por falha de conexão
+// (pode tentar de novo sem risco de comprar duas vezes).
+func (b *Bot) buyLocked(price float64) (retry bool) {
 	cfg := b.cfg
 	info := b.info
 	now := time.Now().UnixMilli()
@@ -426,8 +443,9 @@ func (b *Bot) buyLocked(price float64) {
 	if isExchange(cfg.Mode) {
 		free, _, err := b.bn.Balances()
 		if err != nil {
-			b.logf("err", "Compra cancelada: %v", err)
-			return
+			b.logf("err", "Compra não feita: %v. Tento de novo na próxima checagem.", err)
+			_, refused := err.(*APIError)
+			return !refused
 		}
 		spend := free[info.Quote] * cfg.TradePct / 100
 		if cfg.MaxBuy > 0 && spend > cfg.MaxBuy {
@@ -435,15 +453,19 @@ func (b *Bot) buyLocked(price float64) {
 		}
 		if spend < info.MinNotional*1.02 || spend <= 0 {
 			b.logf("err", "Compra cancelada: saldo de %s pequeno demais (mínimo da Binance: %.2f).", info.Quote, info.MinNotional)
-			return
+			return false
 		}
 		r, err := b.marketOrderLocked(cfg.Symbol, "BUY", "", floorDec(spend, info.QuotePrecision))
 		if err != nil {
+			if ne, ok := err.(*notExecutedErr); ok && ne.network {
+				b.logf("err", "Compra não feita: %v. Tento de novo na próxima checagem.", ne.err)
+				return true
+			}
 			b.logf("err", "Compra recusada: %v", err)
-			return
+			return false
 		}
 		pos.Qty = r.ExecutedQty - r.Commission[info.Base]
-		pos.Cost = r.QuoteQty + r.Commission[info.Quote]
+		pos.Cost = r.QuoteQty + r.Commission[info.Quote] + b.otherFeesLocked(r.Commission)
 		pos.Entry = r.QuoteQty / r.ExecutedQty
 	} else {
 		spend := b.st.PaperQuote * cfg.TradePct / 100
@@ -452,7 +474,7 @@ func (b *Bot) buyLocked(price float64) {
 		}
 		if spend < 1 {
 			b.logf("err", "Compra cancelada: saldo simulado acabou. Use \"Zerar simulação\".")
-			return
+			return false
 		}
 		fee := spend * paperFeePct / 100
 		pos.Qty = (spend - fee) / price
@@ -480,6 +502,7 @@ func (b *Bot) buyLocked(price float64) {
 		b.stopRetryAt = time.Time{}
 		b.syncStopLocked(price) // registra o stop na Binance na hora
 	}
+	return false
 }
 
 // sellLocked vende a posição inteira a preço de mercado.
@@ -604,6 +627,7 @@ func (b *Bot) Start(confirmReal bool) error {
 		return err
 	}
 	b.st.Running = true
+	b.st.PendingSell = b.st.PendingSell && b.st.Position != nil
 	b.applyPlatformLocked()
 	b.st.LastCandle = 0
 	b.st.LastAlive = time.Now().UnixMilli()
