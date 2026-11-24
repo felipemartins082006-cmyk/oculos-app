@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TradeMartins</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><img src="icon.svg" alt=""><b>TradeMartins</b></div>
+  <nav class="tabs">
+    <button data-tab="painel" class="on">Painel</button>
+    <button data-tab="testar">Testar estratégia</button>
+    <button data-tab="historico">Histórico</button>
+    <button data-tab="ajustes">Ajustes</button>
+  </nav>
+  <span id="mode-badge" class="badge">SIMULADO</span>
+</header>
+
+<main>
+  <!-- PAINEL -->
+  <section id="painel" class="tab on">
+    <div id="warn-real" class="banner danger" hidden>Modo REAL: o robô compra e vende com o seu dinheiro na Binance.</div>
+    <div id="err-banner" class="banner warn" hidden></div>
+
+    <div class="hero card">
+      <div>
+        <div class="muted" id="pair-label">BTCUSDT · velas de 1h</div>
+        <div class="price" id="price">—</div>
+        <div class="muted small" id="updated">conectando…</div>
+      </div>
+      <div class="hero-actions">
+        <div class="status"><span class="dot" id="dot"></span><span id="status-text">Desligado</span></div>
+        <button id="btn-toggle" class="btn big primary">Ligar robô</button>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="card stat"><span class="muted">Patrimônio</span><b id="equity">—</b><small id="equity-sub" class="muted"></small></div>
+      <div class="card stat"><span class="muted">Resultado das vendas</span><b id="pnl">—</b><small id="pnl-sub" class="muted"></small></div>
+      <div class="card stat"><span class="muted">RSI</span><b id="rsi">—</b><small class="muted" id="rsi-sub"></small></div>
+      <div class="card stat"><span class="muted">Tendência</span><b id="trend">—</b><small class="muted" id="trend-sub"></small></div>
+    </div>
+
+    <div class="card" id="pos-card" hidden>
+      <div class="row between">
+        <h3>Posição aberta</h3>
+        <button id="btn-sell" class="btn danger">Vender agora</button>
+      </div>
+      <div class="pos-grid">
+        <div><span class="muted">Quantidade</span><b id="pos-qty"></b></div>
+        <div><span class="muted">Preço de compra</span><b id="pos-entry"></b></div>
+        <div><span class="muted">Resultado agora</span><b id="pos-pnl"></b></div>
+        <div><span class="muted">Stop-loss</span><b id="pos-stop" class="neg"></b></div>
+        <div><span class="muted">Take-profit</span><b id="pos-take" class="pos"></b></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row between"><h3>Gráfico</h3>
+        <div class="legend"><i style="--c:var(--fast)"></i>EMA rápida <i style="--c:var(--slow)"></i>EMA lenta <i style="--c:var(--trendc)"></i>Tendência</div>
+      </div>
+      <canvas id="chart" height="320"></canvas>
+    </div>
+
+    <div class="card">
+      <h3>Registro</h3>
+      <ul id="logs" class="logs"></ul>
+    </div>
+  </section>
+
+  <!-- TESTAR -->
+  <section id="testar" class="tab">
+    <div class="card">
+      <h3>Testar a estratégia no passado (backtest)</h3>
+      <p class="muted">Usa os preços reais da Binance dos últimos dias e simula o que o robô teria feito, já descontando a taxa de 0,1% por operação. Resultado passado não garante resultado futuro.</p>
+      <form id="bt-form" class="grid">
+        <label>Par<input name="symbol" required></label>
+        <label>Velas<select name="interval"></select></label>
+        <label>Dias para trás<input name="days" type="number" min="1" max="1500" value="180"></label>
+        <label>Saldo inicial<input name="start" type="number" min="1" step="any" value="1000"></label>
+        <label>EMA rápida<input name="fastEMA" type="number" min="2"></label>
+        <label>EMA lenta<input name="slowEMA" type="number" min="3"></label>
+        <label>EMA de tendência <small>(0 = desliga)</small><input name="trendEMA" type="number" min="0"></label>
+        <label>Período do RSI<input name="rsiPeriod" type="number" min="2"></label>
+        <label>Não comprar com RSI acima de<input name="rsiMaxBuy" type="number" min="1" max="100" step="any"></label>
+        <label>Stop-loss % <small>(0 = desliga)</small><input name="stopLossPct" type="number" min="0" step="any"></label>
+        <label>Take-profit % <small>(0 = desliga)</small><input name="takeProfitPct" type="number" min="0" step="any"></label>
+        <label>% do saldo por compra<input name="tradePct" type="number" min="1" max="100" step="any"></label>
+        <div class="form-actions">
+          <button class="btn primary" type="submit" id="bt-run">Rodar teste</button>
+          <button class="btn" type="button" id="bt-fill">Carregar ajustes do robô</button>
+        </div>
+      </form>
+    </div>
+    <div id="bt-out" hidden>
+      <div class="stats">
+        <div class="card stat"><span class="muted">Resultado do robô</span><b id="bt-ret"></b><small class="muted" id="bt-end"></small></div>
+        <div class="card stat"><span class="muted">Só comprar e segurar</span><b id="bt-bh"></b><small class="muted">no mesmo período</small></div>
+        <div class="card stat"><span class="muted">Maior queda (drawdown)</span><b id="bt-dd" class="neg"></b><small class="muted">do pico ao fundo</small></div>
+        <div class="card stat"><span class="muted">Operações</span><b id="bt-n"></b><small class="muted" id="bt-wr"></small></div>
+      </div>
+      <div class="card">
+        <div class="row between"><h3 id="bt-title">Patrimônio</h3>
+          <div class="legend"><i style="--c:var(--accent)"></i>Robô <i style="--c:var(--muted)"></i>Comprar e segurar</div>
+        </div>
+        <canvas id="bt-chart" height="280"></canvas>
+        <div class="row end"><button class="btn primary" id="bt-apply">Usar estes ajustes no robô</button></div>
+      </div>
+      <div class="card"><h3>Operações do teste</h3><div class="table-wrap"><table id="bt-trades"></table></div></div>
+    </div>
+  </section>
+
+  <!-- HISTÓRICO -->
+  <section id="historico" class="tab">
+    <div class="card">
+      <div class="row between"><h3 id="hist-title">Operações</h3></div>
+      <div class="table-wrap"><table id="hist"></table></div>
+      <p class="muted" id="hist-empty">Nenhuma operação ainda. O robô compra quando a EMA rápida cruza para cima da lenta.</p>
+    </div>
+  </section>
+
+  <!-- AJUSTES -->
+  <section id="ajustes" class="tab">
+    <form id="cfg-form">
+      <div class="card">
+        <h3>Mercado</h3>
+        <div class="grid">
+          <label>Par da Binance<input name="symbol" placeholder="BTCUSDT" required><small class="muted">Ex.: BTCUSDT, ETHUSDT, SOLUSDT, BTCBRL</small></label>
+          <label>Tamanho das velas<select name="interval"></select><small class="muted">Velas maiores = menos operações e menos ruído</small></label>
+          <label>Checar a cada (segundos)<input name="checkSeconds" type="number" min="5"></label>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Estratégia</h3>
+        <p class="muted">Compra quando a EMA rápida cruza para cima da EMA lenta (com RSI abaixo do limite e preço acima da EMA de tendência). Vende no cruzamento para baixo, no stop-loss ou no take-profit.</p>
+        <div class="grid">
+          <label>EMA rápida<input name="fastEMA" type="number" min="2"></label>
+          <label>EMA lenta<input name="slowEMA" type="number" min="3"></label>
+          <label>EMA de tendência <small>(0 = desliga)</small><input name="trendEMA" type="number" min="0"></label>
+          <label>Período do RSI<input name="rsiPeriod" type="number" min="2"></label>
+          <label>Não comprar com RSI acima de<input name="rsiMaxBuy" type="number" min="1" max="100" step="any"></label>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Risco</h3>
+        <div class="grid">
+          <label>Stop-loss % <small>(0 = desliga)</small><input name="stopLossPct" type="number" min="0" step="any"><small class="muted">Vende se cair isso desde a compra</small></label>
+          <label>Take-profit % <small>(0 = desliga)</small><input name="takeProfitPct" type="number" min="0" step="any"><small class="muted">Vende se subir isso desde a compra</small></label>
+          <label>% do saldo por compra<input name="tradePct" type="number" min="1" max="100" step="any"></label>
+          <label>Perda máxima do dia % <small>(0 = desliga)</small><input name="maxDailyLossPct" type="number" min="0" step="any"><small class="muted">Passou disso, não compra mais até amanhã</small></label>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Modo</h3>
+        <div class="modes">
+          <label class="mode"><input type="radio" name="mode" value="simulado"><span><b>Simulado</b><small>Preços reais, dinheiro de mentira. Comece por aqui.</small></span></label>
+          <label class="mode real"><input type="radio" name="mode" value="real"><span><b>Real</b><small>Compra e vende de verdade na sua conta da Binance.</small></span></label>
+        </div>
+        <div class="grid">
+          <label>Saldo inicial da simulação<input name="paperStart" type="number" min="1" step="any"></label>
+          <div class="form-actions"><button class="btn" type="button" id="btn-reset">Zerar simulação</button></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Chave de API da Binance <small class="muted">(só para o modo real)</small></h3>
+        <ol class="muted small steps">
+          <li>Na Binance: <b>Perfil › Gerenciamento de API › Criar API</b> (tipo "gerada pelo sistema").</li>
+          <li>Marque só <b>Ativar leitura</b> e <b>Ativar negociação Spot e de margem</b>. <b>NUNCA</b> marque saques.</li>
+          <li>Em restrição de IP, coloque o IP da sua internet (mais seguro).</li>
+        </ol>
+        <p class="small" id="key-status"></p>
+        <div class="grid">
+          <label>API Key<input name="apiKey" autocomplete="off" spellcheck="false" placeholder="deixe vazio para manter a atual"></label>
+          <label>Secret Key<input name="apiSecret" type="password" autocomplete="off" placeholder="deixe vazio para manter a atual"></label>
+          <div class="form-actions">
+            <button class="btn" type="button" id="btn-testkeys">Testar chave</button>
+            <button class="btn" type="button" id="btn-delkeys">Apagar chave</button>
+          </div>
+        </div>
+      </div>
+      <div class="sticky-save"><button class="btn primary big" type="submit">Salvar ajustes</button></div>
+    </form>
+  </section>
+</main>
+
+<dialog id="dlg">
+  <form method="dialog">
+    <h3 id="dlg-title"></h3>
+    <div id="dlg-body"></div>
+    <div class="row end">
+      <button class="btn" value="cancel">Cancelar</button>
+      <button class="btn primary" value="ok" id="dlg-ok">OK</button>
+    </div>
+  </form>
+</dialog>
+<div id="toast" class="toast" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>
