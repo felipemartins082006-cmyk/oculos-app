@@ -27,7 +27,7 @@ var webFS embed.FS
 const addr = "127.0.0.1:47900"
 const port = 47900
 
-var version = "2.3" // var (e não const) para os testes poderem gerar outra versão com -ldflags
+var version = "2.4" // var (e não const) para os testes poderem gerar outra versão com -ldflags
 
 func configDir() string {
 	base, err := os.UserConfigDir()

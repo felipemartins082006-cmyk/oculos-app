@@ -71,6 +71,21 @@ func newServer(b *Bot) http.Handler {
 		}
 		reply(w, nil, telegramSend(b.httpc, tok, strings.TrimSpace(c.Chat), "TradeMartins: ✅ Teste de aviso. Se você recebeu isto, os avisos estão funcionando!"))
 	})
+	mux.HandleFunc("POST /api/top", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			N     int    `json:"n"`
+			Quote string `json:"quote"`
+		}
+		json.NewDecoder(r.Body).Decode(&req)
+		if req.N < 2 || req.N > 30 {
+			req.N = 10
+		}
+		if req.Quote = strings.ToUpper(strings.TrimSpace(req.Quote)); req.Quote == "" {
+			req.Quote = "USDT"
+		}
+		v, err := b.data.TopByVolume(req.Quote, req.N)
+		reply(w, v, err)
+	})
 	mux.HandleFunc("POST /api/lab", func(w http.ResponseWriter, r *http.Request) {
 		var req LabRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -223,7 +238,8 @@ func (b *Bot) Status(pair string) map[string]any {
 		"chart": ch, "dayBlocked": b.st.DayBlocked, "dayStartEquity": b.st.DayStartEquity,
 		"summary":      map[string]any{"pnl": pnl, "wins": wins, "losses": losses},
 		"strategyName": strategyNames[b.cfg.Params.Strategy], "strategies": strategyNames,
-		"now": time.Now().UnixMilli(),
+		"sizeWarning": b.sizeWarningLocked(),
+		"now":         time.Now().UnixMilli(),
 	}
 }
 
@@ -332,6 +348,7 @@ func (b *Bot) Lab(req LabRequest) (any, error) {
 	from := time.Now().Add(-time.Duration(req.Days) * 24 * time.Hour)
 	o := BTOptions{TradePct: req.TradePct, MaxBuy: req.MaxBuy, FeePct: paperFeePct, Start: req.Start,
 		StopSlipPct: backtestStopSlipPct, TradeFrom: from.UnixMilli(), Interval: dur}
+	o.MinOrder = 5 // mínimo por ordem da Binance (pares em USDT): com pouco dinheiro, compras pequenas são recusadas
 	if req.Params.MarketDays > 0 {
 		// filtro de mercado: velas diárias do BTC desde antes do aquecimento, mais a média
 		btc, err := b.history(marketSymbol, "1d", req.Days+extraDays+marketCandles(req.Params.MarketDays), 20000)

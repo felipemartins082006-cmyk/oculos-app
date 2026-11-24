@@ -25,6 +25,7 @@
     <div id="warn-real" class="banner danger" hidden>Modo REAL: o robô compra e vende com o seu dinheiro na Binance.</div>
     <div id="warn-teste" class="banner info" hidden>Modo BINANCE DE TESTE: ordens de verdade na Binance de teste, com dinheiro de mentira. Os preços de lá podem ser diferentes dos da Binance normal.</div>
     <div id="err-banner" class="banner warn" hidden></div>
+    <div id="size-banner" class="banner warn" hidden></div>
 
     <div class="hero card">
       <div>
@@ -115,6 +116,7 @@
           <button class="btn primary" data-kind="multi">Vários pares</button>
           <p class="muted small">A mesma estratégia em várias criptos, e numa carteira dividida igualmente entre elas.</p>
           <label class="small">Pares<input id="multi-syms" value="BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT, ADAUSDT, DOGEUSDT, LINKUSDT"></label>
+          <button class="btn small" type="button" data-top="#multi-syms">Os 10 de maior volume agora</button>
         </div>
       </div>
     </div>
@@ -137,7 +139,7 @@
       <div class="card">
         <h3>Mercado</h3>
         <div class="grid">
-          <label class="wide2">Pares da carteira<input name="symbols" placeholder="BTCUSDT, ETHUSDT, SOLUSDT" required><small class="muted">Um ou mais pares separados por vírgula (até 12), todos na mesma moeda (ex.: todos em USDT). O dinheiro é dividido igualmente: com 4 pares, cada compra usa no máximo 1/4 do patrimônio. Diversificar foi o que mais reduziu as quedas no laboratório.</small></label>
+          <label class="wide2">Pares da carteira<span class="row"><input name="symbols" placeholder="BTCUSDT, ETHUSDT, SOLUSDT" required><button class="btn small" type="button" data-top="[name=symbols]">10 de maior volume</button></span><small class="muted">Um ou mais pares separados por vírgula (até 12), todos na mesma moeda (ex.: todos em USDT). O dinheiro é dividido igualmente: com 4 pares, cada compra usa no máximo 1/4 do patrimônio. Diversificar foi o que mais reduziu as quedas no laboratório.</small></label>
           <label>Tamanho das velas<select name="interval"></select><small class="muted">Velas maiores = menos operações e menos ruído</small></label>
           <label>Checar a cada (segundos)<input name="checkSeconds" type="number" min="5"></label>
         </div>

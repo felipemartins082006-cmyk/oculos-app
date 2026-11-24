@@ -700,6 +700,41 @@ func (b *Bot) slotLocked(sym string, free, equity float64) float64 {
 	return spend
 }
 
+// sizeWarningLocked avisa quando o patrimônio é pequeno demais para o número de pares: cada compra seria
+// menor que o mínimo por ordem da Binance e seria recusada.
+func (b *Bot) sizeWarningLocked() string {
+	n := len(b.cfg.pairs())
+	eq := b.live.Equity
+	if n == 0 || eq <= 0 {
+		return ""
+	}
+	minN := 0.0
+	for _, s := range b.cfg.pairs() {
+		if in := b.infos[s]; in != nil && in.MinNotional > minN {
+			minN = in.MinNotional
+		}
+	}
+	if minN <= 0 {
+		return ""
+	}
+	need := minN * 1.02
+	slot := eq / float64(n) * b.cfg.TradePct / 100
+	if slot >= need {
+		return ""
+	}
+	q := b.live.Quote
+	fit := int(eq * b.cfg.TradePct / 100 / need)
+	msg := fmt.Sprintf("Com %.2f %s e %d pares, cada compra seria de no máximo %.2f %s, mas a Binance só aceita ordens a partir de %.2f %s.", eq, q, n, slot, q, minN, q)
+	if fit == 0 {
+		return msg + " O saldo é pequeno demais para operar."
+	}
+	extra := ""
+	if b.cfg.Params.SizeMode == "vol" {
+		extra = " A volatilidade-alvo deixa as compras ainda menores: com pouco dinheiro, use \"% fixo do saldo\"."
+	}
+	return msg + fmt.Sprintf(" Use no máximo %d par(es), ou aumente o saldo para uns %.0f %s.%s", fit, need*float64(n)/(b.cfg.TradePct/100)*1.3, q, extra)
+}
+
 // buyLocked compra `sym`. Devolve retry=true quando a compra com certeza NÃO foi feita por falha de conexão
 // (pode tentar de novo sem risco de comprar duas vezes).
 func (b *Bot) buyLocked(sym string, price float64) (retry bool) {
@@ -739,6 +774,11 @@ func (b *Bot) buyLocked(sym string, price float64) (retry bool) {
 		spend := b.slotLocked(sym, b.st.PaperQuote, b.equityLocked(b.st.PaperQuote, map[string]float64{sym: price}))
 		if spend < 1 {
 			b.logf("err", "Compra de %s cancelada: saldo simulado acabou. Use \"Zerar simulação\".", sym)
+			return false
+		}
+		if spend < info.MinNotional*1.02 {
+			// a simulação respeita o mínimo da Binance: senão pareceria possível operar com pouco dinheiro
+			b.logf("err", "Compra de %s cancelada: %.2f %s é menos que o mínimo por ordem da Binance (%.2f %s).", sym, spend, info.Quote, info.MinNotional, info.Quote)
 			return false
 		}
 		fee := spend * paperFeePct / 100

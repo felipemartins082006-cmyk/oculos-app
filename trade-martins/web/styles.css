@@ -189,3 +189,6 @@ dialog input { margin-top: 6px; }
   .top { padding: 10px 16px; gap: 10px; justify-content: space-between; }
   .tabs { order: 3; flex-basis: 100%; flex-wrap: nowrap; overflow-x: auto; }
 }
+.btn.small { padding: 6px 10px; font-size: 13px; white-space: nowrap; }
+label .row input { flex: 1; min-width: 0; }
+.lab-act .btn.small { margin-top: 6px; }

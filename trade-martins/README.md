@@ -195,6 +195,44 @@ queda 35% → 25%). **Recomendação:** use o filtro com o Momentum ou o Rompime
 não ajudou de forma clara. A **reversão à média (RSI curto) perdeu dinheiro nos dois períodos** (−32% e −32% em 4h): evite. Mesmo melhor, nada disso é garantia: continuam sendo só 6 anos de cripto. O teste
 pode ser refeito com `RESEARCH_DIR=pasta go test -tags research -run Research -v` (arquivo `research_test.go`).
 
+### Mais pares, sem viés de sobrevivência (versão 2.4)
+
+A lista de 8 pares usada acima tem um problema: são criptos que são grandes **hoje**. Quem escolhe os pares
+olhando o presente já sabe quem sobreviveu. Para corrigir, a carteira de cada período foi escolhida **só com o
+que se sabia na época**: os 10 ou 20 pares USDT com mais volume nos 30 dias antes do início, entre **todos** os
+que existiam então, inclusive os que depois saíram da Binance (YFII, SXP, EOS, WAVES, FTT, MATIC…). Quando um
+par sai da corretora no meio do teste, a simulação vende pelo último preço.
+
+| Carteira (velas de 4h) | Período | Só segurar | Melhor estratégia: Momentum + vol-alvo 40% + filtro BTC |
+|---|---|---|---|
+| 8 pares de hoje (otimista) | 2023–2026 | +17%, queda 69% | +138%, Sharpe 1,12, queda 27% |
+| 10 de maior volume na época | 2020–2023 | +107%, queda 81% | +186%, Sharpe 1,32, queda 25% |
+| 10 de maior volume na época | 2023–2026 | **−1%**, queda 68% | **+93%, Sharpe 0,97, queda 24%** |
+| 20 de maior volume na época | 2023–2026 | **−34%**, queda 74% | +69%, Sharpe 0,81, queda 28% |
+
+O que isso mostra:
+
+- **Os números honestos são menores** que os da lista de hoje, mas a estratégia continua bem melhor que segurar:
+  a maior parte da vantagem vem de **ficar de fora nas quedas grandes**.
+- **Mais pares não melhorou:** 20 pares foi pior que 10 (as moedas extras são piores). Use os **10 de maior
+  volume** (botão "10 de maior volume" em Ajustes e no laboratório) e reveja a lista de tempos em tempos.
+- **Momentum + volatilidade-alvo 40% + filtro BTC 100 dias** foi a melhor ou quase a melhor em todos os 12
+  testes (3 carteiras × 2 períodos × velas de 4h e diárias). Misturar estratégias (dividir o dinheiro entre
+  EMA, rompimento e momentum) diminuiu um pouco a queda, mas também o Sharpe.
+
+### Com pouco dinheiro
+
+A Binance só aceita ordens a partir de **5 USDT**. Com 10 USDT, só cabe **1 posição por vez** (2 × 5 = 10 não
+sobra nada para a taxa). Testado com os 20 pares de maior volume e uma vaga só: o resultado virou loteria
+(de −59% a +1.659%, dependendo da estratégia e do período). Num dos testes, a única compra foi XRP em nov/2020,
+que caiu 62% com o processo da SEC; o saldo ficou abaixo de 5 USDT e **o robô nunca mais conseguiu comprar**.
+
+Para a carteira diversificada funcionar: **10 pares × 5 USDT ÷ 95%** ≈ 53 USDT no mínimo, com folga para
+quedas de ~25%: **uns 70 USDT** com "% fixo do saldo", ou **uns 150 USDT** com volatilidade-alvo (que compra
+menos que o máximo). Com menos que isso, use o **modo simulado** para acompanhar a estratégia. O painel agora
+avisa quando o saldo é pequeno demais para o número de pares, e o modo simulado respeita o mínimo de 5 USDT
+(antes ele aceitava compras de 1 USDT e parecia possível operar com pouco).
+
 Resumo: as estratégias **reduzem as quedas** em relação a segurar, principalmente numa carteira de vários pares,
 mas **nenhuma mostrou lucro comprovado**. No teste "Vários pares", o botão **Usar esta carteira no robô** aplica
 os pares e os ajustes testados.
@@ -307,6 +345,7 @@ O painel (`web/`) vai embutido no `.exe`.
 | `lab.go` | Walk-forward, mapa de parâmetros, Monte Carlo e vários pares |
 | `portfolio.go` | Backtest de carteira: vários pares com o mesmo dinheiro, igual ao robô ao vivo |
 | `cross.go` | Filtro de mercado (BTC acima da média, com velas diárias fechadas) |
+| `topvol.go` | Os N pares de maior volume (sem stablecoins, ações tokenizadas e tokens alavancados) |
 | `research_test.go` | Pesquisa de melhorias em dois períodos (só roda com `-tags research`) |
 | `telegram_cmd.go` | Comandos pelo Telegram |
 | `binance.go` | API da Binance (normal e de teste): velas, regras do par, saldo, ordens (assinatura HMAC-SHA256) |

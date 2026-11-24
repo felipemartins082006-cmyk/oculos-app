@@ -147,6 +147,12 @@ func runPortfolio(syms []string, kls [][]Kline, p Params, o BTOptions) PortResul
 				s.bQty = slot * (1 - fee) / s.kl[at[k]].O
 			}
 		}
+		// 0) par que saiu da corretora (as velas acabaram antes do fim do teste): vende pelo último preço
+		for k, s := range ss {
+			if at[k] < 0 && s.in && len(s.kl) > 0 && t > s.kl[len(s.kl)-1].OpenTime {
+				sell(k, s, t, s.lastC, "saiu da corretora")
+			}
+		}
 		// 1) vendas pendentes na abertura
 		for k, s := range ss {
 			if at[k] >= 0 && s.pending == sigSell && s.in {
@@ -179,7 +185,7 @@ func runPortfolio(syms []string, kls [][]Kline, p Params, o BTOptions) PortResul
 			if o.MaxBuy > 0 && spend > o.MaxBuy {
 				spend = o.MaxBuy
 			}
-			if spend <= 1e-9 {
+			if spend <= 1e-9 || (o.MinOrder > 0 && spend < o.MinOrder) {
 				continue
 			}
 			k0 := s.kl[at[k]]

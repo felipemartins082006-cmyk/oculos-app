@@ -21,6 +21,7 @@ type Point struct {
 type BTOptions struct {
 	TradePct    float64       // % máximo do saldo por compra
 	MaxBuy      float64       // valor máximo por compra (0 = sem limite), igual ao robô
+	MinOrder    float64       // compra mínima aceita pela corretora (0 = sem mínimo); abaixo disso não compra
 	FeePct      float64       // taxa por lado (0,1% na Binance)
 	Start       float64       // saldo inicial
 	StopSlipPct float64       // quanto abaixo do stop a venda sai, em média
@@ -133,7 +134,7 @@ func runBacktest(kl []Kline, p Params, o BTOptions) BTResult {
 			if o.MaxBuy > 0 && spend > o.MaxBuy {
 				spend = o.MaxBuy
 			}
-			if spend > 1e-9 {
+			if spend > 1e-9 && (o.MinOrder <= 0 || spend >= o.MinOrder) {
 				f := spend * fee
 				res.FeesPaid += f
 				entry = k.O

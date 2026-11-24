@@ -303,6 +303,8 @@ function showMulti() {
   const v = [
     `Sharpe do robô melhor que o de só segurar em <b>${better} de ${ok.length}</b> pares.`,
     r.portAssets >= 2 ? `Na <b>carteira</b> com os ${r.portAssets} pares, simulada <b>exatamente como o robô ao vivo opera</b> (o mesmo dinheiro para todos, cada compra até 1/${r.portAssets} do patrimônio, vendas antes das compras, taxas): robô ${pct(p.returnPct)} (Sharpe ${num(p.sharpe, 2)}, queda ${num(p.maxDDPct, 0)}%) contra ${pct(pb.returnPct)} de dividir igualmente e só segurar (Sharpe ${num(pb.sharpe, 2)}, queda ${num(pb.maxDDPct, 0)}%).` : "",
+    r.portAssets >= 2 && !p.trades && req.start / r.portAssets * req.tradePct / 100 < 5.1
+      ? `<b class="neg">A carteira não fez nenhuma compra:</b> com ${num(req.start, 2)} divididos em ${r.portAssets} pares, cada compra seria de ${num(req.start / r.portAssets * req.tradePct / 100, 2)}, menos que o mínimo de 5 por ordem da Binance. Use menos pares ou mais dinheiro.` : "",
     `Cuidado: a lista tem criptos que são grandes <b>hoje</b> (as que sumiram não entram, e isso melhora o passado: viés de sobrevivência).`,
   ].filter(Boolean);
   const contrib = {};

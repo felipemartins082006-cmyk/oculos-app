@@ -157,6 +157,18 @@ async function act(btn, fn) {
   finally { if (btn) btn.disabled = false; }
 }
 
+// "os N de maior volume": a regra usada na pesquisa para escolher a carteira (30 dias, sem stablecoins)
+$$("[data-top]").forEach((btn) => btn.addEventListener("click", (e) => {
+  e.preventDefault();
+  act(btn, async () => {
+    const list = await api("top", { n: 10, quote: "USDT" });
+    const el = $(btn.dataset.top);
+    el.value = list.join(", ");
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    toast("Pares com mais volume nos últimos 30 dias: " + list.join(", "));
+  });
+}));
+
 // ---------- abas ----------
 $$(".tabs button").forEach((b) => b.addEventListener("click", () => {
   $$(".tabs button").forEach((x) => x.classList.toggle("on", x === b));
@@ -195,6 +207,8 @@ function render() {
   const eb = $("#err-banner");
   eb.hidden = !errs.length;
   eb.textContent = errs.length ? "Problema: " + errs.join(" · ") : "";
+  $("#size-banner").hidden = !S.sizeWarning;
+  $("#size-banner").textContent = S.sizeWarning ? "Saldo pequeno: " + S.sizeWarning : "";
 
   $("#dot").className = "dot" + (S.running ? " on" : "");
   $("#status-text").textContent = S.running ? (S.dayBlocked ? "Ligado (sem compras hoje)" : "Ligado") : "Desligado";
