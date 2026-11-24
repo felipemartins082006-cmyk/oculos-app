@@ -233,6 +233,33 @@ menos que o máximo). Com menos que isso, use o **modo simulado** para acompanha
 avisa quando o saldo é pequeno demais para o número de pares, e o modo simulado respeita o mínimo de 5 USDT
 (antes ele aceitava compras de 1 USDT e parecia possível operar com pouco).
 
+### E o mercado futuro? (vender a descoberto e arbitragem de funding)
+
+Testado com o mesmo método (10 de maior volume na época, dois períodos), usando o histórico público da Binance
+(data.binance.vision): funding de cada 8h, preços do perpétuo e do Spot, taxas e liquidação.
+
+**Ganhar na queda (vender a descoberto)** com as mesmas regras (vendido quando o momentum é negativo e o BTC
+está abaixo da média de 100 dias), sem alavancagem:
+
+| Velas de 8h, 10 de maior volume na época | 2020–2023 | 2023–2026 |
+|---|---|---|
+| Spot, só comprado (como o robô) | +147%, Sharpe 1,43, queda 17% | **+99%, Sharpe 1,09, queda 22%** |
+| Perpétuo, só comprado (paga funding) | +114%, Sharpe 1,22, queda 19% | +87%, Sharpe 1,02, queda 22% |
+| Perpétuo, só vendido | −4%, Sharpe 0,06, queda 33% | −10%, Sharpe −0,09, queda 31% |
+| Perpétuo, comprado **e** vendido | +104%, Sharpe 0,88, queda 30% | +65%, Sharpe 0,69, queda 34% |
+
+Vender a descoberto **não deu lucro em nenhum dos dois períodos**: as quedas de cripto são rápidas e as
+recuperações violentas, e o vendido é pego nelas. Somar o vendido ao comprado **piorou** o Sharpe e aumentou a
+queda. Por isso o robô continua só no Spot (sem risco de liquidação).
+
+**Arbitragem de funding** (comprado no Spot + vendido no perpétuo, o preço se cancela e se recebe o funding):
+muito pouco risco (queda abaixo de 1–3%), mas **pouco retorno**: 7–10% ao ano em 2020–2023 (mercado em alta,
+funding alto) e **2–4% ao ano em 2023–2026**, parecido com deixar USDT rendendo na própria Binance. Precisa de
+dinheiro nas duas pontas (o perpétuo do BTC exige no mínimo 100 USDT). Não entrou no robô.
+
+Os scripts estão em `research/` (Python, sem dependências): `universe.py` (pares de maior volume na época),
+`futdl.py` (baixa funding e velas), `funding.py` e `longshort.py`.
+
 Resumo: as estratégias **reduzem as quedas** em relação a segurar, principalmente numa carteira de vários pares,
 mas **nenhuma mostrou lucro comprovado**. No teste "Vários pares", o botão **Usar esta carteira no robô** aplica
 os pares e os ajustes testados.
