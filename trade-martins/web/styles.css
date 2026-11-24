@@ -77,6 +77,36 @@ main { max-width: 1100px; margin: 0 auto; padding: 18px 16px 80px; }
 canvas { width: 100%; display: block; }
 #chart { height: 340px; }
 #bt-chart { height: 280px; }
+/* carteira */
+.pairs td { vertical-align: top; }
+.pairs td small { display: block; font-size: 12px; white-space: normal; max-width: 300px; }
+.pairs tr[data-pair] { cursor: pointer; }
+.pairs tr[data-pair]:hover td { background: var(--card2); }
+.pairs tr.sel td { background: rgba(79,140,255,.08); }
+.pairs tr.sel td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.small-btn { padding: 5px 10px; font-size: 13px; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 2px 0 8px; }
+.chip { padding: 5px 11px; border-radius: 99px; border: 1px solid var(--line); background: var(--card2); font-size: 13px; color: var(--muted); }
+.chip.on { border-color: var(--accent); color: var(--text); background: rgba(79,140,255,.15); }
+.pinfo { display: flex; gap: 6px 18px; flex-wrap: wrap; font-size: 13.5px; margin-bottom: 8px; }
+.grid label.wide2 { grid-column: span 2; }
+@media (max-width: 760px) {
+  .grid label.wide2 { grid-column: auto; }
+  /* no celular, cada par vira um cartãozinho: par · preço · 24h / posição + botão.
+     A coluna "Estratégia vê" some (a mesma informação fica embaixo do gráfico). */
+  .pairs, .pairs tbody { display: block; }
+  .pairs tr:first-child { display: none; }
+  .pairs tr[data-pair] { display: grid; grid-template-columns: 1fr auto auto; gap: 4px 12px; padding: 10px 6px; border-bottom: 1px solid var(--line); }
+  .pairs tr[data-pair] td { border: 0; padding: 0; white-space: normal; }
+  .pairs td:nth-child(4) { display: none; }
+  .pairs td:nth-child(5) { grid-column: 1 / span 2; }
+  .pairs td:nth-child(6) { grid-column: 3; grid-row: 2; align-self: center; }
+  .pairs td:nth-child(6):empty { display: none; }
+  .pairs td small { max-width: none; }
+  .pairs tr.sel { background: rgba(79,140,255,.08); box-shadow: inset 3px 0 0 var(--accent); }
+  .pairs tr.sel td, .pairs tr[data-pair]:hover td { background: none; box-shadow: none; }
+}
+
 /* parâmetros da estratégia */
 .pbox .wide { display: flex; flex-direction: column; gap: 5px; font-size: 13.5px; max-width: 420px; margin-bottom: 6px; }
 .strat-help { margin: 4px 0 12px; max-width: 760px; }

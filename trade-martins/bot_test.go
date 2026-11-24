@@ -118,17 +118,17 @@ func TestTrendFilterBlocksBuy(t *testing.T) {
 
 func TestPaperBuySell(t *testing.T) {
 	b := NewBot(t.TempDir())
-	b.info = &SymbolInfo{Symbol: "BTCUSDT", Base: "BTC", Quote: "USDT"}
+	b.infos["BTCUSDT"] = &SymbolInfo{Symbol: "BTCUSDT", Base: "BTC", Quote: "USDT"}
 	b.cfg.TradePct = 50
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.buyLocked(100)
-	p := b.st.Position
+	b.buyLocked("BTCUSDT", 100)
+	p := b.st.Positions["BTCUSDT"]
 	if p == nil || b.st.PaperQuote != 500 || math.Abs(p.Qty-4.995) > 1e-9 || p.Stop != 94 {
 		t.Fatalf("compra simulada errada: %+v quote=%v", p, b.st.PaperQuote)
 	}
-	b.sellLocked(110, "teste")
-	if b.st.Position != nil || b.st.PaperBase != 0 {
+	b.sellLocked("BTCUSDT", 110, "teste")
+	if b.st.Positions["BTCUSDT"] != nil || b.st.PaperBases["BTCUSDT"] != 0 {
 		t.Fatalf("posição deveria estar fechada")
 	}
 	want := 500 + 4.995*110*0.999

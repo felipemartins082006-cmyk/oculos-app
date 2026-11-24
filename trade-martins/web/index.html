@@ -28,8 +28,8 @@
 
     <div class="hero card">
       <div>
-        <div class="muted" id="pair-label">BTCUSDT · velas de 1h</div>
-        <div class="price" id="price">—</div>
+        <div class="muted" id="port-label">Carteira</div>
+        <div class="price" id="equity">—</div>
         <div class="muted small" id="updated">conectando…</div>
       </div>
       <div class="hero-actions">
@@ -39,30 +39,24 @@
     </div>
 
     <div class="stats">
-      <div class="card stat"><span class="muted">Patrimônio</span><b id="equity">—</b><small id="equity-sub" class="muted"></small></div>
+      <div class="card stat"><span class="muted">Em dinheiro</span><b id="cash">—</b><small id="cash-sub" class="muted"></small></div>
+      <div class="card stat"><span class="muted">Posições abertas</span><b id="open-n">—</b><small id="open-sub" class="muted"></small></div>
       <div class="card stat"><span class="muted">Resultado das vendas</span><b id="pnl">—</b><small id="pnl-sub" class="muted"></small></div>
-      <div class="card stat"><span class="muted" id="info0-label">Estratégia</span><b id="info0">—</b><small class="muted" id="info0-sub"></small></div>
-      <div class="card stat"><span class="muted" id="info1-label">Sinal</span><b id="info1">—</b><small class="muted" id="info1-sub"></small></div>
-    </div>
-
-    <div class="card" id="pos-card" hidden>
-      <div class="row between">
-        <h3>Posição aberta</h3>
-        <button id="btn-sell" class="btn danger">Vender agora</button>
-      </div>
-      <div class="pos-grid">
-        <div><span class="muted">Quantidade</span><b id="pos-qty"></b></div>
-        <div><span class="muted">Preço de compra</span><b id="pos-entry"></b></div>
-        <div><span class="muted">Resultado agora</span><b id="pos-pnl"></b></div>
-        <div><span class="muted">Stop-loss</span><b id="pos-stop" class="neg"></b><small id="pos-stop-where" class="muted"></small></div>
-        <div><span class="muted">Take-profit</span><b id="pos-take" class="pos"></b></div>
-      </div>
+      <div class="card stat"><span class="muted">Estratégia</span><b id="strat-name">—</b><small id="strat-sub" class="muted"></small></div>
     </div>
 
     <div class="card">
-      <div class="row between"><h3>Gráfico</h3>
+      <div class="row between"><h3>Pares</h3><button id="btn-sell-all" class="btn danger" hidden>Vender tudo</button></div>
+      <p class="muted small">Cada par usa no máximo <span id="slot-text">a sua parte</span> do patrimônio por compra. Clique num par para ver o gráfico.</p>
+      <div class="table-wrap"><table id="pairs" class="pairs"></table></div>
+    </div>
+
+    <div class="card">
+      <div class="row between"><h3 id="chart-title">Gráfico</h3>
         <div class="legend" id="chart-legend"></div>
       </div>
+      <div class="chips" id="chips"></div>
+      <div class="pinfo" id="pair-info"></div>
       <canvas id="chart" height="320"></canvas>
     </div>
 
@@ -143,7 +137,7 @@
       <div class="card">
         <h3>Mercado</h3>
         <div class="grid">
-          <label>Par da Binance<input name="symbol" placeholder="BTCUSDT" required><small class="muted">Ex.: BTCUSDT, ETHUSDT, SOLUSDT, BTCBRL</small></label>
+          <label class="wide2">Pares da carteira<input name="symbols" placeholder="BTCUSDT, ETHUSDT, SOLUSDT" required><small class="muted">Um ou mais pares separados por vírgula (até 12), todos na mesma moeda (ex.: todos em USDT). O dinheiro é dividido igualmente: com 4 pares, cada compra usa no máximo 1/4 do patrimônio. Diversificar foi o que mais reduziu as quedas no laboratório.</small></label>
           <label>Tamanho das velas<select name="interval"></select><small class="muted">Velas maiores = menos operações e menos ruído</small></label>
           <label>Checar a cada (segundos)<input name="checkSeconds" type="number" min="5"></label>
         </div>

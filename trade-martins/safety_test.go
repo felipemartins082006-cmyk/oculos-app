@@ -75,8 +75,8 @@ func TestMaxBuyCapsPurchases(t *testing.T) {
 	f := newFake(t)
 	b := realBot(t, f)
 	b.mu.Lock()
-	b.buyLocked(50000)
-	p := b.st.Position
+	b.buyLocked("BTCUSDT", 50000)
+	p := b.st.Positions["BTCUSDT"]
 	b.mu.Unlock()
 	if p == nil || math.Abs(p.Cost-100) > 1e-6 {
 		t.Fatalf("deveria gastar só 100, gastou %+v", p)
@@ -87,13 +87,13 @@ func TestMaxBuyCapsPurchases(t *testing.T) {
 
 	// modo simulado também respeita o limite
 	s := NewBot(t.TempDir())
-	s.info = &SymbolInfo{Symbol: "BTCUSDT", Base: "BTC", Quote: "USDT"}
+	s.infos["BTCUSDT"] = &SymbolInfo{Symbol: "BTCUSDT", Base: "BTC", Quote: "USDT"}
 	s.cfg.MaxBuy = 250
 	s.mu.Lock()
-	s.buyLocked(100)
+	s.buyLocked("BTCUSDT", 100)
 	s.mu.Unlock()
-	if math.Abs(s.st.Position.Cost-250) > 1e-9 || math.Abs(s.st.PaperQuote-750) > 1e-9 {
-		t.Fatalf("simulado deveria gastar 250: %+v saldo %v", s.st.Position, s.st.PaperQuote)
+	if math.Abs(s.st.Positions["BTCUSDT"].Cost-250) > 1e-9 || math.Abs(s.st.PaperQuote-750) > 1e-9 {
+		t.Fatalf("simulado deveria gastar 250: %+v saldo %v", s.st.Positions["BTCUSDT"], s.st.PaperQuote)
 	}
 }
 
@@ -161,7 +161,7 @@ func TestSameOrNewerVersionIsKept(t *testing.T) {
 // Na primeira vez que o programa abre não há registro nem operações: o painel precisa receber listas vazias, não null.
 func TestStatusOnFirstRunHasEmptyLists(t *testing.T) {
 	b := NewBot(t.TempDir())
-	st := b.Status()
+	st := b.Status("")
 	data, _ := json.Marshal(st)
 	for _, k := range []string{`"logs":[]`, `"trades":[]`} {
 		if !strings.Contains(string(data), k) {

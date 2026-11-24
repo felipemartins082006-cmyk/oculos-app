@@ -138,7 +138,12 @@ $$(".lab-act button[data-kind]").forEach((btn) => btn.addEventListener("click", 
   });
 }));
 
-$("#lab-fill").addEventListener("click", () => S && fillForm($("#lab-form"), S.config));
+$("#lab-fill").addEventListener("click", () => {
+  if (!S) return;
+  fillForm($("#lab-form"), S.config);
+  const ps = S.config.symbols && S.config.symbols.length ? S.config.symbols : [S.config.symbol];
+  if (ps.length > 1) $("#multi-syms").value = ps.join(", ");
+});
 
 function stratLabel(req) {
   return `${(STRATS[req.params.strategy] || {}).name} · ${esc(req.symbol.toUpperCase())} ${req.interval} · ${req.days} dias`;
@@ -187,8 +192,9 @@ function showBacktest() {
 async function applyToRobot(btn) {
   const { req } = LAB;
   await act(btn, async () => {
-    if (!(await ask("Usar estes ajustes?", `<p>O robô passa a usar <b>${(STRATS[req.params.strategy] || {}).name}</b> em <b>${esc(req.symbol.toUpperCase())}</b>, velas de <b>${req.interval}</b>, com os ajustes de risco deste teste.</p>`, { okText: "Usar" }))) return;
-    await patchConfig({ symbol: req.symbol, interval: req.interval, params: req.params, tradePct: req.tradePct, maxBuy: req.maxBuy });
+    const ps = (S.config.symbols || [S.config.symbol]).map(esc).join(", ");
+    if (!(await ask("Usar estes ajustes?", `<p>O robô passa a usar <b>${(STRATS[req.params.strategy] || {}).name}</b>, velas de <b>${req.interval}</b>, com os ajustes de risco deste teste.</p><p class="muted">Os pares da carteira continuam os mesmos (${ps}). Para trocar os pares, use o teste "Vários pares" ou Ajustes.</p>`, { okText: "Usar" }))) return;
+    await patchConfig({ interval: req.interval, params: req.params, tradePct: req.tradePct, maxBuy: req.maxBuy });
     fillConfig();
     toast("Ajustes aplicados ao robô");
   });
@@ -296,20 +302,41 @@ function showMulti() {
   const p = r.portfolio, pb = r.portBench;
   const v = [
     `Sharpe do robô melhor que o de só segurar em <b>${better} de ${ok.length}</b> pares.`,
-    r.portAssets >= 2 ? `Na <b>carteira com peso igual</b> entre os ${r.portAssets} pares: robô ${pct(p.returnPct)} (Sharpe ${num(p.sharpe, 2)}, queda ${num(p.maxDDPct, 0)}%) contra ${pct(pb.returnPct)} de só segurar (Sharpe ${num(pb.sharpe, 2)}, queda ${num(pb.maxDDPct, 0)}%). Diversificar costuma reduzir as quedas.` : "",
-    `Cuidados: a lista tem criptos que são grandes <b>hoje</b> (as que sumiram não entram, e isso melhora o passado: viés de sobrevivência). A carteira supõe rebalanceamento a cada vela sem custo. O robô ao vivo opera um par por vez.`,
+    r.portAssets >= 2 ? `Na <b>carteira</b> com os ${r.portAssets} pares, simulada <b>exatamente como o robô ao vivo opera</b> (o mesmo dinheiro para todos, cada compra até 1/${r.portAssets} do patrimônio, vendas antes das compras, taxas): robô ${pct(p.returnPct)} (Sharpe ${num(p.sharpe, 2)}, queda ${num(p.maxDDPct, 0)}%) contra ${pct(pb.returnPct)} de dividir igualmente e só segurar (Sharpe ${num(pb.sharpe, 2)}, queda ${num(pb.maxDDPct, 0)}%).` : "",
+    `Cuidado: a lista tem criptos que são grandes <b>hoje</b> (as que sumiram não entram, e isso melhora o passado: viés de sobrevivência).`,
   ].filter(Boolean);
-  const row = (name, m, b, extra = "") => `<tr class="${extra}"><td>${name}</td><td class="${cls(m.returnPct)}">${pct(m.returnPct)}</td><td>${num(m.sharpe, 2)}</td><td>${fmtDD(m.maxDDPct)}</td><td>${m.trades || "—"}</td>
-    <td class="sep ${cls(b.returnPct)}">${pct(b.returnPct)}</td><td>${num(b.sharpe, 2)}</td><td>${fmtDD(b.maxDDPct)}</td><td>${m.sharpe > b.sharpe ? "✔" : ""}</td></tr>`;
+  const contrib = {};
+  (r.perSymbol || []).forEach((x) => (contrib[x.symbol] = x));
+  const q = (ok[0] && ok[0].symbol.endsWith("BRL")) ? "BRL" : "USDT";
+  const row = (name, m, b, extra = "", sym = "") => `<tr class="${extra}"><td>${name}</td><td class="${cls(m.returnPct)}">${pct(m.returnPct)}</td><td>${num(m.sharpe, 2)}</td><td>${fmtDD(m.maxDDPct)}</td><td>${m.trades || "—"}</td>
+    <td class="sep ${cls(b.returnPct)}">${pct(b.returnPct)}</td><td>${num(b.sharpe, 2)}</td><td>${fmtDD(b.maxDDPct)}</td><td>${m.sharpe > b.sharpe ? "✔" : ""}</td>
+    <td class="sep ${sym && contrib[sym] ? cls(contrib[sym].pnl) : ""}">${sym && contrib[sym] ? signed(contrib[sym].pnl, q) : extra ? signed(r.portfolio.returnPct * req.start / 100, q) : ""}</td></tr>`;
   $("#lab-out").innerHTML = `
     <div class="card"><h3>Vários pares — ${(STRATS[req.params.strategy] || {}).name} · ${req.interval} · ${req.days} dias</h3>
       <ul class="verdict">${v.map((x) => `<li>${x}</li>`).join("")}</ul>
       <div class="table-wrap"><table class="mtable">
-        <tr><th></th><th colspan="4">Robô</th><th colspan="3" class="sep">Comprar e segurar</th><th></th></tr>
-        <tr><th>Par</th><th>Retorno</th><th>Sharpe</th><th>Maior queda</th><th>Operações</th><th class="sep">Retorno</th><th>Sharpe</th><th>Maior queda</th><th>Robô melhor?</th></tr>
-        ${r.rows.map((x) => (x.error ? `<tr><td>${esc(x.symbol)}</td><td colspan="8" class="neg">${esc(x.error)}</td></tr>` : row(esc(x.symbol), x.m, x.bench))).join("")}
-        ${r.portAssets >= 2 ? row("<b>Carteira (peso igual)</b>", p, pb, "total") : ""}
+        <tr><th></th><th colspan="4">Robô (par sozinho, todo o dinheiro)</th><th colspan="3" class="sep">Comprar e segurar</th><th></th><th class="sep">Na carteira</th></tr>
+        <tr><th>Par</th><th>Retorno</th><th>Sharpe</th><th>Maior queda</th><th>Operações</th><th class="sep">Retorno</th><th>Sharpe</th><th>Maior queda</th><th>Robô melhor?</th><th class="sep">Resultado do par</th></tr>
+        ${r.rows.map((x) => (x.error ? `<tr><td>${esc(x.symbol)}</td><td colspan="9" class="neg">${esc(x.error)}</td></tr>` : row(esc(x.symbol), x.m, x.bench, "", x.symbol))).join("")}
+        ${r.portAssets >= 2 ? row("<b>Carteira</b>", p, pb, "total") : ""}
       </table></div>
+      <p class="muted small">"Resultado do par" = quanto cada par ganhou ou perdeu dentro da carteira, começando com ${money(req.start, q)}.</p>
+      ${r.portAssets >= 2 ? `<div class="row end"><button class="btn primary" id="lab-apply-multi">Usar esta carteira no robô</button></div>` : ""}
     </div>
     ${r.portAssets >= 2 ? chartCard("lab-eq", "Patrimônio da carteira", LEG_EQ) + chartCard("lab-dd", "Queda da carteira desde o pico", `<i style="--c:var(--danger)"></i>Robô`, 160) : ""}`;
 }
+
+async function applyPortfolio(btn) {
+  const { req, res: r } = LAB;
+  const syms = r.rows.filter((x) => !x.error).map((x) => x.symbol);
+  await act(btn, async () => {
+    if (!(await ask("Usar esta carteira?", `<p>O robô passa a operar <b>${syms.map(esc).join(", ")}</b> com <b>${(STRATS[req.params.strategy] || {}).name}</b>, velas de <b>${req.interval}</b> e os ajustes de risco deste teste. Cada compra usa no máximo 1/${syms.length} do patrimônio.</p>`, { okText: "Usar" }))) return;
+    await patchConfig({ symbols: syms, interval: req.interval, params: req.params, tradePct: req.tradePct, maxBuy: req.maxBuy });
+    fillConfig();
+    toast("Carteira aplicada ao robô");
+  });
+}
+
+document.addEventListener("click", (e) => {
+  if (e.target.id === "lab-apply-multi") applyPortfolio(e.target);
+});

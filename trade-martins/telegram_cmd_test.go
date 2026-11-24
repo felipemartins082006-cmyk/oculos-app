@@ -28,8 +28,9 @@ func upd(chat int64, text string, age time.Duration) tgUpdate {
 
 func paperBot(t *testing.T) *Bot {
 	b := NewBot(t.TempDir())
-	b.info = &SymbolInfo{Symbol: "BTCUSDT", Base: "BTC", Quote: "USDT"}
-	b.live.Price, b.live.Base, b.live.Quote = 60000, "BTC", "USDT"
+	b.infos["BTCUSDT"] = &SymbolInfo{Symbol: "BTCUSDT", Base: "BTC", Quote: "USDT"}
+	b.live.Pairs["BTCUSDT"] = &PairLive{Symbol: "BTCUSDT", Base: "BTC", Price: 60000}
+	b.live.Quote = "USDT"
 	return b
 }
 
@@ -56,7 +57,7 @@ func TestTelegramStartOnlyShowsHelp(t *testing.T) {
 
 func TestTelegramCommandsFlow(t *testing.T) {
 	b := paperBot(t)
-	if r := b.handleTelegramUpdate(upd(42, "/status@MeuRoboBot", 0), myChat); !strings.Contains(r, "DESLIGADO") || !strings.Contains(r, "Sem posição") {
+	if r := b.handleTelegramUpdate(upd(42, "/status@MeuRoboBot", 0), myChat); !strings.Contains(r, "DESLIGADO") || !strings.Contains(r, "— fora") {
 		t.Fatalf("status errado: %q", r)
 	}
 	b.handleTelegramUpdate(upd(42, "/ligar", 0), myChat)
@@ -68,17 +69,17 @@ func TestTelegramCommandsFlow(t *testing.T) {
 	}
 
 	b.mu.Lock()
-	b.buyLocked(60000)
+	b.buyLocked("BTCUSDT", 60000)
 	b.mu.Unlock()
 	r := b.handleTelegramUpdate(upd(42, "/vender", 0), myChat)
-	if !strings.Contains(r, "/vender sim") || b.st.Position == nil {
+	if !strings.Contains(r, "/vender BTCUSDT sim") || b.st.Positions["BTCUSDT"] == nil {
 		t.Fatalf("/vender sozinho deveria só pedir confirmação: %q", r)
 	}
-	if r := b.handleTelegramUpdate(upd(42, "/status", 0), myChat); !strings.Contains(r, "Posição:") || !strings.Contains(r, "Stop-loss: 56400.00") {
+	if r := b.handleTelegramUpdate(upd(42, "/status", 0), myChat); !strings.Contains(r, "comprado a 60000.00") || !strings.Contains(r, "stop 56400.00") {
 		t.Fatalf("status com posição errado: %q", r)
 	}
 	b.handleTelegramUpdate(upd(42, "/vender sim", 0), myChat)
-	if b.st.Position != nil {
+	if b.st.Positions["BTCUSDT"] != nil {
 		t.Fatalf("/vender sim deveria vender")
 	}
 	b.handleTelegramUpdate(upd(42, "/parar", 0), myChat)

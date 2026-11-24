@@ -14,7 +14,9 @@ func newServer(b *Bot) http.Handler {
 	sub, _ := fs.Sub(webFS, "web")
 	mux.Handle("/", http.FileServer(http.FS(sub)))
 
-	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, r *http.Request) { reply(w, b.Status(), nil) })
+	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, r *http.Request) {
+		reply(w, b.Status(strings.ToUpper(r.URL.Query().Get("pair"))), nil)
+	})
 	mux.HandleFunc("POST /api/start", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			ConfirmReal bool `json:"confirmReal"`
@@ -30,7 +32,13 @@ func newServer(b *Bot) http.Handler {
 		b.Quit()
 	})
 	mux.HandleFunc("POST /api/stop", func(w http.ResponseWriter, r *http.Request) { b.Stop(); reply(w, nil, nil) })
-	mux.HandleFunc("POST /api/sell", func(w http.ResponseWriter, r *http.Request) { reply(w, nil, b.SellNow()) })
+	mux.HandleFunc("POST /api/sell", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Symbol string `json:"symbol"` // vazio = vende todas as posições
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		reply(w, nil, b.SellNow(strings.ToUpper(strings.TrimSpace(body.Symbol))))
+	})
 	mux.HandleFunc("POST /api/reset-paper", func(w http.ResponseWriter, r *http.Request) { reply(w, nil, b.ResetPaper()) })
 	mux.HandleFunc("POST /api/config", func(w http.ResponseWriter, r *http.Request) {
 		var c Config
@@ -121,7 +129,17 @@ type ChartData struct {
 	Lines []ChartLine  `json:"lines"`
 }
 
-func (b *Bot) Status() map[string]any {
+// PairStatus = um par da carteira, para o painel.
+type PairStatus struct {
+	*PairLive
+	Position    *Position `json:"position"`
+	PnLNow      float64   `json:"pnlNow"`    // resultado da posição agora (já descontando a taxa de venda)
+	PnLNowPct   float64   `json:"pnlNowPct"` // idem, em %
+	PendingSell bool      `json:"pendingSell"`
+}
+
+// Status = tudo o que o painel mostra. pair = par cujo gráfico vai junto ("" = o primeiro).
+func (b *Bot) Status(pair string) map[string]any {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	cfg := b.cfg
@@ -138,9 +156,38 @@ func (b *Bot) Status() map[string]any {
 	}
 	cfg.APIKey, cfg.APISecret, cfg.TestAPIKey, cfg.TestAPISecret, cfg.TelegramToken = "", "", "", "", ""
 
-	// gráfico com as últimas velas
+	// pares da carteira (e posições abertas em pares que não estão mais na lista, se houver)
+	list := append([]string{}, cfg.pairs()...)
+	for s := range b.st.Positions {
+		if !cfg.hasPair(s) {
+			list = append(list, s)
+		}
+	}
+	if !cfg.hasPair(pair) {
+		pair = ""
+	}
+	if pair == "" && len(list) > 0 {
+		pair = list[0]
+	}
+	pairs := []PairStatus{}
+	for _, s := range list {
+		pl := b.live.Pairs[s]
+		if pl == nil {
+			pl = &PairLive{Symbol: s}
+		}
+		ps := PairStatus{PairLive: pl, Position: b.st.Positions[s], PendingSell: b.st.PendingSells[s]}
+		if p := ps.Position; p != nil && pl.Price > 0 && p.Cost > 0 {
+			ps.PnLNow = p.Qty*pl.Price*(1-paperFeePct/100) - p.Cost
+			ps.PnLNowPct = ps.PnLNow / p.Cost * 100
+		}
+		pairs = append(pairs, ps)
+	}
+
+	// gráfico do par escolhido
 	var ch *ChartData
-	if ks := b.live.Candles; len(ks) > 0 {
+	var stopTake []float64
+	if pl := b.live.Pairs[pair]; pl != nil && len(pl.Candles) > 0 {
+		ks := pl.Candles
 		pr := b.cfg.Params.prepare(ks, intervalDur(b.cfg.Interval))
 		from := len(ks) - 120
 		if from < 0 {
@@ -153,25 +200,15 @@ func (b *Bot) Status() map[string]any {
 			ch.OHLC = append(ch.OHLC, [4]float64{k.O, k.H, k.L, k.C})
 		}
 	}
+	if p := b.st.Positions[pair]; p != nil {
+		stopTake = []float64{p.Stop, p.Take}
+	}
 
 	// resumo das operações do modo atual
-	var pnl float64
-	var wins, losses int
+	pnl, wins, losses := b.summaryLocked(cfg.Mode)
 	trades := []Trade{}
-	for i := len(b.st.Trades) - 1; i >= 0; i-- {
-		t := b.st.Trades[i]
-		if t.Mode != cfg.Mode {
-			continue
-		}
-		if t.Side == "VENDA" {
-			pnl += t.PnL
-			if t.PnL > 0 {
-				wins++
-			} else {
-				losses++
-			}
-		}
-		if len(trades) < 200 {
+	for i := len(b.st.Trades) - 1; i >= 0 && len(trades) < 200; i-- {
+		if t := b.st.Trades[i]; t.Mode == cfg.Mode {
 			trades = append(trades, t)
 		}
 	}
@@ -179,13 +216,10 @@ func (b *Bot) Status() map[string]any {
 	if len(logs) > 150 {
 		logs = logs[len(logs)-150:]
 	}
-	var stopTake []float64
-	if p := b.st.Position; p != nil {
-		stopTake = []float64{p.Stop, p.Take}
-	}
 	return map[string]any{
 		"version": version, "running": b.st.Running, "config": cfg, "keys": keys,
-		"live": b.live, "position": b.st.Position, "stopTake": stopTake, "trades": trades, "logs": logs,
+		"live": b.live, "pairs": pairs, "pair": pair, "openPositions": len(b.st.Positions),
+		"stopTake": stopTake, "trades": trades, "logs": logs,
 		"chart": ch, "dayBlocked": b.st.DayBlocked, "dayStartEquity": b.st.DayStartEquity,
 		"summary":      map[string]any{"pnl": pnl, "wins": wins, "losses": losses},
 		"strategyName": strategyNames[b.cfg.Params.Strategy], "strategies": strategyNames,

@@ -462,6 +462,7 @@ type MultiResult struct {
 	Portfolio  Metrics    `json:"portfolio"`
 	PortBench  Metrics    `json:"portBench"`
 	PortAssets int        `json:"portAssets"`
+	PerSymbol  []PortSym  `json:"perSymbol"`
 	Equity     []Point    `json:"equity"`
 	BenchEq    []Point    `json:"benchEq"`
 	Drawdown   []Point    `json:"drawdown"`
@@ -469,7 +470,7 @@ type MultiResult struct {
 
 func (b *Bot) multi(symbols []string, interval string, days, extraDays, maxCandles int, p Params, o BTOptions) *MultiResult {
 	res := &MultiResult{Rows: make([]MultiRow, len(symbols))}
-	runs := make([]*BTResult, len(symbols))
+	kls := make([][]Kline, len(symbols))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 3) // no máximo 3 downloads ao mesmo tempo
 	for i, s := range symbols {
@@ -490,82 +491,46 @@ func (b *Bot) multi(symbols []string, interval string, days, extraDays, maxCandl
 				return
 			}
 			res.Rows[i].M, res.Rows[i].Bench = r.Metrics, r.Bench
-			runs[i] = &r
+			kls[i] = ks
 		}(i, s)
 	}
 	wg.Wait()
 
-	// carteira com peso igual: em cada vela, o retorno médio dos pares (só nas datas que todos têm)
-	var ok []*BTResult
-	for _, r := range runs {
-		if r != nil {
-			ok = append(ok, r)
+	// carteira simulada exatamente como o robô ao vivo opera (dinheiro compartilhado entre os pares)
+	var syms []string
+	var data [][]Kline
+	for i, ks := range kls {
+		if ks != nil {
+			syms = append(syms, symbols[i])
+			data = append(data, ks)
 		}
 	}
-	res.PortAssets = len(ok)
-	if len(ok) < 2 {
+	res.PortAssets = len(syms)
+	if len(syms) < 2 {
 		return res
 	}
-	idx := make([]map[int64]int, len(ok))
-	for k, r := range ok {
-		idx[k] = make(map[int64]int, len(r.times))
-		for i, t := range r.times {
-			idx[k][t] = i
-		}
-	}
-	var common []int64
-	for _, t := range ok[0].times {
-		all := true
-		for k := 1; k < len(ok); k++ {
-			if _, has := idx[k][t]; !has {
-				all = false
-				break
-			}
-		}
-		if all {
-			common = append(common, t)
-		}
-	}
-	if len(common) < 3 {
-		return res
-	}
-	eq, bench := []float64{o.Start}, []float64{o.Start}
-	for j := 1; j < len(common); j++ {
-		var rs, rb float64
-		for k, r := range ok {
-			i0, i1 := idx[k][common[j-1]], idx[k][common[j]]
-			rs += r.eq[i1]/r.eq[i0] - 1
-			rb += r.bench[i1]/r.bench[i0] - 1
-		}
-		eq = append(eq, eq[len(eq)-1]*(1+rs/float64(len(ok))))
-		bench = append(bench, bench[len(bench)-1]*(1+rb/float64(len(ok))))
-	}
-	res.Portfolio = calcMetrics(eq, nil, common, ok[0].ppy)
-	res.PortBench = calcMetrics(bench, nil, common, ok[0].ppy)
-	res.PortBench.ExposurePct = 100
-	var trades []Trade
-	inC, allC := 0, 0
-	for _, r := range ok {
-		trades = append(trades, r.Trades...)
-		inC += r.inCandles
-		allC += r.Candles
-	}
-	res.Portfolio.addTrades(trades)
-	if allC > 0 {
-		res.Portfolio.ExposurePct = float64(inC) / float64(allC) * 100
-	}
-	tmp := BTResult{eq: eq, bench: bench, times: common, StartEquity: o.Start}
-	tmp.sample()
-	res.Equity, res.BenchEq, res.Drawdown = tmp.Equity, tmp.BenchEq, tmp.Drawdown
+	pr := runPortfolio(syms, data, p, o)
+	res.Portfolio, res.PortBench = pr.Metrics, pr.Bench
+	res.PerSymbol = pr.PerSymbol
+	res.Equity, res.BenchEq, res.Drawdown = pr.Equity, pr.BenchEq, pr.Drawdown
 	return res
 }
 
+// parseSymbols lê uma lista de pares ("BTCUSDT, ethusdt; SOLUSDT") sem repetidos, no máximo 12.
 func parseSymbols(s []string) []string {
+	out := parseSymbolsAll(s)
+	if len(out) > maxPairs {
+		out = out[:maxPairs]
+	}
+	return out
+}
+
+func parseSymbolsAll(s []string) []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, x := range s {
 		for _, y := range strings.FieldsFunc(strings.ToUpper(x), func(r rune) bool { return r == ',' || r == ' ' || r == ';' || r == '\n' }) {
-			if !seen[y] && len(out) < 12 {
+			if !seen[y] {
 				seen[y] = true
 				out = append(out, y)
 			}

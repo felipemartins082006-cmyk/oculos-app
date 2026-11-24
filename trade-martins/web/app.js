@@ -83,6 +83,8 @@ function fillParams(form, p) {
 }
 
 let S = null;          // último status
+let selPair = "";      // par escolhido para o gráfico
+try { selPair = localStorage.getItem("tm-pair") || ""; } catch (e) {}
 let cfgLoaded = false; // formulário de ajustes já preenchido
 
 // ---------- utilidades ----------
@@ -164,7 +166,7 @@ $$("select[name=interval]").forEach((s) => (s.innerHTML = INTERVALS.map((i) => `
 // ---------- status ----------
 async function refresh() {
   try {
-    S = await api("status");
+    S = await api("status" + (selPair ? "?pair=" + encodeURIComponent(selPair) : ""));
     render();
   } catch (e) {
     $("#updated").textContent = "sem contato com o robô (a janela do TradeMartins foi fechada?)";
@@ -173,20 +175,23 @@ async function refresh() {
 }
 
 function render() {
-  const c = S.config, L = S.live, q = L.quote || "USDT", b = L.base || "";
+  const c = S.config, L = S.live, q = L.quote || "USDT";
   const real = c.mode === "real";
   $("#mode-badge").textContent = { real: "REAL", teste: "BINANCE DE TESTE", simulado: "SIMULADO" }[c.mode];
   $("#mode-badge").className = "badge " + c.mode;
   $("#warn-real").hidden = !real;
   $("#warn-teste").hidden = c.mode !== "teste";
-  document.title = (L.price ? priceFmt(L.price) + " · " : "") + "TradeMartins";
+  const pairs = S.pairs || [];
+  document.title = (L.equity ? money(L.equity, q) + " · " : "") + "TradeMartins";
 
-  $("#pair-label").textContent = `${c.symbol} · velas de ${c.interval} · ${S.strategyName || ""}`;
-  $("#price").textContent = L.price ? priceFmt(L.price) + " " + q : "—";
-  $("#updated").textContent = L.updated ? "atualizado às " + hm(L.updated) : "conectando…";
+  $("#port-label").textContent = pairs.length > 1 ? `Carteira · ${pairs.length} pares · velas de ${c.interval}` : `${pairs[0] ? pairs[0].symbol : ""} · velas de ${c.interval}`;
+  $("#equity").textContent = L.equity ? money(L.equity, q) : "—";
+  $("#updated").textContent = L.updated ? "patrimônio · atualizado às " + hm(L.updated) : "conectando…";
+  const errs = pairs.filter((p) => p.lastError).map((p) => `${p.symbol}: ${p.lastError}`);
+  if (L.lastError) errs.unshift(L.lastError);
   const eb = $("#err-banner");
-  eb.hidden = !L.lastError;
-  eb.textContent = L.lastError ? "Problema: " + L.lastError : "";
+  eb.hidden = !errs.length;
+  eb.textContent = errs.length ? "Problema: " + errs.join(" · ") : "";
 
   $("#dot").className = "dot" + (S.running ? " on" : "");
   $("#status-text").textContent = S.running ? (S.dayBlocked ? "Ligado (sem compras hoje)" : "Ligado") : "Desligado";
@@ -194,37 +199,25 @@ function render() {
   tb.textContent = S.running ? "Desligar robô" : "Ligar robô";
   tb.className = "btn big " + (S.running ? "" : "primary");
 
-  $("#equity").textContent = money(L.equity, q);
-  $("#equity-sub").textContent = L.quote ? `${money(L.quoteBal, q)} + ${qtyFmt(L.baseBal)} ${b}` : "";
+  const open = pairs.filter((p) => p.position);
+  const invested = open.reduce((s, p) => s + p.position.cost, 0), now = open.reduce((s, p) => s + p.pnlNow, 0);
+  $("#cash").textContent = money(L.quoteBal, q);
+  $("#cash-sub").textContent = L.equity ? `${num((L.quoteBal / L.equity) * 100, 0)}% do patrimônio` : "";
+  $("#open-n").textContent = `${open.length} de ${pairs.length}`;
+  $("#open-sub").innerHTML = open.length ? `${money(invested, q)} investidos · agora <span class="${cls(now)}">${signed(now, q)}</span>` : "nenhuma";
   const sm = S.summary;
   $("#pnl").textContent = signed(sm.pnl, q);
   $("#pnl").className = cls(sm.pnl);
   const n = sm.wins + sm.losses;
   $("#pnl-sub").textContent = n ? `${n} vendas · ${sm.wins} com lucro (${num((sm.wins / n) * 100, 0)}%)` : "nenhuma venda ainda";
+  $("#strat-name").textContent = S.strategyName || "—";
+  const pr = c.params || {};
+  $("#strat-sub").textContent = [pr.sizeMode === "vol" ? `volatilidade-alvo ${num(pr.targetVol, 0)}%` : `até ${num(c.tradePct, 0)}% da parte`,
+    pr.stopMode === "atr" ? `stop ${num(pr.atrMult, 1)}× ATR` : pr.stopLossPct ? `stop ${num(pr.stopLossPct, 1)}%` : "sem stop", pr.trailing ? "móvel" : ""].filter(Boolean).join(" · ");
+  $("#slot-text").textContent = pairs.length > 1 ? `1/${pairs.length}` : "todo";
+  $("#btn-sell-all").hidden = open.length < 2;
 
-  const info = L.info || [];
-  [0, 1].forEach((i) => {
-    const t = info[i];
-    $(`#info${i}`).parentElement.hidden = !t && i === 1;
-    $(`#info${i}-label`).textContent = t ? t.label : S.strategyName || "Estratégia";
-    $(`#info${i}`).textContent = t ? t.value : "—";
-    $(`#info${i}`).className = t ? t.tone : "";
-    $(`#info${i}-sub`).textContent = t ? t.sub : "";
-  });
-
-  const p = S.position;
-  $("#pos-card").hidden = !p;
-  if (p) {
-    const val = p.qty * L.price * 0.999;
-    const r = val - p.cost;
-    $("#pos-qty").textContent = qtyFmt(p.qty) + " " + b;
-    $("#pos-entry").textContent = priceFmt(p.entry);
-    $("#pos-pnl").innerHTML = !L.price ? "—" : `<span class="${cls(r)}">${signed(r, q)} (${pct((r / p.cost) * 100)})</span>`;
-    $("#pos-stop").textContent = p.stop ? priceFmt(p.stop) : "desligado";
-    $("#pos-stop-where").textContent = !p.stop ? "" : p.stopOrderId ? "registrado na Binance ✔" : p.mode === "simulado" ? "vigiado pelo robô" : "vigiado pelo PC (sem ordem na Binance)";
-    $("#pos-take").textContent = p.take ? priceFmt(p.take) : "desligado";
-  }
-
+  renderPairs(pairs, q);
   $("#logs").innerHTML = (S.logs || []).slice().reverse().map((l) =>
     `<li class="${l.kind}"><time>${dt(l.t)}</time><span>${esc(l.msg)}</span></li>`).join("") ||
     `<li class="muted">Nada ainda.</li>`;
@@ -238,10 +231,66 @@ function render() {
   }
 }
 
+function stopWhere(p) {
+  if (!p.stop) return "sem stop";
+  return `stop ${priceFmt(p.stop)}` + (p.stopOrderId ? " (na Binance ✔)" : p.mode === "simulado" ? "" : " (vigiado pelo PC)");
+}
+
+function renderPairs(pairs, q) {
+  $("#pairs").innerHTML = `<tr><th>Par</th><th>Preço</th><th>24h</th><th>Estratégia vê</th><th>Posição</th><th></th></tr>` +
+    pairs.map((p) => {
+      const t = (p.info || [])[0];
+      const pos = p.position;
+      return `<tr data-pair="${esc(p.symbol)}" class="${p.symbol === S.pair ? "sel" : ""}">
+        <td><b>${esc(p.symbol)}</b>${p.lastError ? ` <span class="neg" title="${esc(p.lastError)}">⚠</span>` : ""}</td>
+        <td>${p.price ? priceFmt(p.price) : "—"}</td>
+        <td class="${cls(p.changePct)}">${p.price ? pct(p.changePct) : ""}</td>
+        <td>${t ? `<span class="${t.tone || ""}">${esc(t.label)}: ${esc(t.value)}</span><small class="muted">${esc(t.sub)}</small>` : ""}</td>
+        <td>${pos ? `<span class="${cls(p.pnlNow)}">${signed(p.pnlNow, q)} (${pct(p.pnlNowPct)})</span><small class="muted">${qtyFmt(pos.qty)} ${esc(p.base || "")} a ${priceFmt(pos.entry)} · ${stopWhere(pos)}${p.pendingSell ? " · venda pendente" : ""}</small>` : `<span class="muted">—</span>`}</td>
+        <td>${pos ? `<button class="btn danger small-btn" data-sell="${esc(p.symbol)}">Vender</button>` : ""}</td>
+      </tr>`;
+    }).join("");
+  $("#chips").innerHTML = pairs.length > 1 ? pairs.map((p) => `<button class="chip ${p.symbol === S.pair ? "on" : ""}" data-pair="${esc(p.symbol)}">${esc(p.symbol)}${p.position ? " ●" : ""}</button>`).join("") : "";
+  const cur = pairs.find((p) => p.symbol === S.pair);
+  $("#chart-title").textContent = "Gráfico — " + (S.pair || "");
+  $("#pair-info").innerHTML = cur && cur.info ? cur.info.map((t) => `<span><span class="muted">${esc(t.label)}:</span> <b class="${t.tone || ""}">${esc(t.value)}</b> <small class="muted">${esc(t.sub)}</small></span>`).join("") : "";
+}
+
+function choosePair(sym) {
+  if (!sym || sym === selPair) return;
+  selPair = sym;
+  try { localStorage.setItem("tm-pair", sym); } catch (e) {}
+  refresh();
+}
+
+document.addEventListener("click", (e) => {
+  const sellBtn = e.target.closest("[data-sell]");
+  if (sellBtn) {
+    const sym = sellBtn.dataset.sell;
+    act(sellBtn, async () => {
+      if (!(await ask(`Vender ${esc(sym)}?`, `<p>Vende toda a posição de <b>${esc(sym)}</b> a preço de mercado. Os outros pares não são afetados.</p>`, { okText: "Vender", danger: true }))) return;
+      await api("sell", { symbol: sym });
+      toast(`${sym} vendido`);
+      await refresh();
+    });
+    return;
+  }
+  const row = e.target.closest("[data-pair]");
+  if (row && (row.closest("#pairs") || row.closest("#chips"))) choosePair(row.dataset.pair);
+});
+
+$("#btn-sell-all").addEventListener("click", (e) => act(e.target, async () => {
+  const open = (S.pairs || []).filter((p) => p.position).map((p) => p.symbol);
+  if (!(await ask("Vender TODAS as posições?", `<p>Vende a preço de mercado: <b>${open.map(esc).join(", ")}</b>.</p>`, { okText: "Vender tudo", danger: true }))) return;
+  await api("sell", { symbol: "" });
+  toast("Posições vendidas");
+  await refresh();
+}));
+
 function tradeRows(trades, q) {
-  return `<tr><th>Data</th><th>Lado</th><th>Preço</th><th>Quantidade</th><th>Valor</th><th>Motivo</th><th>Resultado</th></tr>` +
+  return `<tr><th>Data</th><th>Par</th><th>Lado</th><th>Preço</th><th>Quantidade</th><th>Valor</th><th>Motivo</th><th>Resultado</th></tr>` +
     trades.map((t) => `<tr>
-      <td>${dt(t.time)}</td>
+      <td>${dt(t.time)}</td><td>${esc(t.symbol || "")}</td>
       <td><span class="tag ${t.side === "COMPRA" ? "buy" : "sell"}">${t.side}</span></td>
       <td>${priceFmt(t.price)}</td><td>${qtyFmt(t.qty)}</td><td>${money(t.quote, q)}</td>
       <td>${esc(t.reason)}</td>
@@ -348,7 +397,7 @@ function drawChart() {
   // compras e vendas
   const iv = n > 1 ? ch.t[1] - ch.t[0] : 3600e3;
   S.trades.forEach((t) => {
-    if (t.symbol && t.symbol !== S.config.symbol) return;
+    if (t.symbol && t.symbol !== S.pair) return;
     const i = Math.floor((t.time - ch.t[0]) / iv);
     if (i < 0 || i >= n) return;
     const buy = t.side === "COMPRA";
@@ -376,16 +425,17 @@ window.addEventListener("resize", () => {
 // ---------- botões do painel ----------
 $("#btn-toggle").addEventListener("click", (e) => act(e.target, async () => {
   if (S.running) {
-    const p = S.position;
-    const stopMsg = p && p.stopOrderId ? "O stop-loss <b>continua registrado na Binance</b>, mas o take-profit e a venda pelo sinal param." : "Com o robô desligado, o stop-loss e o take-profit não são vigiados.";
-    if (p && !(await ask("Desligar o robô?", `<p>A posição aberta <b>continua aberta</b>. ${stopMsg}</p>`, { okText: "Desligar" }))) return;
+    const open = (S.pairs || []).filter((x) => x.position);
+    const onEx = open.filter((x) => x.position.stopOrderId).length;
+    const stopMsg = open.length && onEx === open.length ? "Os stop-loss <b>continuam registrados na Binance</b>, mas o take-profit e as vendas pelo sinal param." : "Com o robô desligado, os stops que não estão na Binance, o take-profit e as vendas pelo sinal não são vigiados.";
+    if (open.length && !(await ask("Desligar o robô?", `<p>${open.length === 1 ? "A posição aberta <b>continua aberta</b>" : `As ${open.length} posições abertas <b>continuam abertas</b>`}. ${stopMsg}</p>`, { okText: "Desligar" }))) return;
     await api("stop", {});
     toast("Robô desligado");
   } else {
     let confirmReal = false;
     if (S.config.mode === "real") {
       confirmReal = await ask("Operar com dinheiro REAL?",
-        `<p>O robô vai comprar e vender <b>${esc(S.config.symbol)}</b> na sua conta da Binance usando até <b>${num(S.config.tradePct, 0)}%</b> do saldo em ${esc(S.live.quote || "")} por compra, <b>no máximo ${money(S.config.maxBuy, S.live.quote)}</b>.</p><p>Robôs também perdem dinheiro. Use só o que você aceita perder.</p><p>Para confirmar, digite <b>REAL</b>:</p>`,
+        `<p>O robô vai comprar e vender <b>${(S.config.symbols || [S.config.symbol]).map(esc).join(", ")}</b> na sua conta da Binance, cada par usando no máximo ${S.config.symbols && S.config.symbols.length > 1 ? `1/${S.config.symbols.length} do patrimônio` : "o saldo"} por compra, e <b>nunca mais de ${money(S.config.maxBuy, S.live.quote)}</b> numa compra.</p><p>Robôs também perdem dinheiro. Use só o que você aceita perder.</p><p>Para confirmar, digite <b>REAL</b>:</p>`,
         { okText: "Ligar no modo real", danger: true, requireText: "REAL" });
       if (!confirmReal) return;
     }
@@ -395,12 +445,7 @@ $("#btn-toggle").addEventListener("click", (e) => act(e.target, async () => {
   await refresh();
 }));
 
-$("#btn-sell").addEventListener("click", (e) => act(e.target, async () => {
-  if (!(await ask("Vender agora?", `<p>Vende toda a posição de ${esc(S.live.base)} a preço de mercado.</p>`, { okText: "Vender", danger: true }))) return;
-  await api("sell", {});
-  toast("Posição vendida");
-  await refresh();
-}));
+
 
 // ---------- ajustes ----------
 function fillForm(form, c) {
@@ -412,6 +457,7 @@ function fillForm(form, c) {
 function fillConfig() {
   const f = $("#cfg-form"), c = S.config;
   fillForm(f, c);
+  f.elements.symbols.value = (c.symbols && c.symbols.length ? c.symbols : [c.symbol]).join(", ");
   f.elements.checkSeconds.value = c.checkSeconds;
   f.elements.maxDailyLossPct.value = c.maxDailyLossPct;
   f.elements.paperStart.value = c.paperStart;
@@ -432,7 +478,7 @@ $("#cfg-form").addEventListener("submit", (e) => {
     if (mode === "real" && S.config.mode !== "real" &&
       !(await ask("Mudar para o modo real?", "<p>No modo real o robô usa o seu dinheiro na Binance. Recomendado: antes, deixar rodando alguns dias no modo <b>Binance de teste</b> e conferir as compras, vendas e o stop.</p>", { okText: "Mudar para real", danger: true }))) return;
     await api("config", {
-      symbol: f.elements.symbol.value, interval: f.elements.interval.value, params: readParams(f),
+      symbols: [f.elements.symbols.value], interval: f.elements.interval.value, params: readParams(f),
       tradePct: +f.elements.tradePct.value, maxBuy: +f.elements.maxBuy.value || 0, noAutostart: !f.elements.autostart.checked,
       maxDailyLossPct: +f.elements.maxDailyLossPct.value,
       checkSeconds: +f.elements.checkSeconds.value, mode, paperStart: +f.elements.paperStart.value,

@@ -18,6 +18,7 @@ import (
 const fkKey, fkSecret = "chave-teste-123456", "segredo-teste-abcdef"
 
 type fakeOrder struct {
+	Symbol      string
 	ID          int64
 	ClientID    string
 	Type        string
@@ -42,15 +43,27 @@ type fakeBinance struct {
 	noFill    bool // ordens de stop não executam (simula preço que despenca e pula o limite)
 	srv       *httptest.Server
 	badSigned int
-	perms     map[string]bool // permissões da chave (apiRestrictions)
-	bnbFees   bool            // cobra as taxas em BNB (desconto de taxa ligado)
-	closes    []float64       // se preenchido, as velas usam estes fechamentos (a última é a vela aberta)
-	failSells int             // quantas vendas a mercado responder com erro 503 (Binance instável)
+	perms     map[string]bool      // permissões da chave (apiRestrictions)
+	bnbFees   bool                 // cobra as taxas em BNB (desconto de taxa ligado)
+	closes    []float64            // se preenchido, as velas usam estes fechamentos (a última é a vela aberta)
+	failSells int                  // quantas vendas a mercado responder com erro 503 (Binance instável)
+	prices    map[string]float64   // preço dos outros pares (BTCUSDT usa price)
+	closesOf  map[string][]float64 // fechamentos por par (como closes, para qualquer par)
 }
+
+// px = preço atual de um par; base = a cripto do par (ETHUSDT → ETH).
+func (f *fakeBinance) px(sym string) float64 {
+	if sym == "" || sym == "BTCUSDT" {
+		return f.price
+	}
+	return f.prices[sym]
+}
+
+func base(sym string) string { return strings.TrimSuffix(sym, "USDT") }
 
 func newFake(t *testing.T) *fakeBinance {
 	f := &fakeBinance{t: t, price: 50000, free: map[string]float64{"USDT": 1000}, locked: map[string]float64{},
-		orders: map[int64]*fakeOrder{}, nextID: 100,
+		orders: map[int64]*fakeOrder{}, nextID: 100, prices: map[string]float64{},
 		perms: map[string]bool{"enableReading": true, "enableSpotAndMarginTrading": true}}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.handle))
 	t.Cleanup(f.srv.Close)
@@ -91,8 +104,13 @@ func (f *fakeBinance) handle(w http.ResponseWriter, r *http.Request) {
 	case path == "/sapi/v1/account/apiRestrictions":
 		json.NewEncoder(w).Encode(f.perms)
 	case path == "/api/v3/exchangeInfo":
+		sym := first(q["symbol"])
+		if f.px(sym) == 0 {
+			apiErr(w, -1121, "Invalid symbol.")
+			return
+		}
 		json.NewEncoder(w).Encode(map[string]any{"symbols": []any{map[string]any{
-			"symbol": "BTCUSDT", "status": "TRADING", "baseAsset": "BTC", "quoteAsset": "USDT", "quoteAssetPrecision": 8,
+			"symbol": sym, "status": "TRADING", "baseAsset": base(sym), "quoteAsset": "USDT", "quoteAssetPrecision": 8,
 			"filters": []any{
 				map[string]any{"filterType": "PRICE_FILTER", "tickSize": "0.01000000"},
 				map[string]any{"filterType": "LOT_SIZE", "minQty": "0.00001000", "stepSize": "0.00001000"},
@@ -100,15 +118,20 @@ func (f *fakeBinance) handle(w http.ResponseWriter, r *http.Request) {
 			}}}})
 	case path == "/api/v3/klines":
 		n, _ := strconv.Atoi(q.Get("limit"))
-		if f.closes != nil {
-			n = len(f.closes)
+		sym := first(q["symbol"])
+		series := f.closesOf[sym]
+		if series == nil && sym == "BTCUSDT" {
+			series = f.closes
+		}
+		if series != nil {
+			n = len(series)
 		}
 		var out [][]any
 		t0 := (time.Now().Add(-time.Duration(n)*time.Hour).UnixMilli() / 3600000) * 3600000
 		for i := 0; i < n; i++ {
-			c := f.price
-			if f.closes != nil {
-				c = f.closes[i]
+			c := f.px(sym)
+			if series != nil {
+				c = series[i]
 			}
 			p := strconv.FormatFloat(c, 'f', 2, 64)
 			out = append(out, []any{t0 + int64(i)*3600000, p, p, p, p, "1", t0 + int64(i+1)*3600000 - 1})
@@ -136,8 +159,8 @@ func (f *fakeBinance) handle(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		o.Status = "CANCELED"
-		f.locked["BTC"] -= o.Qty
-		f.free["BTC"] += o.Qty
+		f.locked[base(o.Symbol)] -= o.Qty
+		f.free[base(o.Symbol)] += o.Qty
 		json.NewEncoder(w).Encode(f.orderJSON(o))
 	case path == "/api/v3/myTrades":
 		id, _ := strconv.ParseInt(q.Get("orderId"), 10, 64)
@@ -175,8 +198,10 @@ func first(v []string) string {
 func (f *fakeBinance) newOrder(w http.ResponseWriter, r *http.Request, q map[string][]string) {
 	pf := func(k string) float64 { v, _ := strconv.ParseFloat(first(q[k]), 64); return v }
 	f.nextID++
-	o := &fakeOrder{ID: f.nextID, ClientID: first(q["newClientOrderId"]), Type: first(q["type"])}
+	sym := first(q["symbol"])
+	o := &fakeOrder{Symbol: sym, ID: f.nextID, ClientID: first(q["newClientOrderId"]), Type: first(q["type"])}
 	side := first(q["side"])
+	asset, price := base(sym), f.px(sym)
 	switch o.Type {
 	case "MARKET":
 		if side == "BUY" {
@@ -185,14 +210,14 @@ func (f *fakeBinance) newOrder(w http.ResponseWriter, r *http.Request, q map[str
 				apiErr(w, -2010, "Account has insufficient balance for requested action.")
 				return
 			}
-			qty := quote / f.price
+			qty := quote / price
 			f.free["USDT"] -= quote
-			fill := map[string]any{"commission": strconv.FormatFloat(qty*0.001, 'f', 8, 64), "commissionAsset": "BTC"}
+			fill := map[string]any{"commission": strconv.FormatFloat(qty*0.001, 'f', 8, 64), "commissionAsset": asset}
 			if f.bnbFees { // taxa de 0,075% cobrada em BNB (a 600 USDT)
-				f.free["BTC"] += qty
+				f.free[asset] += qty
 				fill = map[string]any{"commission": strconv.FormatFloat(quote*0.00075/600, 'f', 8, 64), "commissionAsset": "BNB"}
 			} else {
-				f.free["BTC"] += qty * 0.999 // taxa cobrada em BTC
+				f.free[asset] += qty * 0.999 // taxa cobrada na própria cripto
 			}
 			o.ExecutedQty, o.QuoteQty, o.Status = qty, quote, "FILLED"
 			f.orders[o.ID] = o
@@ -214,12 +239,12 @@ func (f *fakeBinance) newOrder(w http.ResponseWriter, r *http.Request, q map[str
 			w.WriteHeader(503)
 			return
 		}
-		if qty > f.free["BTC"]+1e-12 {
+		if qty > f.free[asset]+1e-12 {
 			apiErr(w, -2010, "Account has insufficient balance for requested action.")
 			return
 		}
-		gross := qty * f.price
-		f.free["BTC"] -= qty
+		gross := qty * price
+		f.free[asset] -= qty
 		fill := map[string]any{"commission": strconv.FormatFloat(gross*0.001, 'f', 8, 64), "commissionAsset": "USDT"}
 		if f.bnbFees {
 			f.free["USDT"] += gross
@@ -239,16 +264,16 @@ func (f *fakeBinance) newOrder(w http.ResponseWriter, r *http.Request, q map[str
 			apiErr(w, -1102, "Mandatory parameter missing.")
 			return
 		}
-		if qty > f.free["BTC"]+1e-12 {
+		if qty > f.free[asset]+1e-12 {
 			apiErr(w, -2010, "Account has insufficient balance for requested action.")
 			return
 		}
-		if pf("stopPrice") >= f.price {
+		if pf("stopPrice") >= price {
 			apiErr(w, -2010, "Stop price would trigger immediately.")
 			return
 		}
-		f.free["BTC"] -= qty
-		f.locked["BTC"] += qty
+		f.free[asset] -= qty
+		f.locked[asset] += qty
 		o.Qty, o.StopPrice, o.Limit, o.Status = qty, pf("stopPrice"), pf("price"), "NEW"
 		f.orders[o.ID] = o
 		json.NewEncoder(w).Encode(f.orderJSON(o))
@@ -257,18 +282,24 @@ func (f *fakeBinance) newOrder(w http.ResponseWriter, r *http.Request, q map[str
 	}
 }
 
-// setPrice muda o preço e executa as ordens de stop atingidas.
-func (f *fakeBinance) setPrice(p float64) {
+// setPrice muda o preço do BTCUSDT e executa as ordens de stop atingidas.
+func (f *fakeBinance) setPrice(p float64) { f.setPriceOf("BTCUSDT", p) }
+
+func (f *fakeBinance) setPriceOf(sym string, p float64) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.price = p
+	if sym == "BTCUSDT" {
+		f.price = p
+	} else {
+		f.prices[sym] = p
+	}
 	if f.noFill {
 		return
 	}
 	for _, o := range f.orders {
-		if o.Status == "NEW" && o.Type == "STOP_LOSS_LIMIT" && p <= o.StopPrice {
+		if o.Symbol == sym && o.Status == "NEW" && o.Type == "STOP_LOSS_LIMIT" && p <= o.StopPrice {
 			gross := o.Qty * o.Limit
-			f.locked["BTC"] -= o.Qty
+			f.locked[base(sym)] -= o.Qty
 			f.free["USDT"] += gross * 0.999
 			o.ExecutedQty, o.QuoteQty, o.CommQuote, o.Status = o.Qty, gross, gross*0.001, "FILLED"
 		}
@@ -298,7 +329,7 @@ func newExchangeBot(t *testing.T, f *fakeBinance) *Bot {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b.info = info
+	b.infos["BTCUSDT"] = info
 	return b
 }
 
@@ -310,8 +341,8 @@ func TestExchangeBuyRegistersStopThatFillsWithPCOff(t *testing.T) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	b.buyLocked(50000)
-	p := b.st.Position
+	b.buyLocked("BTCUSDT", 50000)
+	p := b.st.Positions["BTCUSDT"]
 	if p == nil || math.Abs(p.Cost-500) > 1e-6 || math.Abs(p.Entry-50000) > 1e-6 {
 		t.Fatalf("compra errada: %+v", p)
 	}
@@ -326,8 +357,8 @@ func TestExchangeBuyRegistersStopThatFillsWithPCOff(t *testing.T) {
 	// O preço cai com o "PC desligado": a Binance executa o stop sozinha.
 	f.setPrice(46900)
 	// Quando o robô volta, ele descobre e registra a venda.
-	b.syncStopLocked(46900)
-	if b.st.Position != nil {
+	b.syncStopLocked("BTCUSDT", 46900)
+	if b.st.Positions["BTCUSDT"] != nil {
 		t.Fatalf("posição deveria ter sido encerrada pelo stop")
 	}
 	tr := lastTrade(b)
@@ -344,10 +375,10 @@ func TestExchangeSellCancelsStopFirst(t *testing.T) {
 	b := newExchangeBot(t, f)
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.buyLocked(50000)
+	b.buyLocked("BTCUSDT", 50000)
 	f.setPrice(52000)
-	b.sellLocked(52000, "sinal")
-	if b.st.Position != nil {
+	b.sellLocked("BTCUSDT", 52000, "sinal")
+	if b.st.Positions["BTCUSDT"] != nil {
 		t.Fatalf("posição deveria estar fechada; registro: %+v", b.st.Logs)
 	}
 	if len(f.openStops()) != 0 {
@@ -366,8 +397,8 @@ func TestExchangeStopIsReplacedWhenSettingsChange(t *testing.T) {
 	f := newFake(t)
 	b := newExchangeBot(t, f)
 	b.mu.Lock()
-	b.buyLocked(50000)
-	oldID := b.st.Position.StopOrderID
+	b.buyLocked("BTCUSDT", 50000)
+	oldID := b.st.Positions["BTCUSDT"].StopOrderID
 	nc := b.cfg
 	nc.Params.StopLossPct = 3
 	b.mu.Unlock()
@@ -376,8 +407,8 @@ func TestExchangeStopIsReplacedWhenSettingsChange(t *testing.T) {
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.syncStopLocked(50000)
-	p := b.st.Position
+	b.syncStopLocked("BTCUSDT", 50000)
+	p := b.st.Positions["BTCUSDT"]
 	if p.StopOrderID == oldID || p.StopOrderPrice != 48500 {
 		t.Fatalf("stop não foi trocado: %+v", p)
 	}
@@ -391,8 +422,8 @@ func TestExchangeStopCanceledOutsideIsRegisteredAgain(t *testing.T) {
 	b := newExchangeBot(t, f)
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.buyLocked(50000)
-	id := b.st.Position.StopOrderID
+	b.buyLocked("BTCUSDT", 50000)
+	id := b.st.Positions["BTCUSDT"].StopOrderID
 	// alguém cancela a ordem no app da Binance
 	f.mu.Lock()
 	f.orders[id].Status = "CANCELED"
@@ -400,8 +431,8 @@ func TestExchangeStopCanceledOutsideIsRegisteredAgain(t *testing.T) {
 	f.free["BTC"] += f.orders[id].Qty
 	f.mu.Unlock()
 
-	b.syncStopLocked(50000)
-	if p := b.st.Position; p == nil || p.StopOrderID == 0 || p.StopOrderID == id {
+	b.syncStopLocked("BTCUSDT", 50000)
+	if p := b.st.Positions["BTCUSDT"]; p == nil || p.StopOrderID == 0 || p.StopOrderID == id {
 		t.Fatalf("stop deveria ter sido registrado de novo: %+v", p)
 	}
 }
@@ -411,15 +442,15 @@ func TestExchangeSoldOutsideClosesPosition(t *testing.T) {
 	b := newExchangeBot(t, f)
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.buyLocked(50000)
-	id := b.st.Position.StopOrderID
+	b.buyLocked("BTCUSDT", 50000)
+	id := b.st.Positions["BTCUSDT"].StopOrderID
 	// a pessoa cancela o stop e vende tudo pelo app
 	f.mu.Lock()
 	f.orders[id].Status = "CANCELED"
 	f.locked["BTC"], f.free["BTC"] = 0, 0
 	f.mu.Unlock()
-	b.syncStopLocked(50000)
-	if b.st.Position != nil {
+	b.syncStopLocked("BTCUSDT", 50000)
+	if b.st.Positions["BTCUSDT"] != nil {
 		t.Fatalf("posição deveria ter sido encerrada no robô")
 	}
 }
@@ -429,11 +460,11 @@ func TestExchangeFastDropSellsAtMarket(t *testing.T) {
 	b := newExchangeBot(t, f)
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.buyLocked(50000)
+	b.buyLocked("BTCUSDT", 50000)
 	f.noFill = true
 	f.setPrice(45000) // pulou o limite da ordem de stop (46.765)
-	b.syncStopLocked(45000)
-	if b.st.Position != nil {
+	b.syncStopLocked("BTCUSDT", 45000)
+	if b.st.Positions["BTCUSDT"] != nil {
 		t.Fatalf("deveria ter vendido a mercado")
 	}
 	if tr := lastTrade(b); tr.Reason != "stop-loss (queda rápida)" || math.Abs(tr.Price-45000) > 1e-6 {
@@ -454,8 +485,8 @@ func TestExchangeConnectionDropDuringBuyIsReconciled(t *testing.T) {
 	f.dropNext = true
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.buyLocked(50000)
-	p := b.st.Position
+	b.buyLocked("BTCUSDT", 50000)
+	p := b.st.Positions["BTCUSDT"]
 	if p == nil || math.Abs(p.Cost-500) > 1e-6 {
 		t.Fatalf("a compra executada deveria ter sido reconhecida: %+v\n%+v", p, b.st.Logs)
 	}
@@ -468,17 +499,17 @@ func TestExchangeTickWithBotOff(t *testing.T) {
 	f := newFake(t)
 	b := newExchangeBot(t, f)
 	b.mu.Lock()
-	b.buyLocked(50000)
+	b.buyLocked("BTCUSDT", 50000)
 	b.st.Running = false
 	b.mu.Unlock()
 	f.setPrice(46000) // stop executa na Binance
 	b.tick()          // robô desligado, mas confere o stop
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.st.Position != nil {
+	if b.st.Positions["BTCUSDT"] != nil {
 		t.Fatalf("mesmo desligado, o robô deveria registrar a venda feita pelo stop")
 	}
-	if b.live.Price != 46000 || b.live.QuoteBal <= 0 {
+	if b.live.Pairs["BTCUSDT"] == nil || b.live.Pairs["BTCUSDT"].Price != 46000 || b.live.QuoteBal <= 0 {
 		t.Fatalf("painel não atualizou: %+v", b.live)
 	}
 }
@@ -516,7 +547,7 @@ func TestTelegramAlerts(t *testing.T) {
 	b := newExchangeBot(t, f)
 	b.tgToken, b.tgChat = "TOKEN123", "42"
 	b.mu.Lock()
-	b.buyLocked(50000)
+	b.buyLocked("BTCUSDT", 50000)
 	b.mu.Unlock()
 	timeout := time.After(5 * time.Second)
 	var msgs []string
@@ -539,14 +570,14 @@ func TestExchangeBNBFeesCountInResult(t *testing.T) {
 	b := newExchangeBot(t, f)
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.buyLocked(50000)
-	p := b.st.Position
+	b.buyLocked("BTCUSDT", 50000)
+	p := b.st.Positions["BTCUSDT"]
 	// gastou 500 USDT + taxa de 0,075% paga em BNB = 0,375 USDT
 	if p == nil || math.Abs(p.Cost-500.375) > 1e-6 || math.Abs(p.Qty-0.01) > 1e-9 {
 		t.Fatalf("custo deveria incluir a taxa em BNB: %+v", p)
 	}
 	f.setPrice(55000)
-	b.sellLocked(55000, "sinal")
+	b.sellLocked("BTCUSDT", 55000, "sinal")
 	tr := lastTrade(b)
 	gross := 0.01 * 55000.0
 	want := gross - gross*0.00075 - 500.375
@@ -581,7 +612,7 @@ func TestSignalSellIsRetriedAfterFailure(t *testing.T) {
 
 	f.price = closes[997]
 	b.mu.Lock()
-	b.buyLocked(f.price)
+	b.buyLocked("BTCUSDT", f.price)
 	b.st.Running = true
 	b.mu.Unlock()
 
@@ -591,7 +622,7 @@ func TestSignalSellIsRetriedAfterFailure(t *testing.T) {
 
 	b.tick() // sinal de venda, mas a Binance falha
 	b.mu.Lock()
-	if b.st.Position == nil || !b.st.PendingSell {
+	if b.st.Positions["BTCUSDT"] == nil || !b.st.PendingSells["BTCUSDT"] {
 		b.mu.Unlock()
 		t.Fatalf("a venda deveria ter falhado e ficado pendente")
 	}
@@ -600,7 +631,7 @@ func TestSignalSellIsRetriedAfterFailure(t *testing.T) {
 	b.tick() // mesma vela: não há sinal novo, mas a venda pendente é feita
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.st.Position != nil || b.st.PendingSell {
+	if b.st.Positions["BTCUSDT"] != nil || b.st.PendingSells["BTCUSDT"] {
 		t.Fatalf("a venda pendente deveria ter sido feita na checagem seguinte; registro: %+v", b.st.Logs)
 	}
 	if tr := lastTrade(b); tr.Side != "VENDA" || tr.Reason != "sinal" {

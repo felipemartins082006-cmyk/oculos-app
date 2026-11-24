@@ -58,12 +58,15 @@ func (b *Bot) marketOrderLocked(symbol, side, qty, quoteQty string) (*OrderResul
 	return nil, fmt.Errorf("sem confirmação da Binance (%v)", err)
 }
 
-func (b *Bot) sellExchangeLocked(price float64, reason string) {
-	pos, info := b.st.Position, b.info
+func (b *Bot) sellExchangeLocked(sym string, price float64, reason string) {
+	pos, info := b.st.Positions[sym], b.infos[sym]
+	if pos == nil || info == nil {
+		return
+	}
 	if pos.StopOrderID != 0 {
-		closed, err := b.cancelStopLocked()
+		closed, err := b.cancelStopLocked(sym)
 		if err != nil {
-			b.logf("err", "Venda (%s) não enviada: não consegui cancelar o stop na Binance (%v). Tento de novo na próxima checagem.", reason, err)
+			b.logf("err", "Venda de %s (%s) não enviada: não consegui cancelar o stop na Binance (%v). Tento de novo na próxima checagem.", sym, reason, err)
 			return
 		}
 		if closed {
@@ -72,7 +75,7 @@ func (b *Bot) sellExchangeLocked(price float64, reason string) {
 	}
 	free, _, err := b.bn.Balances()
 	if err != nil {
-		b.logf("err", "Venda (%s) não enviada: %v. Tento de novo na próxima checagem.", reason, err)
+		b.logf("err", "Venda de %s (%s) não enviada: %v. Tento de novo na próxima checagem.", sym, reason, err)
 		return
 	}
 	q := math.Min(pos.Qty, free[info.Base])
@@ -81,22 +84,22 @@ func (b *Bot) sellExchangeLocked(price float64, reason string) {
 	fmt.Sscan(qs, &qv)
 	if qv < info.MinQty || qv*price < info.MinNotional {
 		b.logf("warn", "Só restam %s %s na conta (pequeno demais para vender; vendido fora do robô?). Posição encerrada no robô.", fmtQty(free[info.Base]), info.Base)
-		b.st.Position = nil
+		delete(b.st.Positions, sym)
 		b.saveLocked()
 		return
 	}
 	r, err := b.marketOrderLocked(pos.Symbol, "SELL", qs, "")
 	if err != nil {
-		b.logf("err", "Venda (%s) recusada: %v. Tento de novo na próxima checagem.", reason, err)
-		b.stopRetryAt = time.Time{}
+		b.logf("err", "Venda de %s (%s) recusada: %v. Tento de novo na próxima checagem.", sym, reason, err)
+		delete(b.stopRetry, sym)
 		return
 	}
-	b.recordSaleLocked(r.ExecutedQty, r.QuoteQty-r.Commission[info.Quote]-b.otherFeesLocked(r.Commission), r.QuoteQty/r.ExecutedQty, reason, true)
+	b.recordSaleLocked(sym, r.ExecutedQty, r.QuoteQty-r.Commission[info.Quote]-b.otherFeesLocked(sym, r.Commission), r.QuoteQty/r.ExecutedQty, reason, true)
 }
 
 // cancelStopLocked tira a ordem de stop da Binance. closed=true se descobriu que ela já tinha vendido tudo.
-func (b *Bot) cancelStopLocked() (closed bool, err error) {
-	pos := b.st.Position
+func (b *Bot) cancelStopLocked(sym string) (closed bool, err error) {
+	pos := b.st.Positions[sym]
 	o, err := b.bn.CancelOrder(pos.Symbol, pos.StopOrderID)
 	if err != nil {
 		// pode ter executado agora há pouco
@@ -110,36 +113,36 @@ func (b *Bot) cancelStopLocked() (closed bool, err error) {
 		}
 	}
 	if o.Status == "FILLED" {
-		b.recordStopFillLocked(o, true)
+		b.recordStopFillLocked(sym, o, true)
 		return true, nil
 	}
 	if o.ExecutedQty > 0 {
-		b.recordStopFillLocked(o, false)
+		b.recordStopFillLocked(sym, o, false)
 	}
-	if b.st.Position != nil {
-		b.st.Position.StopOrderID, b.st.Position.StopOrderPrice = 0, 0
+	if p := b.st.Positions[sym]; p != nil {
+		p.StopOrderID, p.StopOrderPrice = 0, 0
 	}
-	return b.st.Position == nil, nil
+	return b.st.Positions[sym] == nil, nil
 }
 
 // recordStopFillLocked registra a venda feita pela ordem de stop da Binance.
-func (b *Bot) recordStopFillLocked(o *OrderStatus, closeAll bool) {
-	info := b.info
-	comm, err := b.bn.Commissions(b.st.Position.Symbol, o.OrderID)
+func (b *Bot) recordStopFillLocked(sym string, o *OrderStatus, closeAll bool) {
+	info := b.infos[sym]
+	comm, err := b.bn.Commissions(sym, o.OrderID)
 	proceeds := o.QuoteQty * (1 - paperFeePct/100) // estimativa se não der para ler a taxa
 	if err == nil {
-		proceeds = o.QuoteQty - comm[info.Quote] - b.otherFeesLocked(comm)
+		proceeds = o.QuoteQty - comm[info.Quote] - b.otherFeesLocked(sym, comm)
 	}
 	avg := 0.0
 	if o.ExecutedQty > 0 {
 		avg = o.QuoteQty / o.ExecutedQty
 	}
-	b.recordSaleLocked(o.ExecutedQty, proceeds, avg, "stop-loss na Binance", closeAll)
+	b.recordSaleLocked(sym, o.ExecutedQty, proceeds, avg, "stop-loss na Binance", closeAll)
 }
 
 // syncStopLocked confere a ordem de stop na Binance e a mantém igual ao stop da posição.
-func (b *Bot) syncStopLocked(price float64) {
-	pos, info := b.st.Position, b.info
+func (b *Bot) syncStopLocked(sym string, price float64) {
+	pos, info := b.st.Positions[sym], b.infos[sym]
 	if pos == nil || info == nil {
 		return
 	}
@@ -148,29 +151,29 @@ func (b *Bot) syncStopLocked(price float64) {
 	if pos.StopOrderID != 0 {
 		o, err := b.bn.GetOrder(pos.Symbol, pos.StopOrderID, "")
 		if err != nil {
-			b.logf("err", "Não consegui conferir o stop na Binance: %v", err)
+			b.logf("err", "Não consegui conferir o stop de %s na Binance: %v", sym, err)
 			return
 		}
 		switch o.Status {
 		case "FILLED":
-			b.recordStopFillLocked(o, true)
+			b.recordStopFillLocked(sym, o, true)
 			return
 		case "NEW", "PARTIALLY_FILLED":
 			// preço caiu rápido e passou do limite da ordem: ela pode nunca executar. Vende a mercado.
 			if price < pos.StopOrderPrice*(1-stopGapSell) {
-				b.logf("warn", "O preço caiu rápido e passou do limite da ordem de stop. Vendendo a mercado.")
-				b.sellExchangeLocked(price, "stop-loss (queda rápida)")
+				b.logf("warn", "%s: o preço caiu rápido e passou do limite da ordem de stop. Vendendo a mercado.", sym)
+				b.sellExchangeLocked(sym, price, "stop-loss (queda rápida)")
 				return
 			}
 		default: // CANCELED, EXPIRED, REJECTED...
 			if o.ExecutedQty > 0 {
-				b.recordStopFillLocked(o, false)
-				if b.st.Position == nil {
+				b.recordStopFillLocked(sym, o, false)
+				if b.st.Positions[sym] == nil {
 					return
 				}
 			}
-			b.logf("warn", "A ordem de stop na Binance foi cancelada fora do robô (%s). Registrando de novo.", o.Status)
-			pos = b.st.Position
+			b.logf("warn", "A ordem de stop de %s na Binance foi cancelada fora do robô (%s). Registrando de novo.", sym, o.Status)
+			pos = b.st.Positions[sym]
 			pos.StopOrderID, pos.StopOrderPrice = 0, 0
 			b.saveLocked()
 		}
@@ -181,14 +184,14 @@ func (b *Bot) syncStopLocked(price float64) {
 	if pos.StopOrderID != 0 && math.Abs(pos.StopOrderPrice-want) < 1e-12 {
 		return
 	}
-	if time.Now().Before(b.stopRetryAt) {
+	if time.Now().Before(b.stopRetry[sym]) {
 		return
 	}
-	if pos.StopOrderID != 0 { // stop mudou (ajustes): troca a ordem
-		closed, err := b.cancelStopLocked()
+	if pos.StopOrderID != 0 { // stop mudou (ajustes ou stop móvel): troca a ordem
+		closed, err := b.cancelStopLocked(sym)
 		if err != nil {
-			b.logf("err", "Não consegui trocar o stop na Binance: %v", err)
-			b.stopRetryAt = time.Now().Add(2 * time.Minute)
+			b.logf("err", "Não consegui trocar o stop de %s na Binance: %v", sym, err)
+			b.stopRetry[sym] = time.Now().Add(2 * time.Minute)
 			return
 		}
 		if closed {
@@ -201,15 +204,15 @@ func (b *Bot) syncStopLocked(price float64) {
 	}
 	if price <= want*1.001 {
 		// já está no stop ou abaixo: a Binance recusaria a ordem; vende direto
-		b.sellExchangeLocked(price, "stop-loss")
+		b.sellExchangeLocked(sym, price, "stop-loss")
 		return
 	}
 
 	// 3) Registra a ordem de stop.
 	free, _, err := b.bn.Balances()
 	if err != nil {
-		b.logf("err", "Não consegui registrar o stop na Binance: %v", err)
-		b.stopRetryAt = time.Now().Add(2 * time.Minute)
+		b.logf("err", "Não consegui registrar o stop de %s na Binance: %v", sym, err)
+		b.stopRetry[sym] = time.Now().Add(2 * time.Minute)
 		return
 	}
 	q := math.Min(pos.Qty, free[info.Base])
@@ -220,31 +223,31 @@ func (b *Bot) syncStopLocked(price float64) {
 	if qv < info.MinQty || qv*limit < info.MinNotional {
 		if free[info.Base] < pos.Qty*0.5 {
 			b.logf("warn", "Só restam %s %s na conta: parece que a posição foi vendida fora do robô. Posição encerrada no robô.", fmtQty(free[info.Base]), info.Base)
-			b.st.Position = nil
+			delete(b.st.Positions, sym)
 			b.saveLocked()
 			return
 		}
-		b.logf("warn", "Posição pequena demais para uma ordem de stop na Binance (mínimo %.2f %s). O robô vigia o stop pelo PC.", info.MinNotional, info.Quote)
-		b.stopRetryAt = time.Now().Add(6 * time.Hour)
+		b.logf("warn", "Posição em %s pequena demais para uma ordem de stop na Binance (mínimo %.2f %s). O robô vigia o stop pelo PC.", sym, info.MinNotional, info.Quote)
+		b.stopRetry[sym] = time.Now().Add(6 * time.Hour)
 		return
 	}
 	o, err := b.bn.StopLossLimit(pos.Symbol, qs, floorTick(want, info.TickSize), floorTick(limit, info.TickSize),
 		fmt.Sprintf("tmstop%d", time.Now().UnixMilli()))
 	if err != nil {
-		b.logf("err", "Não consegui registrar o stop-loss na Binance: %v. Enquanto isso, o robô vigia o stop pelo PC.", err)
-		b.stopRetryAt = time.Now().Add(5 * time.Minute)
+		b.logf("err", "Não consegui registrar o stop-loss de %s na Binance: %v. Enquanto isso, o robô vigia o stop pelo PC.", sym, err)
+		b.stopRetry[sym] = time.Now().Add(5 * time.Minute)
 		return
 	}
 	pos.StopOrderID, pos.StopOrderPrice = o.OrderID, want
-	b.logf("ok", "Stop-loss registrado na Binance a %s (ordem %d). Ele funciona mesmo com o PC desligado.", fmtPrice(want), o.OrderID)
+	b.logf("ok", "Stop-loss de %s registrado na Binance a %s (ordem %d). Ele funciona mesmo com o PC desligado.", sym, fmtPrice(want), o.OrderID)
 	b.saveLocked()
 }
 
 // otherFeesLocked converte para a moeda do par as taxas cobradas em outra moeda
 // (ex.: quem paga a taxa em BNB para ter desconto). A taxa na própria cripto ou na moeda do par
 // já é tratada em quem chama.
-func (b *Bot) otherFeesLocked(comm map[string]float64) float64 {
-	info := b.info
+func (b *Bot) otherFeesLocked(sym string, comm map[string]float64) float64 {
+	info := b.infos[sym]
 	total := 0.0
 	for asset, amt := range comm {
 		if amt <= 0 || asset == info.Base || asset == info.Quote {

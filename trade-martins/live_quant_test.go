@@ -20,47 +20,47 @@ func TestLiveTrailingStopOnlyGoesUp(t *testing.T) {
 	b.cfg.Interval = "1h"
 	b.cfg.Params.StopLossPct, b.cfg.Params.Trailing = 6, true
 	entryT := time.Now().Add(-10 * time.Hour).UnixMilli()
-	b.st.Position = &Position{Symbol: "BTCUSDT", Mode: "simulado", Qty: 1, Entry: 100, Cost: 100, Time: entryT, Stop: 94, Highest: 100}
+	b.st.Positions["BTCUSDT"] = &Position{Symbol: "BTCUSDT", Mode: "simulado", Qty: 1, Entry: 100, Cost: 100, Time: entryT, Stop: 94, Highest: 100}
 
 	ks := closedSeries(entryT-5*3600000, 90, 95, 99, 100, 101, 105, 110, 120, 115, 108)
 	pr := b.cfg.Params.prepare(ks, time.Hour)
 	b.mu.Lock()
-	b.updateStopLocked(ks, pr, len(ks)-1)
+	b.updateStopLocked("BTCUSDT", ks, pr, len(ks)-1)
 	b.mu.Unlock()
-	p := b.st.Position
+	p := b.st.Positions["BTCUSDT"]
 	if p.Highest != 120 || math.Abs(p.Stop-120*0.94) > 1e-9 {
 		t.Fatalf("stop deveria subir para 6%% abaixo do maior fechamento (120): highest=%v stop=%v", p.Highest, p.Stop)
 	}
 	// velas antes da compra não contam (houve um fechamento de 90..99 antes)
 	ks2 := closedSeries(entryT-4*3600000, 200, 95, 99, 100, 101) // a última (101) fecha depois da compra
-	b.st.Position.Highest, b.st.Position.Stop = 100, 94
+	b.st.Positions["BTCUSDT"].Highest, b.st.Positions["BTCUSDT"].Stop = 100, 94
 	b.mu.Lock()
-	b.updateStopLocked(ks2, b.cfg.Params.prepare(ks2, time.Hour), len(ks2)-1)
+	b.updateStopLocked("BTCUSDT", ks2, b.cfg.Params.prepare(ks2, time.Hour), len(ks2)-1)
 	b.mu.Unlock()
-	if b.st.Position.Highest != 101 {
-		t.Fatalf("o fechamento de 200 foi ANTES da compra e não pode contar: %v", b.st.Position.Highest)
+	if b.st.Positions["BTCUSDT"].Highest != 101 {
+		t.Fatalf("o fechamento de 200 foi ANTES da compra e não pode contar: %v", b.st.Positions["BTCUSDT"].Highest)
 	}
 	// preço caindo não abaixa o stop
-	b.st.Position.Stop = 112.8
+	b.st.Positions["BTCUSDT"].Stop = 112.8
 	ks3 := closedSeries(entryT, 100, 95, 90)
 	b.mu.Lock()
-	b.updateStopLocked(ks3, b.cfg.Params.prepare(ks3, time.Hour), len(ks3)-1)
+	b.updateStopLocked("BTCUSDT", ks3, b.cfg.Params.prepare(ks3, time.Hour), len(ks3)-1)
 	b.mu.Unlock()
-	if b.st.Position.Stop != 112.8 {
-		t.Fatalf("stop não pode descer: %v", b.st.Position.Stop)
+	if b.st.Positions["BTCUSDT"].Stop != 112.8 {
+		t.Fatalf("stop não pode descer: %v", b.st.Positions["BTCUSDT"].Stop)
 	}
 }
 
 func TestLiveATRStopRecalculatedAfterSettingsChange(t *testing.T) {
 	b := paperBot(t)
 	b.cfg.Interval = "1h"
-	b.st.Position = &Position{Symbol: "BTCUSDT", Mode: "simulado", Qty: 1, Entry: 100, Cost: 100, Time: time.Now().UnixMilli(), Stop: 94, Highest: 100}
+	b.st.Positions["BTCUSDT"] = &Position{Symbol: "BTCUSDT", Mode: "simulado", Qty: 1, Entry: 100, Cost: 100, Time: time.Now().UnixMilli(), Stop: 94, Highest: 100}
 	nc := b.cfg
 	nc.Params.StopMode, nc.Params.ATRPeriod, nc.Params.ATRMult = "atr", 14, 2
 	if err := b.UpdateConfig(nc); err != nil {
 		t.Fatal(err)
 	}
-	if !b.st.Position.StopDirty {
+	if !b.st.Positions["BTCUSDT"].StopDirty {
 		t.Fatalf("stop por ATR precisa ser recalculado com as velas")
 	}
 	// velas com amplitude 4 → ATR 4 → stop = 100 − 2×4 = 92
@@ -69,9 +69,9 @@ func TestLiveATRStopRecalculatedAfterSettingsChange(t *testing.T) {
 		ks[i] = Kline{OpenTime: int64(i) * 3600000, CloseTime: int64(i+1)*3600000 - 1, O: 100, H: 102, L: 98, C: 100}
 	}
 	b.mu.Lock()
-	b.updateStopLocked(ks, b.cfg.Params.prepare(ks, time.Hour), len(ks)-1)
+	b.updateStopLocked("BTCUSDT", ks, b.cfg.Params.prepare(ks, time.Hour), len(ks)-1)
 	b.mu.Unlock()
-	if p := b.st.Position; p.StopDirty || math.Abs(p.Stop-92) > 1e-9 {
+	if p := b.st.Positions["BTCUSDT"]; p.StopDirty || math.Abs(p.Stop-92) > 1e-9 {
 		t.Fatalf("stop por ATR deveria ser 92: %+v", p)
 	}
 }
@@ -84,10 +84,10 @@ func TestExchangeTrailingStopMovesOrder(t *testing.T) {
 	b.cfg.Params.StopLossPct, b.cfg.Params.Trailing = 5, true
 
 	b.mu.Lock()
-	b.buyLocked(50000)
-	firstID := b.st.Position.StopOrderID
+	b.buyLocked("BTCUSDT", 50000)
+	firstID := b.st.Positions["BTCUSDT"].StopOrderID
 	b.st.Running = true
-	entryT := b.st.Position.Time
+	entryT := b.st.Positions["BTCUSDT"].Time
 	b.mu.Unlock()
 	if firstID == 0 {
 		t.Fatalf("stop deveria estar na Binance")
@@ -107,12 +107,12 @@ func TestExchangeTrailingStopMovesOrder(t *testing.T) {
 	f.mu.Unlock()
 	// as velas do fake terminam agora; a compra foi "antes" das velas que sobem
 	b.mu.Lock()
-	b.st.Position.Time = entryT - 20*3600000
+	b.st.Positions["BTCUSDT"].Time = entryT - 20*3600000
 	b.mu.Unlock()
 
 	b.tick()
 	b.mu.Lock()
-	p := *b.st.Position
+	p := *b.st.Positions["BTCUSDT"]
 	b.mu.Unlock()
 	if math.Abs(p.Stop-59000*0.95) > 1e-6 {
 		t.Fatalf("stop deveria ter subido para 5%% abaixo de 59.000: %v", p.Stop)

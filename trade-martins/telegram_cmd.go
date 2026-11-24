@@ -157,24 +157,7 @@ func (b *Bot) handleTelegramUpdate(u tgUpdate, chat string) string {
 		}
 		return ""
 	case "vender", "sell":
-		b.mu.Lock()
-		p, price, base, quote := b.st.Position, b.live.Price, b.live.Base, b.live.Quote
-		var qty, now float64
-		if p != nil {
-			qty = p.Qty
-			now = p.Qty*price*(1-paperFeePct/100) - p.Cost
-		}
-		b.mu.Unlock()
-		if p == nil {
-			return "Não há posição aberta."
-		}
-		if arg != "sim" {
-			return fmt.Sprintf("Vender %s %s a preço de mercado (resultado agora: %+.2f %s)?\nPara confirmar, mande:\n/vender sim", fmtQty(qty), base, now, quote)
-		}
-		if err := b.SellNow(); err != nil {
-			return "❌ Não vendi: " + err.Error()
-		}
-		return "" // a venda já manda o aviso com o resultado
+		return b.tgSell(f[1:])
 	case "start", "ajuda", "help", "menu": // /start = primeira mensagem para o bot
 		return helpText
 	}
@@ -182,20 +165,107 @@ func (b *Bot) handleTelegramUpdate(u tgUpdate, chat string) string {
 }
 
 const helpText = `Comandos do TradeMartins:
-/status — preço, posição e resultado
-/vender — vender a posição aberta (pede confirmação)
+/status — preços, posições e resultado
+/vender — vender (pede confirmação). Ex.: /vender BTCUSDT sim  ou  /vender tudo sim
 /parar — desligar o robô
 /ligar — ligar o robô
 /ajuda — esta lista`
+
+// tgSell trata "/vender", "/vender sim", "/vender BTC", "/vender BTCUSDT sim", "/vender tudo sim".
+func (b *Bot) tgSell(args []string) string {
+	confirm := len(args) > 0 && args[len(args)-1] == "sim"
+	if confirm {
+		args = args[:len(args)-1]
+	}
+	b.mu.Lock()
+	open := []string{}
+	for _, s := range append(b.cfg.pairs(), extraPositions(b)...) {
+		if b.st.Positions[s] != nil {
+			open = append(open, s)
+		}
+	}
+	line := func(s string) string {
+		p, px := b.st.Positions[s], b.priceLocked(s)
+		now := p.Qty*px*(1-paperFeePct/100) - p.Cost
+		base := s
+		if in := b.infos[s]; in != nil {
+			base = in.Base
+		}
+		return fmt.Sprintf("• %s: %s %s, resultado agora %+.2f %s", s, fmtQty(p.Qty), base, now, b.quoteLocked())
+	}
+	var lines []string
+	for _, s := range open {
+		lines = append(lines, line(s))
+	}
+	b.mu.Unlock()
+
+	if len(open) == 0 {
+		return "Não há posição aberta."
+	}
+	target := ""
+	switch {
+	case len(args) == 0 && len(open) == 1:
+		target = open[0]
+	case len(args) == 0:
+		return "Posições abertas:\n" + strings.Join(lines, "\n") + "\n\nPara vender uma, mande por exemplo:\n/vender " + open[0] + " sim\nPara vender todas:\n/vender tudo sim"
+	case args[0] == "tudo" || args[0] == "todas":
+		target = "*"
+	default:
+		want := strings.ToUpper(args[0])
+		for _, s := range open {
+			if s == want || strings.TrimSuffix(s, b.quoteForTG()) == want {
+				target = s
+			}
+		}
+		if target == "" {
+			return fmt.Sprintf("Não há posição aberta em %s.\nPosições abertas:\n%s", want, strings.Join(lines, "\n"))
+		}
+	}
+	if !confirm {
+		if target == "*" {
+			return "Vender TODAS as posições a preço de mercado?\n" + strings.Join(lines, "\n") + "\n\nPara confirmar, mande:\n/vender tudo sim"
+		}
+		for i, s := range open {
+			if s == target {
+				return "Vender a preço de mercado?\n" + lines[i] + "\n\nPara confirmar, mande:\n/vender " + target + " sim"
+			}
+		}
+	}
+	sym := target
+	if target == "*" {
+		sym = ""
+	}
+	if err := b.SellNow(sym); err != nil {
+		return "❌ Não vendi: " + err.Error()
+	}
+	return "" // cada venda já manda o aviso com o resultado
+}
+
+func (b *Bot) quoteForTG() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.quoteLocked()
+}
+
+// extraPositions = posições abertas em pares que não estão mais na carteira.
+func extraPositions(b *Bot) []string {
+	var out []string
+	for s := range b.st.Positions {
+		if !b.cfg.hasPair(s) {
+			out = append(out, s)
+		}
+	}
+	return out
+}
 
 // statusText = resumo para o Telegram.
 func (b *Bot) statusText() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	c, L := b.cfg, b.live
-	q := L.Quote
+	q := b.quoteLocked()
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "📊 %s — velas de %s%s\nEstratégia: %s\n", c.Symbol, c.Interval, modeTag(c.Mode), strategyNames[c.Params.Strategy])
+	fmt.Fprintf(&sb, "📊 %s%s\nEstratégia: %s\n", b.descLocked(), modeTag(c.Mode), strategyNames[c.Params.Strategy])
 	switch {
 	case b.st.Running && b.st.DayBlocked:
 		sb.WriteString("Robô: LIGADO (sem novas compras hoje: limite de perda do dia)\n")
@@ -204,29 +274,33 @@ func (b *Bot) statusText() string {
 	default:
 		sb.WriteString("Robô: DESLIGADO ⏸️\n")
 	}
-	if L.Price > 0 {
-		fmt.Fprintf(&sb, "Preço: %s %s\n", fmtPrice(L.Price), q)
-		fmt.Fprintf(&sb, "Patrimônio: %.2f %s\n", L.Equity, q)
-	} else {
-		sb.WriteString("Preço: ainda carregando\n")
+	if L.Equity > 0 {
+		fmt.Fprintf(&sb, "Patrimônio: %.2f %s (em dinheiro: %.2f)\n", L.Equity, q, L.QuoteBal)
 	}
-	if p := b.st.Position; p != nil {
-		now := p.Qty*L.Price*(1-paperFeePct/100) - p.Cost
-		fmt.Fprintf(&sb, "\nPosição: %s %s comprada a %s\n", fmtQty(p.Qty), L.Base, fmtPrice(p.Entry))
-		if L.Price > 0 && p.Cost > 0 {
-			fmt.Fprintf(&sb, "Resultado agora: %+.2f %s (%+.2f%%)\n", now, q, now/p.Cost*100)
+	sb.WriteString("\n")
+	for _, s := range append(c.pairs(), extraPositions(b)...) {
+		pl := L.Pairs[s]
+		if pl == nil || pl.Price == 0 {
+			fmt.Fprintf(&sb, "%s: carregando\n", s)
+			continue
 		}
-		switch {
-		case p.Stop > 0 && p.StopOrderID != 0:
-			fmt.Fprintf(&sb, "Stop-loss: %s (registrado na Binance ✔)\n", fmtPrice(p.Stop))
-		case p.Stop > 0:
-			fmt.Fprintf(&sb, "Stop-loss: %s (vigiado pelo robô)\n", fmtPrice(p.Stop))
+		fmt.Fprintf(&sb, "%s %s (%+.1f%% em 24h)", s, fmtPrice(pl.Price), pl.ChangePct)
+		if p := b.st.Positions[s]; p != nil {
+			now := p.Qty*pl.Price*(1-paperFeePct/100) - p.Cost
+			fmt.Fprintf(&sb, "\n   comprado a %s → %+.2f %s (%+.1f%%)", fmtPrice(p.Entry), now, q, now/p.Cost*100)
+			switch {
+			case p.Stop > 0 && p.StopOrderID != 0:
+				fmt.Fprintf(&sb, "\n   stop %s (na Binance ✔)", fmtPrice(p.Stop))
+			case p.Stop > 0:
+				fmt.Fprintf(&sb, "\n   stop %s (vigiado pelo robô)", fmtPrice(p.Stop))
+			}
+		} else {
+			sb.WriteString(" — fora")
 		}
-		if p.Take > 0 {
-			fmt.Fprintf(&sb, "Take-profit: %s\n", fmtPrice(p.Take))
+		if pl.LastError != "" {
+			fmt.Fprintf(&sb, "\n   ⚠️ %s", pl.LastError)
 		}
-	} else {
-		sb.WriteString("\nSem posição aberta.\n")
+		sb.WriteString("\n")
 	}
 	pnl, wins, losses := b.summaryLocked(c.Mode)
 	if n := wins + losses; n > 0 {

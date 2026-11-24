@@ -11,6 +11,8 @@ Robô de trade de cripto para a **Binance (Spot)**, com painel no navegador.
   stop na própria Binance, então a proteção funciona **mesmo com o PC desligado**.
 - **Avisos no celular pelo Telegram**: compras, vendas, erros, robô ligado/desligado e quando ele volta depois de
   ficar fora do ar.
+- **Carteira de vários pares** (ex.: BTC, ETH, SOL…) com o mesmo dinheiro: cada par tem sua posição, seus
+  sinais e seu stop, e cada compra usa no máximo a parte daquele par do patrimônio.
 - **4 estratégias** (cruzamento de médias, rompimento, momentum, reversão à média) com risco quantitativo:
   tamanho por **volatilidade-alvo**, stop por **ATR** e **stop móvel**.
 - **Laboratório quantitativo**: backtest com métricas profissionais (Sharpe, Sortino, Calmar…), **walk-forward**,
@@ -50,9 +52,25 @@ O painel só abre **neste computador**. Ninguém de fora consegue acessar, e a c
 
 ## 2. Como o robô decide
 
-O robô olha as **velas** do par (por padrão BTCUSDT, velas de 4 horas) e segue **uma de quatro estratégias**,
-escolhida em **Ajustes › Estratégia**. Só opera **comprado** (Spot): ou o dinheiro está em USDT, ou está na
-cripto. Nunca usa alavancagem.
+### A carteira
+
+Em **Ajustes › Mercado › Pares da carteira**, coloque um ou mais pares separados por vírgula (até 12), todos na
+mesma moeda — por exemplo `BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT`. Com um par só, o robô funciona como antes.
+
+- **O dinheiro é dividido igualmente:** com 4 pares, cada compra usa no máximo **1/4 do patrimônio**
+  (× o "% máximo" ou a volatilidade-alvo), limitada ao dinheiro livre e ao valor máximo por compra.
+- **Cada par é independente:** tem sua posição, seus sinais, seu stop (registrado na Binance) e seu stop móvel.
+- **Em cada checagem, primeiro as vendas, depois as compras**, para o dinheiro de uma venda já poder ser usado.
+- No **Painel**, a tabela **Pares** mostra o preço, a variação em 24h, o que a estratégia está vendo e a posição
+  de cada par (resultado agora e onde está o stop), com um botão **Vender** por par e **Vender tudo**. Clique num
+  par para ver o gráfico dele.
+- Para tirar um par da lista, feche antes a posição nele.
+
+### As estratégias
+
+O robô olha as **velas** de cada par (por padrão velas de 4 horas) e segue **uma de quatro estratégias**,
+escolhida em **Ajustes › Estratégia** (a mesma para todos os pares). Só opera **comprado** (Spot): ou o dinheiro
+está em USDT, ou está na cripto. Nunca usa alavancagem.
 
 | Estratégia | Compra quando… | Vende quando… |
 |---|---|---|
@@ -129,15 +147,24 @@ Para ser honesto sobre o que esperar:
   Os parâmetros "escolhidos" mudavam de janela para janela (ex.: momentum de 90 dias, depois 14, depois 180).
 - **No BTC sozinho**, nenhuma estratégia rendeu mais que só segurar. A melhor por risco foi o momentum com
   volatilidade-alvo (sem stop fixo): mesmo Sharpe de segurar (0,57), mas maior queda de 35% em vez de 56%.
-- **O que mais ajudou foi diversificar.** Numa carteira com peso igual em 8 criptos, com os parâmetros padrão
-  (sem otimizar): momentum + volatilidade-alvo teve Sharpe 0,80 e maior queda de 33%; cruzamento de médias,
-  Sharpe 0,89 e queda de 25%; só segurar as 8, Sharpe 0,43 e queda de 69%. Ainda assim não significativo, e com
-  viés de sobrevivência (a lista tem criptos que são grandes hoje).
+- **O que mais ajudou foi diversificar.** Carteira com 8 criptos (BTC, ETH, SOL, BNB, XRP, ADA, DOGE, LINK),
+  parâmetros padrão (sem otimizar), simulada **exatamente como o robô ao vivo opera**:
+
+  | Carteira de 8 pares, 3 anos | Retorno | Sharpe | Maior queda | t |
+  |---|---|---|---|---|
+  | Cruzamento de médias | +85% | 0,95 | 26% | 1,65 |
+  | Momentum + volatilidade-alvo 40% | +93% | 0,86 | 37% | 1,48 |
+  | Rompimento + stop ATR | +19% | 0,34 | 45% | 0,59 |
+  | Dividir igual e só segurar | +13% | 0,38 | 69% | 0,65 |
+
+  Ainda assim **não é significativo** (t abaixo de 1,96), o resultado dependeu muito de poucas criptos (DOGE e
+  XRP fizeram boa parte do ganho do momentum) e há viés de sobrevivência (a lista tem criptos grandes hoje).
 - **Monte Carlo** do momentum no BTC: a mesma estratégia, com as operações em outra ordem, teria 28% de chance
   de terminar no prejuízo e maior queda típica de 32%.
 
-Resumo: as estratégias **reduzem as quedas** em relação a segurar, mas **nenhuma mostrou lucro comprovado**.
-O robô ao vivo ainda opera **um par por vez**; uma carteira de vários pares ao vivo seria o próximo passo.
+Resumo: as estratégias **reduzem as quedas** em relação a segurar, principalmente numa carteira de vários pares,
+mas **nenhuma mostrou lucro comprovado**. No teste "Vários pares", o botão **Usar esta carteira no robô** aplica
+os pares e os ajustes testados.
 
 ## 4. Stop-loss registrado na Binance
 
@@ -192,7 +219,7 @@ ele ficou parado.
 | Comando | O que faz |
 |---|---|
 | `/status` | Preço, patrimônio, posição aberta (com resultado agora e onde está o stop) e resultado das vendas |
-| `/vender` | Pergunta se quer vender; `/vender sim` vende a posição inteira a mercado |
+| `/vender` | Mostra as posições e pede confirmação. `/vender BTCUSDT sim` (ou `/vender btc sim`) vende um par; `/vender tudo sim` vende todos. Com uma posição só, `/vender sim` também serve |
 | `/parar` | Desliga o robô (no modo real/teste, o stop continua na Binance) |
 | `/ligar` | Liga o robô. No modo real, é preciso mandar `/ligar real` |
 | `/ajuda` | Lista os comandos |
@@ -217,7 +244,8 @@ estiver ligado, ele manda sinal de vida a cada checagem. Se o sinal parar, o hea
 4. No painel: **Ajustes › Chave da Binance**, cole a API Key e a Secret Key, clique em **Testar chave** e depois
    em **Salvar ajustes**.
 5. Em **Ajustes › Risco**, preencha o **Valor máximo por compra** (obrigatório no modo real). Por exemplo, com
-   100 o robô nunca compra mais que 100 USDT de uma vez, mesmo que a conta tenha 5.000 USDT.
+   100 o robô nunca compra mais que 100 USDT de uma vez, mesmo que a conta tenha 5.000 USDT. **Atenção na
+   carteira:** o limite vale para cada compra, então com 4 pares o robô pode ter até 4 × 100 = 400 USDT investidos.
 6. Em **Modo**, escolha **Real** e salve. No Painel, clique em **Ligar robô** e digite `REAL` para confirmar.
 
 Observações:
@@ -243,7 +271,8 @@ O painel (`web/`) vai embutido no `.exe`.
 | `strategy.go` | As 4 estratégias, tamanho da compra, stop por % / ATR / móvel (usado pelo robô, backtest e laboratório) |
 | `backtest.go` | Simulação vela a vela |
 | `metrics.go` | Sharpe, Sortino, Calmar, maior queda, fator de lucro, significância… |
-| `lab.go` | Walk-forward, mapa de parâmetros, Monte Carlo, vários pares e carteira |
+| `lab.go` | Walk-forward, mapa de parâmetros, Monte Carlo e vários pares |
+| `portfolio.go` | Backtest de carteira: vários pares com o mesmo dinheiro, igual ao robô ao vivo |
 | `telegram_cmd.go` | Comandos pelo Telegram |
 | `binance.go` | API da Binance (normal e de teste): velas, regras do par, saldo, ordens (assinatura HMAC-SHA256) |
 | `server.go` | API do painel (só aceita pedidos do próprio painel) |
