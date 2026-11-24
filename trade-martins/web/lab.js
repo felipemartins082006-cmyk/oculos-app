@@ -114,12 +114,12 @@ function labRequest(kind) {
     kind, symbol: f.elements.symbol.value, interval: f.elements.interval.value, days: +f.elements.days.value,
     start: +f.elements.start.value, tradePct: +f.elements.tradePct.value, maxBuy: +f.elements.maxBuy.value || 0,
     params: readParams(f),
-    trainDays: +$("#wf-train").value, testDays: +$("#wf-test").value, objective: $("#wf-obj").value,
+    trainDays: +$("#wf-train").value, testDays: kind === "cv" ? +$("#cv-test").value : +$("#wf-test").value, objective: $("#wf-obj").value,
     symbols: [$("#multi-syms").value],
   };
 }
 
-const KIND_NAMES = { backtest: "Backtest", walkforward: "Walk-forward", heatmap: "Mapa de parâmetros", montecarlo: "Monte Carlo", multi: "Vários pares" };
+const KIND_NAMES = { backtest: "Backtest", walkforward: "Walk-forward", heatmap: "Mapa de parâmetros", montecarlo: "Monte Carlo", multi: "Vários pares", diagnostico: "Diagnóstico do modelo", cv: "Validação cruzada" };
 
 $$(".lab-act button[data-kind]").forEach((btn) => btn.addEventListener("click", () => {
   const kind = btn.dataset.kind;
@@ -151,7 +151,7 @@ function stratLabel(req) {
 
 function showLab() {
   const { kind } = LAB;
-  ({ backtest: showBacktest, walkforward: showWF, heatmap: showHeat, montecarlo: showMC, multi: showMulti })[kind]();
+  ({ backtest: showBacktest, walkforward: showWF, heatmap: showHeat, montecarlo: showMC, multi: showMulti, diagnostico: showDiag, cv: showCV })[kind]();
   window.labRedraw();
 }
 
@@ -163,7 +163,25 @@ window.labRedraw = () => {
     drawDD("lab-dd", r.drawdown);
   }
   if (LAB.kind === "montecarlo") drawHist("lab-hist", r);
+  if (LAB.kind === "diagnostico") {
+    const c = r.curves;
+    drawSeries("lab-diag", [
+      { pts: c.hold, color: css("--muted"), w: 1.3 },
+      { pts: c.random, color: css("--warn"), w: 1.2 },
+      { pts: c.net, color: css("--danger"), w: 1.4 },
+      { pts: c.spot, color: css("--ok"), w: 1.6 },
+      { pts: c.gross, color: css("--accent"), w: 2 },
+    ], (v) => num(v, 0) + "%", 0);
+  }
 };
+
+// mostra os botões de diagnóstico e validação só quando a estratégia é o modelo de previsão
+function syncMLButtons() {
+  const ml = $("#lab-form").elements.strategy.value === "ml";
+  $$(".lab-act[data-ml]").forEach((el) => el.classList.toggle("dim", !ml));
+}
+$("#lab-form").addEventListener("change", syncMLButtons);
+setTimeout(syncMLButtons, 0);
 
 // ---------- backtest ----------
 function showBacktest() {
@@ -340,3 +358,71 @@ async function applyPortfolio(btn) {
 document.addEventListener("click", (e) => {
   if (e.target.id === "lab-apply-multi") applyPortfolio(e.target);
 });
+
+// ---------- diagnóstico do modelo (curso, aulas 5 e 6) ----------
+const pp = (v, d = 1) => num(v, d) + "%";
+const ev = (v) => (v > 0 ? "+" : "") + num(v, 4) + "%";
+
+function showDiag() {
+  const { req, res: d } = LAB;
+  const kind = d.model === "ar" ? "regressão AR" : "regressão logística";
+  const edge = d.evGross > 0 && d.auc > 0.51 && d.excessPred > 0;
+  const v = [];
+  v.push(`Avaliamos <b>${num(d.candles, 0)} previsões fora da amostra</b> (${kind}, ${d.lags} retornos passados, re-treinado ${d.retrains} vezes, sempre só com o passado).`);
+  v.push(`Balanço do alvo: <b>${pp(d.upShare)}</b> das velas fecharam em alta. O modelo previu alta em ${pp(d.predUpShare)} das vezes.` +
+    (d.noDiscrimination ? ` <b class="neg">Quase sempre a mesma resposta: sem poder de discriminação não há poder de previsão</b> — isso é praticamente "comprar e segurar".` : ""));
+  v.push(`Acerto da direção: <b>${pp(d.accuracy)}</b>; AUC <b>${num(d.auc, 3)}</b> (0,5 = moeda; acima de 0,52 já é raro em cripto). ` +
+    `Lembre: acertar mais não basta — o que importa é o <b>valor esperado</b>.`);
+  v.push(`Valor esperado por vela (comprado ou vendido a cada vela, como no curso): <b class="${cls(d.evGross)}">${ev(d.evGross)}</b> bruto, ` +
+    `<b class="${cls(d.evNet)}">${ev(d.evNet)}</b> pagando ${num(d.feePct, 2)}% na entrada e na saída de cada vela.` +
+    (d.evGross > 0 && d.evNet < 0 ? ` <b class="neg">A vantagem existe, mas é menor que as taxas</b>: girar a cada vela come tudo. Daí o filtro de taxas da estratégia.` : ""));
+  v.push(`Contra apostar ao acaso: o modelo terminou <b class="${cls(d.excessPred)}">${num(Math.abs(d.excessPred), 1)} pontos ${d.excessPred >= 0 ? "à frente" : "atrás"}</b>, e esteve à frente em ${pp(d.excessPosPct, 0)} do tempo ("excesso de previsibilidade"). ` +
+    `Contra comprar e segurar: <b class="${cls(d.excessVsHold)}">${num(d.excessVsHold, 1)} pontos</b> ("excesso de lucro").`);
+  v.push(`No Spot (sem vender a descoberto): comprado quando prevê alta, fora quando prevê baixa, com taxas: <b class="${cls(d.spotTotalNet)}">${num(d.spotTotalNet, 1)}%</b> em log-retorno, com ${num(d.spotSwitches, 0)} entradas/saídas.`);
+  v.push(`O que o modelo aprendeu: em ${pp(d.negLag1Share, 0)} dos re-treinos o peso do último retorno foi negativo — ` +
+    (d.negLag1Share >= 60 ? "<b>reversão à média</b> (depois de subir, tende a cair)." : d.negLag1Share <= 40 ? "<b>momentum</b> (depois de subir, tende a continuar)." : "sem direção estável: sinal de que não há padrão confiável."));
+  v.push(edge ? `<b class="pos">Há sinal de vantagem estatística.</b> Confirme na Validação cruzada e no Walk-forward antes de usar dinheiro real.`
+    : `<b class="neg">Não há vantagem estatística clara</b> neste par/intervalo. Teste outro intervalo (o curso mostra que o padrão muda com o tamanho da vela).`);
+  const cm = `<div class="table-wrap"><table class="mtable"><tr><th>Matriz de confusão</th><th>Fechou em alta</th><th>Fechou em baixa</th><th>Precisão</th></tr>
+    <tr><td>Previu alta</td><td class="best">${num(d.tp, 0)}</td><td>${num(d.fp, 0)}</td><td>${pp(d.precisionUp)}</td></tr>
+    <tr><td>Previu baixa</td><td>${num(d.fn, 0)}</td><td class="best">${num(d.tn, 0)}</td><td>${pp(d.precisionDown)}</td></tr>
+    <tr><td>Recall (dos que aconteceram, quantos previu)</td><td>${pp(d.recallUp)}</td><td>${pp(d.recallDown)}</td><td></td></tr></table></div>`;
+  const t2 = `<div class="table-wrap"><table class="mtable">
+    <tr><td>Ganho médio / perda média por vela</td><td>${ev(d.avgWin)} / ${ev(d.avgLoss)}</td></tr>
+    <tr><td>Sharpe anualizado (bruto)</td><td>${num(d.sharpeGross, 2)}</td></tr>
+    <tr><td>Total bruto / com taxas (log-retorno)</td><td>${num(d.totalGross, 1)}% / ${num(d.totalNet, 1)}%</td></tr>
+    <tr><td>Comprar e segurar / apostar ao acaso</td><td>${num(d.holdTotal, 1)}% / ${num(d.randomTotal, 1)}%</td></tr>
+    <tr><td>Modelo de tamanho: correlação com o tamanho real do movimento<small class="muted">usado para converter probabilidade em retorno esperado (sinal × tamanho)</small></td><td>${num(d.magCorr, 2)}</td></tr>
+    <tr><td>Pesos do último modelo (entradas padronizadas, do retorno mais recente ao mais antigo)</td><td>${(d.lastWeights || []).map((w) => num(w, 3)).join(" · ")}</td></tr>
+    </table></div>`;
+  const leg = `<i style="--c:var(--accent)"></i>Modelo (bruto) <i style="--c:var(--danger)"></i>Modelo com taxas a cada vela <i style="--c:var(--ok)"></i>Spot com taxas <i style="--c:var(--warn)"></i>Acaso <i style="--c:var(--muted)"></i>Comprar e segurar`;
+  $("#lab-out").innerHTML = `
+    <div class="card"><h3>Diagnóstico do modelo — ${stratLabel(req)}</h3>
+      <ul class="verdict">${v.map((x) => `<li>${x}</li>`).join("")}</ul>${cm}${t2}</div>
+    ${chartCard("lab-diag", "Log-retorno acumulado (%)", leg, 300)}`;
+}
+
+// ---------- validação cruzada (curso, aula 7) ----------
+function showCV() {
+  const { req, res: r } = LAB;
+  const rows = r.summary.map((s) => `<tr><td>${esc(s.name)}</td><td>${s.total}</td><td class="${cls(s.meanEV)}">${ev(s.meanEV)}</td>
+    <td class="${cls(s.meanEVNet)}">${ev(s.meanEVNet)}</td><td>${pp(s.meanAcc)}</td><td>${num(s.meanAUC, 3)}</td><td>${s.positive} de ${s.total}</td></tr>`).join("");
+  const allPos = r.summary.every((s) => s.meanEV > 0 && s.positive >= s.total * 0.6);
+  const anyNet = r.summary.some((s) => s.meanEVNet > 0);
+  const v = [
+    `Cada janela treina um modelo novo só com o seu pedaço de treino e mede nos dados seguintes, que ele nunca viu. Nada é embaralhado: o tempo é respeitado.`,
+    allPos ? `<b class="pos">O valor esperado bruto foi positivo na média dos três métodos e na maioria das janelas</b>: o padrão é robusto ao longo do tempo.`
+      : `<b class="neg">O resultado depende muito do pedaço do passado escolhido</b>: não confie numa divisão só. É exatamente o alerta do curso.`,
+    anyNet ? `Mesmo com taxas a cada vela, algum método ficou positivo.` : `Com taxas a cada vela, nenhum método fica positivo: só vale operar quando a previsão é forte o bastante para pagar o custo (filtro de taxas, intervalos maiores, taxa menor com BNB).`,
+  ];
+  const fold = (f) => `<tr><td>${esc(f.label)}</td><td>${dt(f.trainFrom).slice(0, 8)}</td><td>${dt(f.testFrom).slice(0, 8)} → ${dt(f.testTo).slice(0, 8)}</td>
+    <td>${num(f.trainRows, 0)}</td><td>${num(f.testRows, 0)}</td><td class="${cls(f.ev)}">${ev(f.ev)}</td><td class="${cls(f.evNet)}">${ev(f.evNet)}</td><td>${pp(f.accuracy)}</td><td>${num(f.auc, 3)}</td></tr>`;
+  const det = r.summary.map((s) => `<details><summary>${esc(s.name)} — ${s.total} janelas</summary><div class="table-wrap"><table class="mtable">
+    <tr><th>Janela</th><th>Treino desde</th><th>Teste</th><th>Linhas de treino</th><th>Linhas de teste</th><th>VE bruto</th><th>VE com taxas</th><th>Acerto</th><th>AUC</th></tr>
+    ${r.folds.filter((f) => f.method === s.method).map(fold).join("")}</table></div></details>`).join("");
+  $("#lab-out").innerHTML = `
+    <div class="card"><h3>Validação cruzada — ${stratLabel(req)}</h3>
+      <ul class="verdict">${v.map((x) => `<li>${x}</li>`).join("")}</ul>
+      <div class="table-wrap"><table class="mtable"><tr><th>Método</th><th>Janelas</th><th>VE bruto médio (por vela)</th><th>VE com taxas</th><th>Acerto médio</th><th>AUC média</th><th>Janelas com VE &gt; 0</th></tr>${rows}</table></div>
+      ${det}</div>`;
+}

@@ -68,7 +68,7 @@ mesma moeda — por exemplo `BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT`. Com um par só
 
 ### As estratégias
 
-O robô olha as **velas** de cada par (por padrão velas de 4 horas) e segue **uma de quatro estratégias**,
+O robô olha as **velas** de cada par (por padrão velas de 4 horas) e segue **uma de cinco estratégias**,
 escolhida em **Ajustes › Estratégia** (a mesma para todos os pares). Só opera **comprado** (Spot): ou o dinheiro
 está em USDT, ou está na cripto. Nunca usa alavancagem.
 
@@ -78,6 +78,7 @@ está em USDT, ou está na cripto. Nunca usa alavancagem.
 | **Rompimento (Donchian)** | o fechamento passa da maior máxima das últimas 20 velas (estilo "Turtle") | o fechamento fica abaixo da menor mínima das últimas 10 velas |
 | **Momentum** | o preço está acima do de N dias atrás (padrão 30) | o preço fica abaixo do de N dias atrás |
 | **Reversão à média** | o RSI de 2 períodos cai abaixo de 10 (queda forte e curta) dentro de uma tendência de alta | o RSI de 2 períodos passa de 70 |
+| **Modelo de previsão (ML)** | o modelo prevê alta com chance ≥ 52% **e** o ganho previsto passa do custo das taxas (0,2% ida e volta) | a chance de alta cai abaixo de 50% (ou o retorno previsto fica negativo) |
 
 **Risco** (vale para todas, em **Ajustes › Risco**):
 
@@ -112,6 +113,32 @@ de estratégia**, então nunca discordam.
 - **Patrimônio:** moeda (USDT…) + cripto × preço atual. A perda do dia compara com o patrimônio da primeira
   checagem do dia.
 
+### O modelo de previsão (ML), do curso "Quant Trading Accelerator"
+
+O que o curso ensina, e como ficou aqui:
+
+| Aula | No curso | No Trade Martins |
+|---|---|---|
+| 1–2 | Log-retornos, retornos passados ("lags") como entradas, AR(1): peso negativo = reversão à média, positivo = momentum | O modelo usa os últimos N log-retornos (padrão 3) e o painel mostra se aprendeu reversão ou momentum |
+| 3–4 | Divisão treino/teste **no tempo** (nunca embaralhar), regressão linear e regressão robusta (Huber) | **Regressão AR com Huber** (outliers de cripto não estragam o modelo); padronização calculada **só no treino** |
+| 5 | Vantagem = valor esperado de cada operação > 0; acertar mais não basta; bruto × líquido | Laboratório › **Diagnóstico do modelo**: valor esperado bruto e com taxas, ganho e perda médios, Sharpe |
+| 6 | Classificação (regressão logística), balanço do alvo, matriz de confusão, precisão, AUC, "sem discriminação = sem previsão", comparação com apostar ao acaso (Gerko) e com segurar, retorno = sinal × tamanho | **Regressão logística** + um modelo de tamanho do movimento (para converter probabilidade em retorno esperado); o diagnóstico mostra tudo isso |
+| 7 | Validação cruzada: vários tamanhos de treino, janela rolante, janela crescente | Laboratório › **Validação cruzada** com os três métodos |
+| 8 | Entrada por limite de probabilidade, tamanho fixo × composto, alavancagem, taxas taker matam a vantagem de curto prazo | Compra por limite de probabilidade, **filtro de taxas**, tamanho fixo ou por volatilidade-alvo |
+| 9 | Robô: dados → modelo → estratégia → corretora, reconexão, testnet | Já era assim; o modelo **re-treina sozinho** (padrão a cada 7 dias, com os últimos 90) |
+
+**Melhorias em relação ao curso:** o modelo é re-treinado em datas fixas do calendário, então o robô ao vivo e
+o backtest usam **exatamente o mesmo modelo** (há teste automático disso, e outro que detecta qualquer uso de
+dados do futuro na previsão); a padronização das entradas é feita só com o treino; e o filtro de taxas só deixa
+comprar quando a previsão paga o custo.
+
+**O que ficou de fora, de propósito:** vender a descoberto (o robô é Spot), alavancagem, operar por minuto e
+ordens a mercado a cada vela. O curso mostra o motivo: com taxas, isso transforma uma vantagem pequena em
+prejuízo grande.
+
+**Limite ao vivo:** o robô baixa no máximo 900 velas de aquecimento, então em velas de 1h a janela de treino
+pode ter no máximo ~30 dias com re-treino semanal (em 4h, ~140 dias). No laboratório não há esse limite.
+
 ## 3. Laboratório quantitativo
 
 A aba **Laboratório** testa as estratégias com os preços reais da Binance. A ideia é a de um gestor quantitativo:
@@ -124,6 +151,8 @@ A aba **Laboratório** testa as estratégias com os preços reais da Binance. A 
 | **Mapa de parâmetros** | O resultado numa grade de parâmetros. Robusto = região grande boa; frágil = uma casa boa isolada |
 | **Monte Carlo** | Sorteia 2.000 vezes a ordem das operações: faixa de resultados e de quedas possíveis só por sorte |
 | **Vários pares** | A mesma estratégia em várias criptos, e numa carteira dividida igualmente entre elas |
+| **Diagnóstico do modelo** | (só ML) Balanço, acerto, matriz de confusão, precisão, AUC, valor esperado bruto e com taxas, contra o acaso e contra segurar |
+| **Validação cruzada** | (só ML) O modelo em muitos pedaços diferentes do passado: a vantagem se mantém? |
 
 **Métricas:** retorno total e ao ano (CAGR), volatilidade, **Sharpe** (retorno por unidade de risco), Sortino,
 maior queda (medida na mínima das velas), Calmar (retorno ao ano ÷ maior queda), número de operações, acerto,
@@ -161,6 +190,28 @@ Para ser honesto sobre o que esperar:
   XRP fizeram boa parte do ganho do momentum) e há viés de sobrevivência (a lista tem criptos grandes hoje).
 - **Monte Carlo** do momentum no BTC: a mesma estratégia, com as operações em outra ordem, teria 28% de chance
   de terminar no prejuízo e maior queda típica de 32%.
+
+### O experimento do curso com dados reais (novembro de 2026)
+
+BTC, ETH e SOL; velas de 1h (1.000 dias), 4h (1.500 dias) e 1 dia (2.500 dias); 3 retornos passados; todas as
+previsões fora da amostra (cerca de 24 mil por par em 1h).
+
+- **O curso se confirma: existe um padrão.** Em 1h, a AUC ficou em 0,53 e o acerto em 52% (BTC, ETH, SOL), e o
+  peso do último retorno foi **negativo em 96–100% dos re-treinos**: **reversão à média** de curto prazo.
+  O modelo bateu apostar ao acaso por larga margem (BTC 1h: +179 pontos de log-retorno; SOL 1h: +358).
+- **Mas a vantagem é menor que as taxas.** Valor esperado bruto ≈ **+0,005% por vela** no BTC 1h; o custo de
+  comprar e vender a cada vela é 0,2%. Líquido: **−0,196% por vela**. Comprar e sair a cada previsão, no Spot,
+  daria −795% em log-retorno no BTC 1h (perderia tudo).
+- **Validação cruzada** (BTC 1h, regressão logística): o valor esperado bruto foi positivo em 19 de 30 janelas
+  rolantes e 18 de 30 crescentes (AUC média 0,53), mas **negativo com taxas em todas**.
+- **Na estratégia completa** (com filtro de taxas), o modelo fica quase sempre de fora (1–6% do tempo comprado
+  em 1h e 4h) e o resultado fica perto de zero (BTC 1h −3%, BTC 4h +12%, SOL 1h +32%, ETH 4h −50%). **Sem o filtro
+  de taxas, perde 50–100%.** No diário, a regressão AR rendeu +104% (BTC) e +214% (ETH), contra +608% e +923% de
+  só segurar; nada foi estatisticamente significativo.
+
+**Conclusão honesta:** o modelo aprende de verdade (o diagnóstico prova), mas com 0,1% de taxa por lado a
+vantagem de prever a próxima vela não paga o custo. Use o modelo para estudar e, se for testar, mantenha o
+filtro de taxas ligado, prefira velas maiores e a taxa com desconto em BNB.
 
 Resumo: as estratégias **reduzem as quedas** em relação a segurar, principalmente numa carteira de vários pares,
 mas **nenhuma mostrou lucro comprovado**. No teste "Vários pares", o botão **Usar esta carteira no robô** aplica
@@ -268,10 +319,12 @@ O painel (`web/`) vai embutido no `.exe`.
 | `exchange.go` | Ordens de verdade: stop-loss registrado na Binance, cancelamento e conferência quando a conexão cai |
 | `notify.go` | Avisos pelo Telegram e sinal de vida (healthchecks.io) |
 | `indicators.go` | EMA, RSI, ATR, canal de Donchian, volatilidade, momentum (sem olhar o futuro) |
-| `strategy.go` | As 4 estratégias, tamanho da compra, stop por % / ATR / móvel (usado pelo robô, backtest e laboratório) |
+| `strategy.go` | As 5 estratégias, tamanho da compra, stop por % / ATR / móvel (usado pelo robô, backtest e laboratório) |
 | `backtest.go` | Simulação vela a vela |
 | `metrics.go` | Sharpe, Sortino, Calmar, maior queda, fator de lucro, significância… |
 | `lab.go` | Walk-forward, mapa de parâmetros, Monte Carlo e vários pares |
+| `ml.go` | Modelo de previsão: regressão logística (Newton/IRLS) e AR com Huber, re-treino só com o passado |
+| `mldiag.go` | Diagnóstico do modelo (matriz de confusão, AUC, valor esperado, Gerko) e validação cruzada |
 | `portfolio.go` | Backtest de carteira: vários pares com o mesmo dinheiro, igual ao robô ao vivo |
 | `telegram_cmd.go` | Comandos pelo Telegram |
 | `binance.go` | API da Binance (normal e de teste): velas, regras do par, saldo, ordens (assinatura HMAC-SHA256) |

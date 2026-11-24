@@ -116,6 +116,15 @@
           <p class="muted small">A mesma estratégia em várias criptos, e numa carteira dividida igualmente entre elas.</p>
           <label class="small">Pares<input id="multi-syms" value="BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT, ADAUSDT, DOGEUSDT, LINKUSDT"></label>
         </div>
+        <div class="lab-act" data-ml>
+          <button class="btn primary" data-kind="diagnostico">Diagnóstico do modelo</button>
+          <p class="muted small">Só para o Modelo de previsão (ML). A avaliação completa do curso: balanço, acerto, matriz de confusão, AUC, valor esperado bruto e com taxas, e comparação com apostar ao acaso e com comprar e segurar.</p>
+        </div>
+        <div class="lab-act" data-ml>
+          <button class="btn primary" data-kind="cv">Validação cruzada</button>
+          <p class="muted small">Só para o Modelo de previsão (ML). Testa o modelo em muitos pedaços diferentes do passado (vários tamanhos de treino, janela rolante e janela crescente) para ver se a vantagem é robusta.</p>
+          <label class="small">Teste de cada janela (dias)<input id="cv-test" type="number" min="7" value="30"></label>
+        </div>
       </div>
     </div>
 

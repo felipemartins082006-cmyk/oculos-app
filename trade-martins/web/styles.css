@@ -189,3 +189,7 @@ dialog input { margin-top: 6px; }
   .top { padding: 10px 16px; gap: 10px; justify-content: space-between; }
   .tabs { order: 3; flex-basis: 100%; flex-wrap: nowrap; overflow-x: auto; }
 }
+
+.lab-act.dim { opacity: .45; }
+details { margin-top: 10px; }
+details summary { cursor: pointer; color: var(--muted); padding: 6px 0; }
