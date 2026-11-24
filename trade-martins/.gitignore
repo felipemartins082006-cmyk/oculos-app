@@ -1,2 +1,3 @@
 # binário de desenvolvimento (Linux); o que vai para o usuário é o TradeMartins.exe
 /trademartins
+__pycache__/
