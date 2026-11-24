@@ -42,11 +42,13 @@ type fakeBinance struct {
 	noFill    bool // ordens de stop não executam (simula preço que despenca e pula o limite)
 	srv       *httptest.Server
 	badSigned int
+	perms     map[string]bool // permissões da chave (apiRestrictions)
 }
 
 func newFake(t *testing.T) *fakeBinance {
 	f := &fakeBinance{t: t, price: 50000, free: map[string]float64{"USDT": 1000}, locked: map[string]float64{},
-		orders: map[int64]*fakeOrder{}, nextID: 100}
+		orders: map[int64]*fakeOrder{}, nextID: 100,
+		perms: map[string]bool{"enableReading": true, "enableSpotAndMarginTrading": true}}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.handle))
 	t.Cleanup(f.srv.Close)
 	return f
@@ -67,7 +69,7 @@ func (f *fakeBinance) handle(w http.ResponseWriter, r *http.Request) {
 	defer f.mu.Unlock()
 	q := r.URL.Query()
 	path := r.URL.Path
-	if path == "/api/v3/account" || path == "/api/v3/order" || path == "/api/v3/myTrades" {
+	if path == "/api/v3/account" || path == "/api/v3/order" || path == "/api/v3/myTrades" || path == "/sapi/v1/account/apiRestrictions" {
 		raw := r.URL.RawQuery
 		i := strings.LastIndex(raw, "&signature=")
 		if i < 0 || sign(fkSecret, raw[:i]) != raw[i+len("&signature="):] || r.Header.Get("X-MBX-APIKEY") != fkKey {
@@ -77,6 +79,8 @@ func (f *fakeBinance) handle(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	switch {
+	case path == "/sapi/v1/account/apiRestrictions":
+		json.NewEncoder(w).Encode(f.perms)
 	case path == "/api/v3/exchangeInfo":
 		json.NewEncoder(w).Encode(map[string]any{"symbols": []any{map[string]any{
 			"symbol": "BTCUSDT", "status": "TRADING", "baseAsset": "BTC", "quoteAsset": "USDT", "quoteAssetPrecision": 8,

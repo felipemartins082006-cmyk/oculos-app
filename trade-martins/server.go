@@ -22,6 +22,13 @@ func newServer(b *Bot) http.Handler {
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		reply(w, nil, b.Start(body.ConfirmReal))
 	})
+	mux.HandleFunc("POST /api/quit", func(w http.ResponseWriter, r *http.Request) {
+		reply(w, nil, nil)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		b.Quit()
+	})
 	mux.HandleFunc("POST /api/stop", func(w http.ResponseWriter, r *http.Request) { b.Stop(); reply(w, nil, nil) })
 	mux.HandleFunc("POST /api/sell", func(w http.ResponseWriter, r *http.Request) { reply(w, nil, b.SellNow()) })
 	mux.HandleFunc("POST /api/reset-paper", func(w http.ResponseWriter, r *http.Request) { reply(w, nil, b.ResetPaper()) })
@@ -179,7 +186,7 @@ func (b *Bot) Status() map[string]any {
 			trades = append(trades, t)
 		}
 	}
-	logs := b.st.Logs
+	logs := append([]LogLine{}, b.st.Logs...) // nunca null no JSON (primeira vez que abre)
 	if len(logs) > 150 {
 		logs = logs[len(logs)-150:]
 	}
@@ -232,7 +239,17 @@ func (b *Bot) TestKeys(which, key, secret string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"ok": true, "quote": info.Quote, "base": info.Base, "quoteBal": total[info.Quote], "baseBal": total[info.Base]}, nil
+	res := map[string]any{"ok": true, "quote": info.Quote, "base": info.Base, "quoteBal": total[info.Quote], "baseBal": total[info.Base]}
+	if which == "real" {
+		perms, err := c.APIRestrictions()
+		if err != nil {
+			res["permsError"] = err.Error()
+		} else {
+			res["perms"] = perms
+			res["problem"] = perms.problem()
+		}
+	}
+	return res, nil
 }
 
 // ---------- backtest ----------

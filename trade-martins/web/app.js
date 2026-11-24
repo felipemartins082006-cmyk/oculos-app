@@ -151,7 +151,7 @@ function render() {
     $("#pos-take").textContent = p.take ? priceFmt(p.take) : "desligado";
   }
 
-  $("#logs").innerHTML = S.logs.slice().reverse().map((l) =>
+  $("#logs").innerHTML = (S.logs || []).slice().reverse().map((l) =>
     `<li class="${l.kind}"><time>${dt(l.t)}</time><span>${esc(l.msg)}</span></li>`).join("") ||
     `<li class="muted">Nada ainda.</li>`;
 
@@ -176,6 +176,7 @@ function tradeRows(trades, q) {
 }
 
 function renderHistory() {
+  S.trades = S.trades || [];
   const q = S.live.quote || "USDT";
   $("#hist-title").textContent = `Operações (${S.config.mode})`;
   $("#hist").innerHTML = S.trades.length ? tradeRows(S.trades, q) : "";
@@ -335,7 +336,7 @@ $("#btn-toggle").addEventListener("click", (e) => act(e.target, async () => {
     let confirmReal = false;
     if (S.config.mode === "real") {
       confirmReal = await ask("Operar com dinheiro REAL?",
-        `<p>O robô vai comprar e vender <b>${esc(S.config.symbol)}</b> na sua conta da Binance usando até <b>${num(S.config.tradePct, 0)}%</b> do saldo em ${esc(S.live.quote || "")} por compra.</p><p>Robôs também perdem dinheiro. Use só o que você aceita perder.</p><p>Para confirmar, digite <b>REAL</b>:</p>`,
+        `<p>O robô vai comprar e vender <b>${esc(S.config.symbol)}</b> na sua conta da Binance usando até <b>${num(S.config.tradePct, 0)}%</b> do saldo em ${esc(S.live.quote || "")} por compra, <b>no máximo ${money(S.config.maxBuy, S.live.quote)}</b>.</p><p>Robôs também perdem dinheiro. Use só o que você aceita perder.</p><p>Para confirmar, digite <b>REAL</b>:</p>`,
         { okText: "Ligar no modo real", danger: true, requireText: "REAL" });
       if (!confirmReal) return;
     }
@@ -355,7 +356,7 @@ $("#btn-sell").addEventListener("click", (e) => act(e.target, async () => {
 // ---------- ajustes ----------
 function fillForm(form, c) {
   const set = (k, v) => { const el = form.elements[k]; if (el && v !== undefined) el.value = v; };
-  set("symbol", c.symbol); set("interval", c.interval); set("tradePct", c.tradePct);
+  set("symbol", c.symbol); set("interval", c.interval); set("tradePct", c.tradePct); set("maxBuy", c.maxBuy);
   PARAM_KEYS.forEach((k) => set(k, c.params[k]));
 }
 
@@ -368,6 +369,7 @@ function fillConfig() {
   $$("input[name=mode]", f).forEach((r) => (r.checked = r.value === c.mode));
   ["apiKey", "apiSecret", "testApiKey", "testApiSecret", "telegramToken"].forEach((k) => (f.elements[k].value = ""));
   f.elements.telegramChat.value = c.telegramChat || "";
+  f.elements.autostart.checked = !c.noAutostart;
   f.elements.pingUrl.value = c.pingUrl || "";
   fillForm($("#bt-form"), c);
 }
@@ -387,7 +389,8 @@ $("#cfg-form").addEventListener("submit", (e) => {
       !(await ask("Mudar para o modo real?", "<p>No modo real o robô usa o seu dinheiro na Binance. Recomendado: antes, deixar rodando alguns dias no modo <b>Binance de teste</b> e conferir as compras, vendas e o stop.</p>", { okText: "Mudar para real", danger: true }))) return;
     await api("config", {
       symbol: f.elements.symbol.value, interval: f.elements.interval.value, params: readParams(f),
-      tradePct: +f.elements.tradePct.value, maxDailyLossPct: +f.elements.maxDailyLossPct.value,
+      tradePct: +f.elements.tradePct.value, maxBuy: +f.elements.maxBuy.value || 0, noAutostart: !f.elements.autostart.checked,
+      maxDailyLossPct: +f.elements.maxDailyLossPct.value,
       checkSeconds: +f.elements.checkSeconds.value, mode, paperStart: +f.elements.paperStart.value,
       apiKey: f.elements.apiKey.value.trim(), apiSecret: f.elements.apiSecret.value.trim(),
       testApiKey: f.elements.testApiKey.value.trim(), testApiSecret: f.elements.testApiSecret.value.trim(),
@@ -414,7 +417,11 @@ $$("[data-testkeys]").forEach((btn) => btn.addEventListener("click", () => act(b
     APIKey: f.elements[t ? "testApiKey" : "apiKey"].value.trim(),
     APISecret: f.elements[t ? "testApiSecret" : "apiSecret"].value.trim(),
   });
-  await ask("Chave funcionando ✔", `<p>Saldo na Binance${t ? " de teste" : ""}:</p><p><b>${money(r.quoteBal, r.quote)}</b> e <b>${qtyFmt(r.baseBal)} ${esc(r.base)}</b></p><p class="muted">Lembre de clicar em <b>Salvar ajustes</b> para guardar a chave.</p>`);
+  let perms = "";
+  if (r.problem) perms = `<p class="neg"><b>⚠️ Não é seguro usar esta chave:</b> ${esc(r.problem)}.</p><p class="muted">O robô se recusa a ligar no modo real com ela.</p>`;
+  else if (r.perms) perms = `<p class="pos">✔ Sem permissão de saque nem de transferência.</p>` + (r.perms.ipRestrict ? `<p class="pos">✔ Restrita ao IP da sua internet.</p>` : `<p class="muted">Dica: restringir a chave ao IP da sua internet deixa ela ainda mais segura.</p>`);
+  else if (r.permsError) perms = `<p class="muted">Não deu para conferir as permissões da chave (${esc(r.permsError)}). Confira na Binance que ela NÃO permite saques.</p>`;
+  await ask(r.problem ? "Chave com permissão perigosa" : "Chave funcionando ✔", `<p>Saldo na Binance${t ? " de teste" : ""}:</p><p><b>${money(r.quoteBal, r.quote)}</b> e <b>${qtyFmt(r.baseBal)} ${esc(r.base)}</b></p>${perms}<p class="muted">Lembre de clicar em <b>Salvar ajustes</b> para guardar a chave.</p>`);
 })));
 
 // salva só uma alteração, mantendo o resto dos ajustes como estão

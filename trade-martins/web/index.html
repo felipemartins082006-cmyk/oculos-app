@@ -133,6 +133,7 @@
           <label>Tamanho das velas<select name="interval"></select><small class="muted">Velas maiores = menos operações e menos ruído</small></label>
           <label>Checar a cada (segundos)<input name="checkSeconds" type="number" min="5"></label>
         </div>
+        <label class="check"><input type="checkbox" name="autostart"><span><b>Abrir junto com o Windows</b><small class="muted">Enquanto o robô estiver ligado, ele abre sozinho (minimizado) quando o PC liga ou reinicia, e o PC não entra em suspensão. Não impede que alguém desligue o PC ou feche a tampa do notebook.</small></span></label>
       </div>
       <div class="card">
         <h3>Estratégia</h3>
@@ -151,6 +152,7 @@
           <label>Stop-loss % <small>(0 = desliga)</small><input name="stopLossPct" type="number" min="0" step="any"><small class="muted">Vende se cair isso desde a compra</small></label>
           <label>Take-profit % <small>(0 = desliga)</small><input name="takeProfitPct" type="number" min="0" step="any"><small class="muted">Vende se subir isso desde a compra</small></label>
           <label>% do saldo por compra<input name="tradePct" type="number" min="1" max="100" step="any"></label>
+          <label>Valor máximo por compra <small>(0 = sem limite)</small><input name="maxBuy" type="number" min="0" step="any"><small class="muted">Em USDT (ou na moeda do par). <b>Obrigatório no modo real</b>: o robô nunca usa mais que isso por compra, mesmo que a conta tenha mais saldo.</small></label>
           <label>Perda máxima do dia % <small>(0 = desliga)</small><input name="maxDailyLossPct" type="number" min="0" step="any"><small class="muted">Passou disso, não compra mais até amanhã</small></label>
         </div>
       </div>

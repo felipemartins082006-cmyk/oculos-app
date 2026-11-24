@@ -20,6 +20,7 @@ type Config struct {
 	Interval        string  `json:"interval"`
 	Params          Params  `json:"params"`
 	TradePct        float64 `json:"tradePct"`        // % do saldo em moeda usado por compra
+	MaxBuy          float64 `json:"maxBuy"`          // valor máximo por compra (em USDT/BRL…); 0 = sem limite
 	MaxDailyLossPct float64 `json:"maxDailyLossPct"` // 0 = sem limite
 	CheckSeconds    int     `json:"checkSeconds"`
 	Mode            string  `json:"mode"` // "simulado" | "teste" (Binance de teste) | "real"
@@ -31,6 +32,7 @@ type Config struct {
 	TelegramToken   string  `json:"telegramToken"`
 	TelegramChat    string  `json:"telegramChat"`
 	PingURL         string  `json:"pingUrl"`
+	NoAutostart     bool    `json:"noAutostart"` // true = não abrir junto com o Windows
 }
 
 func defaultConfig() Config {
@@ -204,6 +206,33 @@ func (b *Bot) alert(msg string) {
 	b.notify.Send("TradeMartins: " + msg)
 }
 
+// applyPlatformLocked: enquanto o robô está ligado, ele abre junto com o Windows e impede o PC de dormir.
+func (b *Bot) applyPlatformLocked() {
+	if err := setAutostart(b.st.Running && !b.cfg.NoAutostart); err != nil {
+		log.Printf("início automático: %v", err)
+	}
+	keepAwake(b.st.Running)
+}
+
+// checkKeyLocked confere as permissões da chave da Binance normal. Devolve erro se não for seguro operar.
+func (b *Bot) checkKeyLocked() error {
+	if b.cfg.Mode != "real" {
+		return nil
+	}
+	perms, err := b.bn.APIRestrictions()
+	if err != nil {
+		if ae, ok := err.(*APIError); ok && (ae.Code == -2014 || ae.Code == -2015 || ae.Code == -1022) {
+			return err
+		}
+		b.logf("warn", "Não consegui conferir as permissões da chave da Binance (%v). Confira na Binance que ela NÃO permite saques.", err)
+		return nil
+	}
+	if msg := perms.problem(); msg != "" {
+		return fmt.Errorf("%s", msg)
+	}
+	return nil
+}
+
 func (b *Bot) poke() {
 	select {
 	case b.wake <- struct{}{}:
@@ -214,23 +243,7 @@ func (b *Bot) poke() {
 // Run é o laço principal: confere o mercado a cada CheckSeconds.
 func (b *Bot) Run() {
 	b.mu.Lock()
-	if b.st.Running {
-		wait := time.Duration(b.cfg.CheckSeconds) * time.Second
-		gap := time.Since(time.UnixMilli(b.st.LastAlive))
-		if b.st.LastAlive > 0 && gap > 3*wait+90*time.Second {
-			msg := fmt.Sprintf("O robô ficou FORA DO AR por %s (desde %s).", fmtDur(gap), time.UnixMilli(b.st.LastAlive).Format("02/01 15:04"))
-			if p := b.st.Position; p != nil {
-				if p.StopOrderID != 0 {
-					msg += " O stop-loss continuou registrado na Binance."
-				} else {
-					msg += " A posição aberta ficou sem stop vigiado."
-				}
-			}
-			b.logf("warn", "%s", msg)
-		}
-		b.logf("info", "Robô retomado automaticamente (%s, %s, modo %s).", b.cfg.Symbol, b.cfg.Interval, b.cfg.Mode)
-		b.alert(fmt.Sprintf("▶️ Robô retomado: %s, velas de %s%s", b.cfg.Symbol, b.cfg.Interval, modeTag(b.cfg.Mode)))
-	}
+	b.resumeLocked()
 	b.mu.Unlock()
 	for {
 		b.tick()
@@ -417,6 +430,9 @@ func (b *Bot) buyLocked(price float64) {
 			return
 		}
 		spend := free[info.Quote] * cfg.TradePct / 100
+		if cfg.MaxBuy > 0 && spend > cfg.MaxBuy {
+			spend = cfg.MaxBuy
+		}
 		if spend < info.MinNotional*1.02 || spend <= 0 {
 			b.logf("err", "Compra cancelada: saldo de %s pequeno demais (mínimo da Binance: %.2f).", info.Quote, info.MinNotional)
 			return
@@ -431,6 +447,9 @@ func (b *Bot) buyLocked(price float64) {
 		pos.Entry = r.QuoteQty / r.ExecutedQty
 	} else {
 		spend := b.st.PaperQuote * cfg.TradePct / 100
+		if cfg.MaxBuy > 0 && spend > cfg.MaxBuy {
+			spend = cfg.MaxBuy
+		}
 		if spend < 1 {
 			b.logf("err", "Compra cancelada: saldo simulado acabou. Use \"Zerar simulação\".")
 			return
@@ -572,13 +591,20 @@ func (b *Bot) Start(confirmReal bool) error {
 			return fmt.Errorf("configure a chave de API da Binance antes de usar o modo real")
 		}
 	}
+	if b.cfg.Mode == "real" && b.cfg.MaxBuy <= 0 {
+		return fmt.Errorf("no modo real, defina o \"valor máximo por compra\" (Ajustes › Risco) antes de ligar o robô")
+	}
 	if b.cfg.Mode == "real" && !confirmReal {
 		return fmt.Errorf("confirme que quer operar com dinheiro real")
 	}
 	if b.st.Position != nil && (b.st.Position.Symbol != b.cfg.Symbol || b.st.Position.Mode != b.cfg.Mode) {
 		return fmt.Errorf("existe uma posição aberta em %s (%s). Volte para esse par/modo ou feche a posição", b.st.Position.Symbol, b.st.Position.Mode)
 	}
+	if err := b.checkKeyLocked(); err != nil {
+		return err
+	}
 	b.st.Running = true
+	b.applyPlatformLocked()
 	b.st.LastCandle = 0
 	b.st.LastAlive = time.Now().UnixMilli()
 	b.logf("ok", "Robô LIGADO: %s, velas de %s, modo %s.", b.cfg.Symbol, b.cfg.Interval, strings.ToUpper(b.cfg.Mode))
@@ -595,6 +621,7 @@ func (b *Bot) Stop() {
 		return
 	}
 	b.st.Running = false
+	b.applyPlatformLocked()
 	msg := "Robô DESLIGADO."
 	if p := b.st.Position; p != nil {
 		if p.StopOrderID != 0 {
@@ -680,6 +707,8 @@ func (b *Bot) UpdateConfig(nc Config) error {
 		return fmt.Errorf("o tamanho da compra precisa ficar entre 1%% e 100%% do saldo")
 	case nc.Mode != "simulado" && nc.Mode != "teste" && nc.Mode != "real":
 		return fmt.Errorf("modo inválido")
+	case nc.MaxBuy < 0:
+		return fmt.Errorf("valor máximo por compra inválido")
 	case nc.PaperStart <= 0:
 		return fmt.Errorf("saldo inicial da simulação inválido")
 	case nc.PingURL != "" && nc.PingURL != "-" && !validPingURL(nc.PingURL):
@@ -725,7 +754,50 @@ func (b *Bot) UpdateConfig(nc Config) error {
 	b.tgMu.Unlock()
 	b.saveConfigLocked()
 	b.saveLocked()
+	b.applyPlatformLocked()
 	b.logf("info", "Ajustes salvos (%s, %s, modo %s).", nc.Symbol, nc.Interval, nc.Mode)
 	go b.poke()
 	return nil
+}
+
+// Quit fecha o programa para a versão nova assumir. Espera qualquer ordem em andamento terminar
+// (pega o cadeado) e não solta mais, para nada novo começar.
+func (b *Bot) Quit() {
+	b.mu.Lock()
+	b.logf("info", "Fechando para abrir a versão nova…")
+	b.saveLocked()
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		os.Exit(0)
+	}()
+}
+
+// resumeLocked: ao abrir o programa com o robô ligado, avisa se ele ficou fora do ar e retoma
+// (no modo real, só se a chave continuar segura).
+func (b *Bot) resumeLocked() {
+	if !b.st.Running {
+		return
+	}
+	wait := time.Duration(b.cfg.CheckSeconds) * time.Second
+	gap := time.Since(time.UnixMilli(b.st.LastAlive))
+	if b.st.LastAlive > 0 && gap > 3*wait+90*time.Second {
+		msg := fmt.Sprintf("O robô ficou FORA DO AR por %s (desde %s).", fmtDur(gap), time.UnixMilli(b.st.LastAlive).Format("02/01 15:04"))
+		if p := b.st.Position; p != nil {
+			if p.StopOrderID != 0 {
+				msg += " O stop-loss continuou registrado na Binance."
+			} else {
+				msg += " A posição aberta ficou sem stop vigiado."
+			}
+		}
+		b.logf("warn", "%s", msg)
+	}
+	if err := b.checkKeyLocked(); err != nil {
+		b.st.Running = false
+		b.applyPlatformLocked()
+		b.logf("err", "Robô NÃO foi retomado: %v", err)
+		b.saveLocked()
+	} else {
+		b.logf("info", "Robô retomado automaticamente (versão %s: %s, %s, modo %s).", version, b.cfg.Symbol, b.cfg.Interval, b.cfg.Mode)
+		b.alert(fmt.Sprintf("▶️ Robô retomado (versão %s): %s, velas de %s%s", version, b.cfg.Symbol, b.cfg.Interval, modeTag(b.cfg.Mode)))
+	}
 }

@@ -484,3 +484,35 @@ func (b *Binance) Commissions(symbol string, orderID int64) (map[string]float64,
 
 // floorTick arredonda um preço para baixo no passo de preço do par.
 func floorTick(v, tick float64) string { return floorStep(v, tick) }
+
+// KeyPerms = o que a chave de API tem permissão de fazer.
+type KeyPerms struct {
+	Reading           bool `json:"enableReading"`
+	SpotTrading       bool `json:"enableSpotAndMarginTrading"`
+	Withdrawals       bool `json:"enableWithdrawals"`
+	InternalTransfer  bool `json:"enableInternalTransfer"`
+	UniversalTransfer bool `json:"permitsUniversalTransfer"`
+	IPRestrict        bool `json:"ipRestrict"`
+}
+
+// APIRestrictions consulta as permissões da chave (só existe na Binance normal, não na de teste).
+func (b *Binance) APIRestrictions() (*KeyPerms, error) {
+	var p KeyPerms
+	if err := b.signed("GET", "/sapi/v1/account/apiRestrictions", url.Values{}, &p); err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+// problem devolve o motivo para NÃO operar com esta chave ("" = pode).
+func (p *KeyPerms) problem() string {
+	switch {
+	case p.Withdrawals:
+		return "a chave de API permite SAQUES. Por segurança o robô não opera com ela: na Binance, edite a chave e desmarque \"Ativar saques\" (ou crie outra sem saque)"
+	case p.InternalTransfer || p.UniversalTransfer:
+		return "a chave de API permite TRANSFERÊNCIAS entre contas. Por segurança o robô não opera com ela: desmarque as transferências na Binance (ou crie outra chave só com leitura e negociação Spot)"
+	case !p.SpotTrading:
+		return "a chave de API não tem permissão de negociação Spot: na Binance, edite a chave e marque \"Ativar negociação Spot e de margem\""
+	}
+	return ""
+}

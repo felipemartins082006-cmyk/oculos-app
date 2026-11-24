@@ -27,12 +27,21 @@ Robô de trade de cripto para a **Binance (Spot)**, com painel no navegador.
 2. Dê dois cliques nele.
    - Se aparecer **"O Windows protegeu o computador"**, clique em **Mais informações › Executar assim mesmo**.
 3. Abre uma **janela preta** (o robô) e o **painel** no navegador (`http://127.0.0.1:47900`).
-   - **Deixe a janela preta aberta.** Fechar a janela desliga o robô.
-   - O PC não pode dormir/hibernar enquanto o robô roda
-     (Configurações › Sistema › Energia › Suspensão: **Nunca**). Nos modos real e de teste, o stop-loss continua
-     protegendo mesmo se o PC desligar (veja a seção 4), mas as compras e vendas pelo sinal param.
+   - **Deixe a janela preta aberta** (pode minimizar). Fechar a janela desliga o robô.
    - Para ver o painel de novo, abra o `TradeMartins.exe` outra vez ou acesse `127.0.0.1:47900` no navegador.
 4. Se o robô estava ligado e você fechar e abrir o programa, ele **volta a operar sozinho**.
+5. **Enquanto o robô estiver ligado**, ele:
+   - **abre sozinho junto com o Windows** (minimizado), por exemplo depois de uma atualização do Windows;
+   - **impede o PC de entrar em suspensão** (a tela pode apagar normalmente).
+
+   Isso não impede que alguém desligue o PC, que falte luz ou que a tampa do notebook seja fechada. Para isso
+   existem o stop-loss registrado na Binance (seção 4) e o aviso de PC desligado (seção 6).
+   Dá para desligar o início automático em **Ajustes › Mercado › Abrir junto com o Windows**.
+
+**Para atualizar:** baixe o `.exe` novo e abra (pode ficar em outra pasta ou com outro nome). Se a versão antiga
+estiver aberta, a nova fecha ela sozinha e continua de onde parou: robô ligado continua ligado, posição aberta
+continua aberta, e o início com o Windows passa a abrir a versão nova. Depois, se quiser, apague o `.exe` antigo.
+(Funciona também a partir das versões 1.0 e 1.1.)
 
 O painel só abre **neste computador**. Ninguém de fora consegue acessar, e a chave da Binance fica só no PC
 (em `%APPDATA%\TradeMartins`).
@@ -129,10 +138,15 @@ estiver ligado, ele manda sinal de vida a cada checagem. Se o sinal parar, o hea
 
 1. Na Binance: **Perfil › Gerenciamento de API › Criar API** (tipo "gerada pelo sistema").
 2. Permissões: marque **somente** "Ativar leitura" e "Ativar negociação Spot e de margem".
-   **NUNCA ative saques.** Assim, mesmo que alguém pegue a chave, não consegue tirar seu dinheiro.
+   **NUNCA ative saques nem transferências.** Assim, mesmo que alguém pegue a chave, não consegue tirar seu
+   dinheiro. O robô confere isso: **se a chave permitir saque ou transferência, ele se recusa a operar** e o botão
+   "Testar chave" mostra o problema.
 3. Em restrição de IP, coloque o IP da sua internet (opcional, mas mais seguro).
-4. No painel: **Ajustes › Chave de API**, cole a API Key e a Secret Key, clique em **Testar chave** e depois em **Salvar ajustes**.
-5. Em **Modo**, escolha **Real** e salve. No Painel, clique em **Ligar robô** e digite `REAL` para confirmar.
+4. No painel: **Ajustes › Chave da Binance**, cole a API Key e a Secret Key, clique em **Testar chave** e depois
+   em **Salvar ajustes**.
+5. Em **Ajustes › Risco**, preencha o **Valor máximo por compra** (obrigatório no modo real). Por exemplo, com
+   100 o robô nunca compra mais que 100 USDT de uma vez, mesmo que a conta tenha 5.000 USDT.
+6. Em **Modo**, escolha **Real** e salve. No Painel, clique em **Ligar robô** e digite `REAL` para confirmar.
 
 Observações:
 - Tenha saldo na moeda de cotação do par (USDT para BTCUSDT, BRL para BTCBRL).
@@ -143,11 +157,13 @@ Observações:
 
 ## 8. Para quem for mexer no código
 
-Go puro, sem dependências externas. O painel (`web/`) vai embutido no `.exe`.
+Go, com uma única dependência (`golang.org/x/sys`, para o registro e a energia do Windows).
+O painel (`web/`) vai embutido no `.exe`.
 
 | Arquivo | O que faz |
 |---|---|
-| `main.go` | Abre o servidor em `127.0.0.1:47900` e o navegador |
+| `main.go` | Abre o servidor em `127.0.0.1:47900` e o navegador; fecha a versão antiga ao atualizar |
+| `plat_windows.go` | Início com o Windows, impedir suspensão, minimizar a janela |
 | `bot.go` | Laço do robô, compra/venda simulada, ajustes, estado salvo em JSON |
 | `exchange.go` | Ordens de verdade: stop-loss registrado na Binance, cancelamento e conferência quando a conexão cai |
 | `notify.go` | Avisos pelo Telegram e sinal de vida (healthchecks.io) |
