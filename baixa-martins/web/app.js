@@ -84,6 +84,8 @@ async function api(path, body, opts = {}) {
   if (S.token) init.headers['X-Token'] = S.token;
   if (body !== undefined) { init.headers['Content-Type'] = 'application/json'; init.body = JSON.stringify(body); }
   if (opts.signal) init.signal = opts.signal;
+  // celular: o motor ainda está ligando? espera ele (a tela já está aberta)
+  if (S.engine && !S.engineUp && path !== '/api/info') await S.engineReady;
   let r;
   try { r = await fetch(S.base + path, init); } catch (e) {
     if (e.name === 'AbortError') throw e;
@@ -111,25 +113,40 @@ function normBase(a) {
   } catch { return ''; }
 }
 
-// APK: tudo roda dentro do celular (o "motor" em 127.0.0.1). Espera ele ligar.
-async function bootEngine() {
-  $('#pair').classList.add('hidden');
-  const sp = $('#starting'); sp.classList.remove('hidden');
+// APK: tudo roda dentro do celular (o "motor" em 127.0.0.1).
+// A tela abre na hora com o que ficou guardado; o motor termina de ligar em paralelo.
+function bootEngine() {
+  S.engine = true;
+  let e = {};
+  try { e = JSON.parse(Android.engine()); } catch { }
+  S.base = e.base || 'http://127.0.0.1:47900'; S.token = '';
+  S.engineReady = new Promise(r => { S.engineSetReady = r; });
+  const st = store.get('bm.state', null), lib = store.get('bm.lib', null);
+  if (st) applyState(st); else S.android = true;
+  if (lib) setLib(lib);
+  start();
+  waitEngine();
+}
+
+async function waitEngine() {
   const t0 = Date.now();
   for (;;) {
-    let e = {};
-    try { e = JSON.parse(Android.engine()); } catch { }
-    S.base = e.base || 'http://127.0.0.1:47900'; S.token = '';
-    if (e.status === 'erro') { $('#startMsg').textContent = 'Não consegui iniciar: ' + e.error; }
     try {
-      const info = await api('/api/info', undefined, { noAuthRedirect: true });
-      if (info.app === 'baixa-martins') break;
+      const r = await fetch(S.base + '/api/info', { cache: 'no-store' });
+      if (r.ok) break;
     } catch { }
-    if (Date.now() - t0 > 4000 && e.status !== 'erro') $('#startMsg').textContent = 'Preparando o app (só demora na primeira vez)…';
-    await new Promise(r => setTimeout(r, 400));
+    const off = $('#offline');
+    if (Date.now() - t0 > 2500) {
+      let e = {};
+      try { e = JSON.parse(Android.engine()); } catch { }
+      off.textContent = e.status === 'erro' ? 'Não consegui iniciar: ' + e.error : 'Preparando o app (só demora na primeira vez)…';
+      off.classList.remove('hidden');
+    }
+    await new Promise(r => setTimeout(r, 150));
   }
-  sp.classList.add('hidden');
-  start();
+  S.engineUp = true;
+  $('#offline').classList.add('hidden');
+  S.engineSetReady();
 }
 
 async function boot() {
@@ -193,6 +210,11 @@ async function start() {
   $('#app').classList.remove('hidden');
   if (started) { connectEvents(); loadState(); loadLibrary(); return; }
   started = true;
+  if (S.engine) { // não espera o motor para mostrar a tela
+    loadState().then(() => { loadLibrary(); connectEvents(); });
+    if (pendingShared) { const t = pendingShared; pendingShared = null; window.sharedLink(t); }
+    return;
+  }
   const h = location.hash.slice(1);
   if (h === 'celular') { goTab('ajustes'); }
   await loadState();
@@ -204,23 +226,33 @@ async function start() {
 async function loadState() {
   try {
     const st = await api('/api/state');
-    S.jobs = st.jobs; S.tools = st.tools; S.settings = st.settings; S.local = st.local; S.android = st.os === 'android'; S.pc = st.local && !S.android; S.name = st.name; S.version = st.version;
+    applyState(st);
+    if (S.engine) store.set('bm.state', { ...st, jobs: [] });
     $('#offline').classList.add('hidden');
-    $('#navFoot').innerHTML = `${icon('pc')}<b>${esc(S.name)}</b><br>Baixa Martins ${esc(S.version)}`;
-    renderQueue(); renderSettings();
   } catch (e) {
     $('#offline').classList.remove('hidden');
   }
+}
+
+function applyState(st) {
+  S.jobs = st.jobs || []; S.tools = st.tools || []; S.settings = st.settings || {}; S.local = st.local; S.android = st.os === 'android'; S.pc = st.local && !S.android; S.name = st.name; S.version = st.version;
+  $('#navFoot').innerHTML = `${icon('pc')}<b>${esc(S.name)}</b><br>Baixa Martins ${esc(S.version)}`;
+  renderQueue(); renderSettings();
+}
+
+function setLib(lib) {
+  S.lib = lib;
+  S.libById = Object.fromEntries(lib.map(i => [i.id, i]));
+  renderLibrary(); renderTrList();
 }
 
 let libT = null;
 async function loadLibrary() {
   try {
     const lib = await api('/api/library');
-    S.lib = lib;
-    S.libById = Object.fromEntries(lib.map(i => [i.id, i]));
+    setLib(lib);
+    if (S.engine) store.set('bm.lib', lib);
     for (const id of S.toScan) { const it = S.libById[id]; if (it) { Android?.scan?.(it.file); S.toScan.delete(id); } }
-    renderLibrary(); renderTrList();
   } catch { }
 }
 function loadLibrarySoon() { clearTimeout(libT); libT = setTimeout(loadLibrary, 300); }
@@ -230,6 +262,7 @@ function connectEvents() {
   es = new EventSource(`${S.base}/api/events?x=1${tq()}`);
   es.onopen = () => { $('#offline').classList.add('hidden'); };
   es.onerror = () => {
+    if (S.engine) { $('#offline').textContent = 'Reconectando…'; try { Android.engine(); } catch { } }
     $('#offline').classList.remove('hidden');
     if (es.readyState === 2) setTimeout(connectEvents, 3000);
   };

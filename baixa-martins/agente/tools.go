@@ -216,7 +216,34 @@ func toolSnapshot() []ToolState {
 }
 
 // Garante que as ferramentas existem (baixa se precisar). Bloqueia até terminar.
+// No celular, o app descompacta o Python e o ffmpeg enquanto a tela já está aberta.
+// Antes de usar o yt-dlp/ffmpeg/Whisper, espera isso terminar (só demora na primeira vez).
+func waitAndroidReady(ctx context.Context) error {
+	f := os.Getenv("BM_READY")
+	if f == "" {
+		return nil
+	}
+	for i := 0; ; i++ {
+		if _, err := os.Stat(f); err == nil {
+			return nil
+		}
+		if i > 1500 { // 5 minutos
+			return errors.New("o app não terminou de se preparar. Feche e abra de novo")
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+}
+
 func ensureTools(ctx context.Context, keys ...string) error {
+	if isAndroid() {
+		if err := waitAndroidReady(ctx); err != nil {
+			return err
+		}
+	}
 	for _, k := range keys {
 		s := specFor(k)
 		if s == nil {
@@ -442,6 +469,9 @@ func prepareAtStartup() {
 		return
 	}
 	ctx := context.Background()
+	if isAndroid() {
+		time.Sleep(90 * time.Second) // não pesa na abertura do app
+	}
 	if err := ensureTools(ctx, "ytdlp", "deno", "ffmpeg"); err != nil {
 		log.Printf("preparar: %v", err)
 		return

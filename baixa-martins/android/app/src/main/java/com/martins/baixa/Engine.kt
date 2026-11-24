@@ -51,22 +51,22 @@ object Engine {
   }
 
   private fun start(ctx: Context) {
-    // Na primeira vez descompacta o Python e o ffmpeg (uns segundos)
-    YoutubeDL.getInstance().init(ctx)
-    FFmpeg.getInstance().init(ctx)
-
     val lib = File(ctx.applicationInfo.nativeLibraryDir)
     val base = File(ctx.noBackupFilesDir, YoutubeDL.baseName)
     val pkgs = File(base, "packages")
     val pyDir = File(pkgs, "python")
     val data = File(ctx.filesDir, "baixa").apply { mkdirs() }
     val tmp = File(ctx.getExternalFilesDir(null) ?: ctx.cacheDir, "baixando").apply { mkdirs() }
+    // marcador "Python e ffmpeg prontos": o motor só chama o yt-dlp/ffmpeg depois que ele existir
+    val ready = File(data, ".ferramentas-prontas")
+    ready.delete()
 
     @Suppress("DEPRECATION")
     val music = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC), "BaixaMartins")
     @Suppress("DEPRECATION")
     val movies = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "BaixaMartins")
 
+    // 1) liga o motor na hora: a tela abre sem esperar o Python
     val pb = ProcessBuilder(File(lib, "libbaixa.so").absolutePath)
     pb.directory(data)
     pb.redirectErrorStream(true)
@@ -74,6 +74,7 @@ object Engine {
     pb.environment().apply {
       put("BAIXA_MARTINS_DIR", data.absolutePath)
       put("BM_LISTEN", "127.0.0.1")
+      put("BM_READY", ready.absolutePath)
       put("BM_PYTHON", File(lib, "libpython.so").absolutePath)
       put("BM_YTDLP", File(File(base, YoutubeDL.ytdlpDirName), YoutubeDL.ytdlpBin).absolutePath)
       put("BM_QJS", File(lib, "libqjs.so").absolutePath)
@@ -93,20 +94,29 @@ object Engine {
     }
     val p = pb.start()
     process = p
-    // espera o servidor responder
-    for (i in 0 until 150) {
+    thread(name = "baixa-engine-wait") {
+      val code = runCatching { p.waitFor() }.getOrDefault(-1)
+      Log.w(TAG, "motor parou: $code")
+      if (process === p) status = "parado"
+    }
+
+    // 2) enquanto isso, prepara o Python e o ffmpeg (na primeira vez descompacta uns 50 MB)
+    YoutubeDL.getInstance().init(ctx)
+    FFmpeg.getInstance().init(ctx)
+    ready.writeText("ok")
+
+    for (i in 0 until 100) {
       if (!p.isAlive) break
       if (ping()) {
         status = "ok"
         Log.i(TAG, "motor ligado")
-        thread(name = "baixa-engine-wait") {
-          val code = runCatching { p.waitFor() }.getOrDefault(-1)
-          Log.w(TAG, "motor parou: $code")
-          if (process === p) status = "parado"
-        }
         return
       }
-      Thread.sleep(200)
+      Thread.sleep(100)
+    }
+    if (ping()) { // outro motor (de antes) ainda está ligado e respondendo
+      status = "ok"
+      return
     }
     val log = runCatching { File(data, "saida.log").readText().takeLast(600) }.getOrDefault("")
     p.destroy()
@@ -116,8 +126,8 @@ object Engine {
   fun ping(): Boolean =
       runCatching {
             val c = URL("$BASE/api/info").openConnection() as HttpURLConnection
-            c.connectTimeout = 400
-            c.readTimeout = 800
+            c.connectTimeout = 300
+            c.readTimeout = 600
             c.inputStream.use { it.readBytes() }
             c.responseCode == 200
           }

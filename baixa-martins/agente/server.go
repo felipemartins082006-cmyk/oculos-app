@@ -20,7 +20,7 @@ import (
 	baixamartins "baixamartins"
 )
 
-const version = "1.0"
+const version = "2.1"
 
 func hostname() string {
 	h, err := os.Hostname()
@@ -557,7 +557,8 @@ func handleMedia(w http.ResponseWriter, r *http.Request) {
 
 func thumbDir() string { return filepath.Join(configDir(), "capas") }
 
-var thumbMu sync.Mutex
+// uma trava por vídeo: várias capas podem ser buscadas ao mesmo tempo
+var thumbLocks sync.Map
 
 func cacheThumb(vid string) (string, error) {
 	if !videoIDRe.MatchString(vid) {
@@ -567,13 +568,15 @@ func cacheThumb(vid string) (string, error) {
 	if _, err := os.Stat(p); err == nil {
 		return p, nil
 	}
-	thumbMu.Lock()
-	defer thumbMu.Unlock()
+	l, _ := thumbLocks.LoadOrStore(vid, &sync.Mutex{})
+	mu := l.(*sync.Mutex)
+	mu.Lock()
+	defer mu.Unlock()
 	if _, err := os.Stat(p); err == nil {
 		return p, nil
 	}
 	_ = os.MkdirAll(thumbDir(), 0o755)
-	cl := &http.Client{Timeout: 15 * time.Second}
+	cl := &http.Client{Timeout: 6 * time.Second}
 	for _, name := range []string{"maxresdefault", "hq720", "sddefault", "hqdefault", "mqdefault"} {
 		resp, err := cl.Get("https://i.ytimg.com/vi/" + vid + "/" + name + ".jpg")
 		if err != nil {
