@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0c0a14">
+<title>Baixa Martins</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="gr" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8b5cff"/><stop offset="1" stop-color="#ff3d7f"/></linearGradient>
+  </defs>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v11m-5-5 5 5 5-5M5 20h14"/></symbol>
+  <symbol id="i-queue" viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h7m9-6v8m-4-4 4 4 4-4" transform="translate(-2 0)"/></symbol>
+  <symbol id="i-lib" viewBox="0 0 24 24"><path d="M4 5v14M8 5v14"/><rect x="11" y="4" width="4" height="16" rx="1"/><path d="m17.5 5.5 3 13.5"/></symbol>
+  <symbol id="i-text" viewBox="0 0 24 24"><path d="M5 6h14M5 10h14M5 14h9M5 18h6"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path class="fill" d="M8 5.5v13a1 1 0 0 0 1.5.9l10.4-6.5a1 1 0 0 0 0-1.8L9.5 4.6A1 1 0 0 0 8 5.5z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><rect class="fill" x="6" y="5" width="4" height="14" rx="1"/><rect class="fill" x="14" y="5" width="4" height="14" rx="1"/></symbol>
+  <symbol id="i-next" viewBox="0 0 24 24"><path class="fill" d="M5 6.2v11.6a.8.8 0 0 0 1.2.7l8.8-5.8a.8.8 0 0 0 0-1.4L6.2 5.5a.8.8 0 0 0-1.2.7z"/><rect class="fill" x="16.5" y="5" width="2.5" height="14" rx="1"/></symbol>
+  <symbol id="i-prev" viewBox="0 0 24 24"><g transform="matrix(-1 0 0 1 24 0)"><path class="fill" d="M5 6.2v11.6a.8.8 0 0 0 1.2.7l8.8-5.8a.8.8 0 0 0 0-1.4L6.2 5.5a.8.8 0 0 0-1.2.7z"/><rect class="fill" x="16.5" y="5" width="2.5" height="14" rx="1"/></g></symbol>
+  <symbol id="i-back10" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.4-5.7L4 8.5M4 4v4.5h4.5"/><text x="12" y="15.5" font-size="7" text-anchor="middle" class="fill" stroke="none" font-weight="700">10</text></symbol>
+  <symbol id="i-fwd10" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7L20 8.5M20 4v4.5h-4.5"/><text x="12" y="15.5" font-size="7" text-anchor="middle" class="fill" stroke="none" font-weight="700">10</text></symbol>
+  <symbol id="i-shuffle" viewBox="0 0 24 24"><path d="M16 4h4v4M4 20 20 4M20 16v4h-4M15 15l5 5M4 4l5 5"/></symbol>
+  <symbol id="i-repeat" viewBox="0 0 24 24"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></symbol>
+  <symbol id="i-pip" viewBox="0 0 24 24"><rect x="2.5" y="4.5" width="19" height="15" rx="2.5"/><rect class="fill" x="12" y="11.5" width="7.5" height="6" rx="1.2"/></symbol>
+  <symbol id="i-cc" viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="3"/><path d="M10.5 10.2a2.3 2.3 0 1 0 0 3.6M17.5 10.2a2.3 2.3 0 1 0 0 3.6"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
+  <symbol id="i-ai" viewBox="0 0 24 24"><path d="M12 3l1.8 4.6L18.5 9l-4.7 1.6L12 15l-1.8-4.4L5.5 9l4.7-1.4z"/><path d="M18.5 15l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3m-8 0 1 13h8l1-13"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2h8.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M11 18.5h2"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle class="fill" cx="5" cy="12" r="1.8"/><circle class="fill" cx="12" cy="12" r="1.8"/><circle class="fill" cx="19" cy="12" r="1.8"/></symbol>
+  <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/></symbol>
+  <symbol id="i-video" viewBox="0 0 24 24"><rect x="2.5" y="5.5" width="14" height="13" rx="2.5"/><path d="m16.5 10 5-3v10l-5-3"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5"/><rect x="3" y="17" width="18" height="4" rx="1.5"/></symbol>
+  <symbol id="i-retry" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></symbol>
+  <symbol id="i-paste" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 11h6M9 15h4"/></symbol>
+  <symbol id="i-full" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
+  <symbol id="i-headph" viewBox="0 0 24 24"><path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="5" height="7" rx="2"/><rect x="16" y="14" width="5" height="7" rx="2"/></symbol>
+  <symbol id="i-sync" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6"/></symbol>
+  <symbol id="i-pc" viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="12.5" rx="2"/><path d="M8 20.5h8M12 16.5v4"/></symbol>
+</svg>
+
+<div id="app" class="hidden">
+  <nav id="nav">
+    <div class="brand"><img src="icon.svg" alt=""><span>Baixa <b>Martins</b></span></div>
+    <button data-tab="baixar" class="on"><svg><use href="#i-search"/></svg><span>Baixar</span></button>
+    <button data-tab="fila"><svg><use href="#i-down"/></svg><span>Fila</span><i class="badge hidden" id="qBadge">0</i></button>
+    <button data-tab="biblioteca"><svg><use href="#i-lib"/></svg><span>Biblioteca</span></button>
+    <button data-tab="transcricoes"><svg><use href="#i-text"/></svg><span>Transcrições</span></button>
+    <button data-tab="ajustes"><svg><use href="#i-gear"/></svg><span>Ajustes</span></button>
+    <div class="nav-foot" id="navFoot"></div>
+  </nav>
+
+  <main id="main">
+    <div class="offline hidden" id="offline">Sem conexão com o computador. Tentando de novo…</div>
+
+    <!-- BAIXAR -->
+    <section class="tab on" id="tab-baixar">
+      <div class="hero">
+        <h1>O que você quer <span class="grad">baixar</span> hoje?</h1>
+        <p class="muted">Cole um link do YouTube (vídeo, música ou playlist) ou pesquise pelo nome.</p>
+        <form id="searchForm" class="search" autocomplete="off">
+          <svg class="lead"><use href="#i-search"/></svg>
+          <input id="q" type="search" enterkeyhint="search" placeholder="Link ou nome da música, artista, vídeo…">
+          <button type="button" class="icon-btn ghost" id="pasteBtn" title="Colar"><svg><use href="#i-paste"/></svg></button>
+          <button type="submit" class="btn primary" id="goBtn">Buscar</button>
+        </form>
+      </div>
+      <div id="resolveArea"></div>
+    </section>
+
+    <!-- FILA -->
+    <section class="tab" id="tab-fila">
+      <div class="tab-head">
+        <h2>Fila</h2>
+        <div class="row gap">
+          <button class="btn small ghost" id="clearDone">Limpar concluídos</button>
+          <button class="btn small ghost danger" id="cancelAll">Cancelar tudo</button>
+        </div>
+      </div>
+      <div id="toolsBanner"></div>
+      <div id="queue" class="queue"></div>
+    </section>
+
+    <!-- BIBLIOTECA -->
+    <section class="tab" id="tab-biblioteca">
+      <div class="tab-head">
+        <h2>Biblioteca</h2>
+        <div class="seg" id="libSeg">
+          <button data-k="audio" class="on"><svg><use href="#i-music"/></svg>Músicas</button>
+          <button data-k="video"><svg><use href="#i-video"/></svg>Vídeos</button>
+        </div>
+      </div>
+      <div class="lib-tools">
+        <div class="search small"><svg class="lead"><use href="#i-search"/></svg><input id="libQ" type="search" placeholder="Filtrar"></div>
+        <select id="libGroup" class="select">
+          <option value="">Tudo</option>
+        </select>
+        <button class="btn small" id="playAll"><svg><use href="#i-play"/></svg>Tocar tudo</button>
+        <button class="btn small ghost" id="shuffleAll"><svg><use href="#i-shuffle"/></svg>Aleatório</button>
+      </div>
+      <div id="lib" class="lib"></div>
+    </section>
+
+    <!-- TRANSCRIÇÕES (campo à parte) -->
+    <section class="tab" id="tab-transcricoes">
+      <div class="tab-head">
+        <h2>Transcrições</h2>
+        <div class="seg" id="trSeg">
+          <button data-k="video" class="on"><svg><use href="#i-video"/></svg>Vídeos</button>
+          <button data-k="audio"><svg><use href="#i-music"/></svg>Letras</button>
+        </div>
+      </div>
+      <div class="tr-layout">
+        <div class="tr-list">
+          <div class="search small"><svg class="lead"><use href="#i-search"/></svg><input id="trQ" type="search" placeholder="Procurar uma palavra em todas"></div>
+          <div id="trList"></div>
+        </div>
+        <div class="tr-view" id="trView"></div>
+      </div>
+    </section>
+
+    <!-- AJUSTES -->
+    <section class="tab" id="tab-ajustes">
+      <div class="tab-head"><h2>Ajustes</h2></div>
+      <div id="settings" class="settings"></div>
+    </section>
+  </main>
+
+  <div id="mini" class="mini hidden">
+    <div class="mini-bar"><i id="miniProg"></i></div>
+    <img id="miniCover" alt="">
+    <div class="mini-txt">
+      <b id="miniTitle"></b>
+      <span id="miniLine"></span>
+    </div>
+    <button class="icon-btn" id="miniPrev" title="Anterior"><svg><use href="#i-prev"/></svg></button>
+    <button class="icon-btn big" id="miniPlay" title="Tocar/pausar"><svg><use href="#i-play"/></svg></button>
+    <button class="icon-btn" id="miniNext" title="Próxima"><svg><use href="#i-next"/></svg></button>
+  </div>
+</div>
+
+<!-- PLAYER -->
+<div id="player" class="player hidden" data-kind="audio">
+  <div class="pl-bg" id="plBg"></div>
+  <header class="pl-head">
+    <button class="icon-btn" id="plClose" title="Fechar"><svg><use href="#i-chev"/></svg></button>
+    <div class="pl-src" id="plSrc">Tocando agora</div>
+    <button class="icon-btn" id="plMore" title="Mais"><svg><use href="#i-more"/></svg></button>
+  </header>
+  <div class="pl-grid">
+    <div class="pl-left">
+      <div class="pl-media">
+        <div class="pl-cover" id="plCoverBox"><img id="plCover" alt="" crossorigin="anonymous"></div>
+        <div class="pl-video" id="plVideoBox">
+          <video id="vid" playsinline crossorigin="anonymous" preload="auto"></video>
+          <div class="subs hidden" id="subs"><span></span></div>
+          <button class="icon-btn vid-full" id="vidFull" title="Tela cheia"><svg><use href="#i-full"/></svg></button>
+        </div>
+        <div class="pl-lyrics-mobile" id="lyrMobileHost"></div>
+      </div>
+      <div class="pl-info">
+        <div class="pl-titles">
+          <h2 id="plTitle"></h2>
+          <p id="plArtist" class="muted"></p>
+        </div>
+        <div class="pl-chips" id="plChips"></div>
+      </div>
+      <div class="pl-progress">
+        <span id="plCur">0:00</span>
+        <input type="range" id="plSeek" min="0" max="1000" value="0" step="1">
+        <span id="plDur">0:00</span>
+      </div>
+      <div class="pl-controls">
+        <button class="icon-btn" id="plShuffle" title="Aleatório"><svg><use href="#i-shuffle"/></svg></button>
+        <button class="icon-btn" id="plPrev" title="Anterior"><svg><use href="#i-prev"/></svg></button>
+        <button class="icon-btn" id="plBack" title="Voltar 10 s"><svg><use href="#i-back10"/></svg></button>
+        <button class="play-btn" id="plPlay" title="Tocar/pausar"><svg><use href="#i-play"/></svg></button>
+        <button class="icon-btn" id="plFwd" title="Avançar 10 s"><svg><use href="#i-fwd10"/></svg></button>
+        <button class="icon-btn" id="plNext" title="Próxima"><svg><use href="#i-next"/></svg></button>
+        <button class="icon-btn" id="plRepeat" title="Repetir"><svg><use href="#i-repeat"/></svg><i class="rep1">1</i></button>
+      </div>
+      <div class="pl-actions">
+        <button class="act" id="aLyrics"><svg><use href="#i-text"/></svg><span>Letra</span></button>
+        <button class="act" id="aCC"><svg><use href="#i-cc"/></svg><span>Legenda</span></button>
+        <button class="act" id="aPip"><svg><use href="#i-pip"/></svg><span>Mini tela</span></button>
+        <button class="act" id="aAudio"><svg><use href="#i-headph"/></svg><span>Só áudio</span></button>
+        <button class="act" id="aSave"><svg><use href="#i-save"/></svg><span>Salvar</span></button>
+      </div>
+    </div>
+    <div class="pl-right" id="lyrPanel">
+      <div class="lyr-head">
+        <div class="lyr-title"><svg><use href="#i-text"/></svg><b id="lyrTitle">Letra</b><span class="muted" id="lyrMeta"></span></div>
+        <div class="row gap-s" id="lyrTools">
+          <div class="search tiny hidden" id="lyrSearchBox"><input id="lyrSearch" type="search" placeholder="Procurar"></div>
+          <button class="icon-btn small" id="lyrSync" title="Ajustar sincronia"><svg><use href="#i-sync"/></svg></button>
+          <button class="icon-btn small" id="lyrEdit" title="Corrigir texto"><svg><use href="#i-edit"/></svg></button>
+          <button class="icon-btn small" id="lyrExport" title="Exportar"><svg><use href="#i-save"/></svg></button>
+        </div>
+      </div>
+      <div class="sync-bar hidden" id="syncBar">
+        <span>Sincronia</span>
+        <button class="btn tiny" data-d="-0.5">−0,5s</button>
+        <button class="btn tiny" data-d="-0.1">−0,1s</button>
+        <b id="syncVal">0,0s</b>
+        <button class="btn tiny" data-d="0.1">+0,1s</button>
+        <button class="btn tiny" data-d="0.5">+0,5s</button>
+      </div>
+      <div class="edit-bar hidden" id="editBar">
+        <span>Toque numa linha para corrigir. Apagar o texto remove a linha.</span>
+        <button class="btn tiny ghost" id="editCancel">Cancelar</button>
+        <button class="btn tiny primary" id="editSave">Salvar</button>
+      </div>
+      <div class="lyr" id="lyr"></div>
+    </div>
+  </div>
+</div>
+
+<!-- CONECTAR -->
+<div id="pair" class="pair hidden">
+  <div class="pair-card">
+    <img src="icon.svg" class="pair-logo" alt="">
+    <h1>Baixa <span class="grad">Martins</span></h1>
+    <p class="muted" id="pairMsg">Conecte ao computador onde o Baixa Martins está instalado.</p>
+    <form id="pairForm">
+      <label id="pairAddrRow">Endereço do computador
+        <input id="pairAddr" inputmode="url" placeholder="100.x.x.x  ou  192.168.x.x" autocomplete="off">
+      </label>
+      <label>Código de acesso
+        <input id="pairCode" placeholder="ABCD-1234" autocomplete="off" autocapitalize="characters">
+      </label>
+      <button class="btn primary wide" id="pairBtn">Conectar</button>
+      <p class="err" id="pairErr"></p>
+    </form>
+    <p class="muted small">No computador: abra o Baixa Martins › Ajustes › <b>Usar no celular</b> para ver o código e o endereço.</p>
+  </div>
+</div>
+
+<div id="sheetWrap" class="sheet-wrap hidden"><div class="sheet" id="sheet"></div></div>
+<div id="toast" class="toast"></div>
+<audio id="aud" preload="auto" crossorigin="anonymous"></audio>
+<canvas id="pipCanvas" width="640" height="640" hidden></canvas>
+<video id="pipVideo" muted playsinline hidden></video>
+<script src="app.js"></script>
+</body>
+</html>
