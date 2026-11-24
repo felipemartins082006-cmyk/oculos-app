@@ -27,3 +27,15 @@ java {
 }
 
 tasks.withType(JavaCompile).configureEach { it.options.release = 25 }
+
+// Teste automático que abre o jogo, coloca as estruturas e tira prints:
+//   ./gradlew runClientGameTest   (prints em build/run/clientGameTest/screenshots)
+fabricApi {
+    configureTests {
+        createSourceSet = true
+        modId = "estruturas-gametest"
+        enableGameTests = false
+        enableClientGameTests = true
+        eula = false
+    }
+}

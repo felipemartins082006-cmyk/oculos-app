@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "estruturas-gametest",
+  "version": "1.0.0",
+  "name": "Estruturas Martins (prints)",
+  "environment": "client",
+  "entrypoints": { "fabric-client-gametest": ["com.martins.estruturas.teste.PrintsDasEstruturas"] },
+  "depends": { "estruturas": "*" }
+}
