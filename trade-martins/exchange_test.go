@@ -179,7 +179,7 @@ func (f *fakeBinance) newOrder(w http.ResponseWriter, r *http.Request, q map[str
 			}
 			json.NewEncoder(w).Encode(map[string]any{"orderId": o.ID, "status": "FILLED", "executedQty": strconv.FormatFloat(qty, 'f', 8, 64),
 				"cummulativeQuoteQty": strconv.FormatFloat(quote, 'f', 8, 64),
-				"fills": []any{map[string]any{"commission": strconv.FormatFloat(qty*0.001, 'f', 8, 64), "commissionAsset": "BTC"}}})
+				"fills":               []any{map[string]any{"commission": strconv.FormatFloat(qty*0.001, 'f', 8, 64), "commissionAsset": "BTC"}}})
 			return
 		}
 		qty := pf("quantity")
@@ -194,7 +194,7 @@ func (f *fakeBinance) newOrder(w http.ResponseWriter, r *http.Request, q map[str
 		f.orders[o.ID] = o
 		json.NewEncoder(w).Encode(map[string]any{"orderId": o.ID, "status": "FILLED", "executedQty": first(q["quantity"]),
 			"cummulativeQuoteQty": strconv.FormatFloat(gross, 'f', 8, 64),
-			"fills": []any{map[string]any{"commission": strconv.FormatFloat(gross*0.001, 'f', 8, 64), "commissionAsset": "USDT"}}})
+			"fills":               []any{map[string]any{"commission": strconv.FormatFloat(gross*0.001, 'f', 8, 64), "commissionAsset": "USDT"}}})
 	case "STOP_LOSS_LIMIT":
 		qty := pf("quantity")
 		if first(q["timeInForce"]) != "GTC" || pf("stopPrice") <= 0 || pf("price") <= 0 {
