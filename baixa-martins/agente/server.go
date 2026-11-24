@@ -739,6 +739,7 @@ func runServer(port int) error {
 		w.Header().Set("Cache-Control", "no-cache")
 		static.ServeHTTP(w, r)
 	}))
-	srv := &http.Server{Addr: fmt.Sprintf(":%d", port), Handler: cors(mux), ReadHeaderTimeout: 15 * time.Second}
+	// no celular só o próprio aparelho acessa
+	srv := &http.Server{Addr: fmt.Sprintf("%s:%d", os.Getenv("BM_LISTEN"), port), Handler: cors(mux), ReadHeaderTimeout: 15 * time.Second}
 	return srv.ListenAndServe()
 }

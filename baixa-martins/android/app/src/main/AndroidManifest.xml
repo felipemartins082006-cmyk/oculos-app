@@ -7,10 +7,11 @@
   <!-- Tocar em segundo plano, com controles na notificação e na tela bloqueada -->
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
   <uses-permission android:name="android.permission.WAKE_LOCK" />
-  <!-- Salvar músicas/vídeos no celular (Android 9 ou mais antigo) -->
-  <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+  <!-- Salvar em Música/Filmes no Android 8, 9 e 10 (do 11 em diante não precisa) -->
+  <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
 
   <application
       android:allowBackup="false"
@@ -19,6 +20,8 @@
       android:label="@string/app_name"
       android:supportsRtl="true"
       android:usesCleartextTraffic="true"
+      android:extractNativeLibs="true"
+      android:requestLegacyExternalStorage="true"
       android:theme="@style/Theme.Baixa">
     <activity
         android:name=".MainActivity"
@@ -44,5 +47,10 @@
         android:name=".MediaService"
         android:exported="false"
         android:foregroundServiceType="mediaPlayback" />
+
+    <service
+        android:name=".WorkService"
+        android:exported="false"
+        android:foregroundServiceType="dataSync" />
   </application>
 </manifest>

@@ -4,11 +4,14 @@ kotlin = "2.2.21"
 activity = "1.13.0"
 core = "1.17.0"
 webkit = "1.14.0"
+youtubedl = "0.18.1"
 
 [libraries]
 androidx-activity = { group = "androidx.activity", name = "activity-ktx", version.ref = "activity" }
 androidx-core = { group = "androidx.core", name = "core-ktx", version.ref = "core" }
 androidx-webkit = { group = "androidx.webkit", name = "webkit", version.ref = "webkit" }
+youtubedl-library = { group = "io.github.junkfood02.youtubedl-android", name = "library", version.ref = "youtubedl" }
+youtubedl-ffmpeg = { group = "io.github.junkfood02.youtubedl-android", name = "ffmpeg", version.ref = "youtubedl" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

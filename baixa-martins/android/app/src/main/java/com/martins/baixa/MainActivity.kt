@@ -16,6 +16,7 @@ import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.drawable.Icon
+import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -40,12 +41,14 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.webkit.WebViewAssetLoader
 import org.json.JSONObject
+import java.io.File
 
 /**
  * O app é a página da pasta baixa-martins/web/ rodando dentro de um WebView.
- * Ela conversa com o programa do computador (http://endereço:47900).
- * Aqui ficam as partes que só o Android faz: mini tela (picture-in-picture), tocar em segundo
- * plano com notificação, salvar arquivos no celular e receber links do app do YouTube.
+ * Ela conversa com o "motor" (Engine) que roda dentro do próprio celular em http://127.0.0.1:47900:
+ * tudo funciona só no celular, sem computador.
+ * Aqui ficam as partes que só o Android faz: mini tela (picture-in-picture), tocar e baixar em
+ * segundo plano com notificação, abrir/compartilhar arquivos e receber links do app do YouTube.
  */
 class MainActivity : ComponentActivity() {
 
@@ -60,6 +63,8 @@ class MainActivity : ComponentActivity() {
   @SuppressLint("SetJavaScriptEnabled")
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    Engine.ensure(this)
+    askStoragePermission()
     enableEdgeToEdge(
         statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
         navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
@@ -130,15 +135,8 @@ class MainActivity : ComponentActivity() {
         object : OnBackPressedCallback(true) {
           override fun handleOnBackPressed() {
             web.evaluateJavascript("window.appBack ? appBack() : false") { handled ->
-              if (handled != "true") {
-                // não fecha o app enquanto toca: só vai para o fundo
-                if (playing) moveTaskToBack(true)
-                else {
-                  isEnabled = false
-                  onBackPressedDispatcher.onBackPressed()
-                  isEnabled = true
-                }
-              }
+              // não fecha o app: só vai para o fundo (downloads e música continuam)
+              if (handled != "true") moveTaskToBack(true)
             }
           }
         })
@@ -242,6 +240,27 @@ class MainActivity : ComponentActivity() {
     }
   }
 
+  override fun onResume() {
+    super.onResume()
+    Engine.ensure(this) // se o Android fechou o motor, liga de novo
+  }
+
+  // Android 9 e 10: precisa de permissão para salvar em Música/Filmes
+  private fun askStoragePermission() {
+    if (Build.VERSION.SDK_INT <= 29 &&
+        checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+      requestPermissions(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), 2)
+    }
+  }
+
+  // Arquivo no celular -> endereço content:// que outros apps conseguem abrir
+  private fun withUri(path: String, mime: String, then: (Uri) -> Unit) {
+    MediaScannerConnection.scanFile(this, arrayOf(path), arrayOf(mime)) { _, uri ->
+      if (uri != null) runOnUiThread { then(uri) }
+      else runOnUiThread { js("window.toast && toast('Não achei o arquivo no celular', true)") }
+    }
+  }
+
   override fun onSaveInstanceState(outState: Bundle) {
     super.onSaveInstanceState(outState)
     web.saveState(outState)
@@ -249,6 +268,10 @@ class MainActivity : ComponentActivity() {
 
   override fun onDestroy() {
     MediaService.listener = null
+    if (isFinishing) {
+      WorkService.instance?.finish()
+      Engine.stop()
+    }
     runCatching { unregisterReceiver(pipReceiver) }
     super.onDestroy()
   }
@@ -261,6 +284,58 @@ class MainActivity : ComponentActivity() {
   }
 
   inner class Bridge {
+    /** Situação do motor: { base, status: iniciando|ok|erro|parado, error } */
+    @JavascriptInterface
+    fun engine(): String {
+      if (!Engine.isRunning() && Engine.status != "iniciando") Engine.ensure(this@MainActivity)
+      return JSONObject().put("base", Engine.BASE).put("status", Engine.status).put("error", Engine.error).toString()
+    }
+
+    /** Fila: { active, text, progress }. Mantém os downloads rodando com a tela desligada. */
+    @JavascriptInterface
+    fun work(json: String) {
+      runOnUiThread { WorkService.update(this@MainActivity, json) }
+    }
+
+    /** Arquivo novo: avisa o Android para aparecer nos outros players e na galeria. */
+    @JavascriptInterface
+    fun scan(path: String) {
+      MediaScannerConnection.scanFile(this@MainActivity, arrayOf(path), null, null)
+    }
+
+    @JavascriptInterface
+    fun openWith(path: String, mime: String) {
+      runOnUiThread {
+        withUri(path, mime) { uri ->
+          val i = Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+          runCatching { startActivity(Intent.createChooser(i, "Abrir com")) }
+        }
+      }
+    }
+
+    @JavascriptInterface
+    fun share(path: String, mime: String) {
+      runOnUiThread {
+        withUri(path, mime) { uri ->
+          val i =
+              Intent(Intent.ACTION_SEND)
+                  .setType(mime)
+                  .putExtra(Intent.EXTRA_STREAM, uri)
+                  .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+          runCatching { startActivity(Intent.createChooser(i, "Compartilhar")) }
+        }
+      }
+    }
+
+    @JavascriptInterface
+    fun shareText(text: String) {
+      runOnUiThread {
+        runCatching {
+          startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), "Compartilhar"))
+        }
+      }
+    }
+
     /** Estado do player (JSON): título, artista, tocando, posição… */
     @JavascriptInterface
     fun mediaState(json: String) {

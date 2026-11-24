@@ -75,6 +75,7 @@ const S = {
   jobs: [], tools: [], settings: {}, lib: [], libById: {},
   tab: 'baixar', resolved: null, sel: new Set(), resolving: false,
   dlKind: store.get('bm.kind', 'audio'), dlFmt: store.get('bm.fmt', ''), dlQual: store.get('bm.qual', ''), dlLang: 'auto', dlAI: null,
+  toScan: new Set(), workKey: '',
   libKind: 'audio', libQ: '', libGroup: '', trKind: 'video', trQ: '', trOpen: null, tCache: {},
 };
 
@@ -110,7 +111,29 @@ function normBase(a) {
   } catch { return ''; }
 }
 
+// APK: tudo roda dentro do celular (o "motor" em 127.0.0.1). Espera ele ligar.
+async function bootEngine() {
+  $('#pair').classList.add('hidden');
+  const sp = $('#starting'); sp.classList.remove('hidden');
+  const t0 = Date.now();
+  for (;;) {
+    let e = {};
+    try { e = JSON.parse(Android.engine()); } catch { }
+    S.base = e.base || 'http://127.0.0.1:47900'; S.token = '';
+    if (e.status === 'erro') { $('#startMsg').textContent = 'Não consegui iniciar: ' + e.error; }
+    try {
+      const info = await api('/api/info', undefined, { noAuthRedirect: true });
+      if (info.app === 'baixa-martins') break;
+    } catch { }
+    if (Date.now() - t0 > 4000 && e.status !== 'erro') $('#startMsg').textContent = 'Preparando o app (só demora na primeira vez)…';
+    await new Promise(r => setTimeout(r, 400));
+  }
+  sp.classList.add('hidden');
+  start();
+}
+
 async function boot() {
+  if (Android?.engine) return bootEngine();
   const saved = store.get('bm.conn', null);
   if (!isApk && /^https?:$/.test(location.protocol)) {
     S.base = location.origin;
@@ -181,7 +204,7 @@ async function start() {
 async function loadState() {
   try {
     const st = await api('/api/state');
-    S.jobs = st.jobs; S.tools = st.tools; S.settings = st.settings; S.local = st.local; S.name = st.name; S.version = st.version;
+    S.jobs = st.jobs; S.tools = st.tools; S.settings = st.settings; S.local = st.local; S.android = st.os === 'android'; S.pc = st.local && !S.android; S.name = st.name; S.version = st.version;
     $('#offline').classList.add('hidden');
     $('#navFoot').innerHTML = `${icon('pc')}<b>${esc(S.name)}</b><br>Baixa Martins ${esc(S.version)}`;
     renderQueue(); renderSettings();
@@ -196,6 +219,7 @@ async function loadLibrary() {
     const lib = await api('/api/library');
     S.lib = lib;
     S.libById = Object.fromEntries(lib.map(i => [i.id, i]));
+    for (const id of S.toScan) { const it = S.libById[id]; if (it) { Android?.scan?.(it.file); S.toScan.delete(id); } }
     renderLibrary(); renderTrList();
   } catch { }
 }
@@ -230,6 +254,16 @@ function onJobs(jobs) {
   }
   renderQueue();
   renderLyrJob();
+  if (S.android) {
+    const act = jobs.filter(j => j.state === 'ativo' || j.state === 'fila');
+    const cur = act.find(j => j.state === 'ativo');
+    const key = act.length + '|' + (cur ? cur.id + Math.round(cur.progress * 50) + cur.phase : '');
+    if (key !== S.workKey) {
+      S.workKey = key;
+      Android.work(JSON.stringify({ active: act.length, text: cur ? `${cur.title} · ${cur.phase}` : 'Na fila', progress: cur && cur.progress > 0.01 ? cur.progress : -1 }));
+    }
+    for (const j of jobs) if (j.type === 'download' && j.state === 'pronto' && before[j.id] && before[j.id] !== 'pronto') S.toScan.add(j.itemId);
+  }
 }
 
 // ---------------------------------------------------------------- abas
@@ -508,6 +542,8 @@ $('#libGroup').onchange = e => { S.libGroup = e.target.value; renderLibrary(); }
 $('#playAll').onclick = () => { const l = libFiltered(); if (l.length) { P.shuffle = false; playList(l, 0, true); } };
 $('#shuffleAll').onclick = () => { const l = libFiltered(); if (l.length) { P.shuffle = true; playList(l, Math.floor(Math.random() * l.length), true); } };
 
+const MIMES = { mp3: 'audio/mpeg', m4a: 'audio/mp4', opus: 'audio/ogg', ogg: 'audio/ogg', mp4: 'video/mp4', webm: 'video/webm', mkv: 'video/x-matroska' };
+const mimeOf = it => MIMES[(it.ext || '').toLowerCase()] || (it.kind === 'audio' ? 'audio/*' : 'video/*');
 function saveToDevice(it) {
   const url = mediaURL(it.id, true);
   const name = it.file.split(/[\\/]/).pop();
@@ -528,7 +564,8 @@ function itemMenu(it) {
       ${it.transcript ? `<button data-a="read">${icon('text')}${isA ? 'Ver a letra' : 'Ver a transcrição'}</button>` : ''}
       ${tj ? `<button data-a="none" disabled>${icon('ai')}A IA está trabalhando (${Math.round(tj.progress * 100)}%)…</button>`
       : `<button data-a="tr">${icon('ai')}${it.transcript ? (isA ? 'Refazer a letra com IA' : 'Refazer a legenda com IA') : (isA ? 'Fazer a letra com IA' : 'Fazer legenda e transcrição com IA')}</button>`}
-      ${S.local ? `<button data-a="reveal">${icon('folder')}Mostrar no computador</button>` : `<button data-a="save">${icon('save')}Salvar neste aparelho</button>`}
+      ${S.android ? `<button data-a="open">${icon('play')}Abrir com outro app</button><button data-a="share">${icon('save')}Compartilhar</button>`
+      : S.local ? `<button data-a="reveal">${icon('folder')}Mostrar no computador</button>` : `<button data-a="save">${icon('save')}Salvar neste aparelho</button>`}
       <button data-a="del" class="danger">${icon('trash')}Excluir</button>
     </div>`, (s, close) => {
     s.onclick = async e => {
@@ -540,6 +577,8 @@ function itemMenu(it) {
       else if (a === 'tr') transcribeDialog(it);
       else if (a === 'reveal') api('/api/open', { id: it.id }).catch(er => toast(er.message, true));
       else if (a === 'save') saveToDevice(it);
+      else if (a === 'open') Android.openWith(it.file, mimeOf(it));
+      else if (a === 'share') Android.share(it.file, mimeOf(it));
       else if (a === 'del') deleteDialog(it);
     };
   });
@@ -567,7 +606,7 @@ function transcribeDialog(it) {
   const isA = it.kind === 'audio';
   const st = S.settings;
   openSheet(`<h3>${icon('ai', 'grad')} ${isA ? 'Fazer a letra com IA' : 'Legenda e transcrição com IA'}</h3>
-    <p>A inteligência artificial ouve ${isA ? 'a música' : 'o vídeo'} no computador e escreve ${isA ? 'a letra sincronizada, separando versos e refrão' : 'tudo o que é falado, com o tempo de cada frase'}. Leva de alguns segundos a poucos minutos.</p>
+    <p>A inteligência artificial ouve ${isA ? 'a música' : 'o vídeo'} ${S.android ? 'aqui no próprio celular' : 'no computador'} e escreve ${isA ? 'a letra sincronizada, separando versos e refrão' : 'tudo o que é falado, com o tempo de cada frase'}. ${S.android ? 'No celular leva alguns minutos (a qualidade “Rápida” é bem mais rápida). Pode sair do app: continua sozinho.' : 'Leva de alguns segundos a poucos minutos.'}</p>
     <div class="field">Idioma ${isA ? 'cantado' : 'falado'}<select class="select" id="tLang">${Object.entries(LANGS).map(([v, l]) => `<option value="${v}" ${v === (st.language || 'auto') ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
     <div class="field">Qualidade da IA<select class="select" id="tModel">
       <option value="otimo" ${st.model === 'otimo' ? 'selected' : ''}>Ótima (recomendada)</option>
@@ -713,7 +752,7 @@ function exportMenu(it, t) {
   const opts = isL
     ? [['lrc', 'Letra sincronizada (.lrc)', 'Para players como Poweramp, foobar, MusicBee'], ['txt', 'Texto (.txt)', 'Letra com versos e refrão'], ['srt', 'Legenda (.srt)', ''], ['vtt', 'Legenda web (.vtt)', '']]
     : [['srt', 'Legenda (.srt)', 'Funciona no VLC, players de vídeo e editores'], ['vtt', 'Legenda web (.vtt)', 'Para sites e players da web'], ['txt', 'Transcrição (.txt)', 'Texto com o tempo de cada parágrafo'], ['lrc', 'Sincronizado (.lrc)', '']];
-  openSheet(`<h3>Exportar</h3><p>${S.local ? 'O arquivo vai para a pasta Downloads do computador.' : 'O arquivo é salvo neste aparelho.'}${isL ? ' O .lrc já fica salvo ao lado da música.' : ' O .srt já fica salvo ao lado do vídeo.'}</p>
+  openSheet(`<h3>Exportar</h3><p>${S.pc ? 'O arquivo vai para a pasta Downloads do computador.' : 'O arquivo vai para a pasta Download/BaixaMartins.'}${isL ? ' O .lrc já fica salvo ao lado da música.' : ' O .srt já fica salvo ao lado do vídeo.'}</p>
     <div class="menu">${opts.map(([f, l, d]) => `<button data-f="${f}">${icon('save')}<span>${l}${d ? `<br><small class="muted">${d}</small>` : ''}</span></button>`).join('')}</div>`, (s, close) => {
     s.onclick = e => {
       const f = e.target.closest('[data-f]')?.dataset.f; if (!f) return;
@@ -758,21 +797,21 @@ async function renderSettings() {
       <div class="field">Qualidade do MP3${sel('sKbps', [[320, '320 kbps (máxima)'], [256, '256 kbps'], [192, '192 kbps'], [128, '128 kbps (menor)']], st.audioKbps)}</div>
       <div class="field">Qualidade dos vídeos${sel('sQual', [['best', 'Melhor possível'], ['2160', '4K'], ['1440', '1440p'], ['1080', 'Full HD 1080p'], ['720', 'HD 720p'], ['480', '480p'], ['360', '360p']], st.videoQual)}</div>
       <div class="field">Downloads ao mesmo tempo${sel('sPar', [[1, '1'], [2, '2'], [3, '3'], [4, '4']], st.parallel)}</div>
-      <div class="field">Pasta das músicas<div class="row"><input type="text" id="sAudioDir" value="${esc(st.audioDir)}" ${S.local ? '' : 'disabled'}>${S.local ? `<button class="icon-btn small" data-open="audio" title="Abrir">${icon('folder')}</button>` : ''}</div></div>
-      <div class="field">Pasta dos vídeos<div class="row"><input type="text" id="sVideoDir" value="${esc(st.videoDir)}" ${S.local ? '' : 'disabled'}>${S.local ? `<button class="icon-btn small" data-open="video" title="Abrir">${icon('folder')}</button>` : ''}</div></div>
+      <div class="field">Pasta das músicas<div class="row"><input type="text" id="sAudioDir" value="${esc(st.audioDir)}" ${S.pc ? '' : 'disabled'}>${S.pc ? `<button class="icon-btn small" data-open="audio" title="Abrir">${icon('folder')}</button>` : ''}</div></div>
+      <div class="field">Pasta dos vídeos<div class="row"><input type="text" id="sVideoDir" value="${esc(st.videoDir)}" ${S.pc ? '' : 'disabled'}>${S.pc ? `<button class="icon-btn small" data-open="video" title="Abrir">${icon('folder')}</button>` : ''}</div></div>
     </div>
-    <div class="box"><h3>${icon('ai')}Letras e legendas com IA</h3><p>O Whisper (IA) roda no seu computador, sem enviar nada para a internet.</p>
-      <div class="field">Qualidade da IA${sel('sModel', [['otimo', 'Ótima (recomendada · 574 MB)'], ['bom', 'Boa (488 MB)'], ['rapido', 'Rápida (148 MB, menos precisa)']], st.model)}</div>
+    <div class="box"><h3>${icon('ai')}Letras e legendas com IA</h3><p>O Whisper (IA) roda ${S.android ? 'no seu celular' : 'no seu computador'}, sem enviar nada para a internet.</p>
+      <div class="field">Qualidade da IA${sel('sModel', (S.android ? [['bom', 'Boa (recomendada · 488 MB)'], ['rapido', 'Rápida (148 MB, menos precisa)'], ['otimo', 'Ótima (574 MB · lenta no celular)']] : [['otimo', 'Ótima (recomendada · 574 MB)'], ['bom', 'Boa (488 MB)'], ['rapido', 'Rápida (148 MB, menos precisa)']]), st.model)}</div>
       <div class="field">Idioma${sel('sLang', Object.entries(LANGS), st.language)}</div>
       <label class="check" style="margin-bottom:12px"><input type="checkbox" id="sAutoL" ${st.autoLyrics ? 'checked' : ''}><i></i>Fazer a letra sozinho ao baixar música</label>
       <label class="check"><input type="checkbox" id="sAutoS" ${st.autoSubs ? 'checked' : ''}><i></i>Fazer legenda e transcrição ao baixar vídeo</label>
     </div>
-    <div class="box"><h3>${icon('gear')}Ferramentas</h3><p>Baixadas sozinhas no computador na primeira vez.</p><div id="toolsBox"></div></div>
-    ${S.local ? `<div class="box" id="phoneBox"><h3>${icon('phone')}Usar no celular</h3><p>Baixe e ouça pelo celular, de casa ou de qualquer lugar.</p><div class="spinner"></div></div>`
+    <div class="box"><h3>${icon('gear')}Ferramentas</h3><p>${S.android ? 'Já vêm no app. O modelo de IA é baixado na primeira letra/legenda.' : 'Baixadas sozinhas no computador na primeira vez.'}</p><div id="toolsBox"></div></div>
+    ${S.android ? '' : S.local ? `<div class="box" id="phoneBox"><h3>${icon('phone')}Usar no celular</h3><p>Baixe e ouça pelo celular, de casa ou de qualquer lugar.</p><div class="spinner"></div></div>`
       : `<div class="box"><h3>${icon('phone')}Este aparelho</h3><p>Conectado ao computador <b>${esc(S.name)}</b>.</p>
         <button class="btn small danger" id="unpair">Desconectar este aparelho</button></div>`}
     <div class="box"><h3>${icon('music')}Sobre</h3><p>Baixa Martins ${esc(S.version)} · use só para conteúdo que você tem direito de baixar.</p>
-      ${S.local ? `<div class="row gap"><button class="btn small" data-open="config">${icon('folder')}Pasta de configurações</button><a class="btn small ghost" href="${S.base}/api/log" target="_blank">Ver registro</a></div>` : ''}</div>`;
+      ${S.local ? `<div class="row gap">${S.pc ? `<button class="btn small" data-open="config">${icon('folder')}Pasta de configurações</button>` : ''}<a class="btn small ghost" href="${S.base}/api/log" target="_blank">Ver registro</a></div>` : ''}</div>`;
   renderSettingsTools();
   const bind = (id, key, num) => { const e = $('#' + id); e.onchange = () => { S.settings[key] = e.type === 'checkbox' ? e.checked : num ? +e.value : e.value; saveSettingsSoon(); }; };
   bind('sFmt', 'audioFmt'); bind('sKbps', 'audioKbps', 1); bind('sQual', 'videoQual'); bind('sPar', 'parallel', 1);
@@ -784,7 +823,7 @@ async function renderSettings() {
     try { await api('/api/unpair', {}); } catch { }
     store.set('bm.conn', null); S.token = ''; es?.close(); stopPlayer(); showPair();
   });
-  if (S.local) renderPhoneBox();
+  if (S.pc) renderPhoneBox();
 }
 
 async function renderPhoneBox(action) {
@@ -1174,8 +1213,13 @@ const sk = $('#plSeek');
 sk.oninput = () => { seeking = true; const d = P.media.duration || P.item?.duration || 0; $('#plCur').textContent = fmtTime(sk.value / 1000 * d); sk.style.setProperty('--v', sk.value / 10 + '%'); };
 sk.onchange = () => { const d = P.media.duration || P.item?.duration || 0; seek(sk.value / 1000 * d); seeking = false; };
 $('#plMore').onclick = () => P.item && itemMenu(P.item);
-$('#aSave').onclick = () => { if (!P.item) return; if (S.local) api('/api/open', { id: P.item.id }).catch(e => toast(e.message, true)); else saveToDevice(P.item); };
-$('#aSave span').textContent = 'Salvar';
+$('#aSave').onclick = () => {
+  if (!P.item) return;
+  if (S.android) Android.share(P.item.file, mimeOf(P.item));
+  else if (S.local) api('/api/open', { id: P.item.id }).catch(e => toast(e.message, true));
+  else saveToDevice(P.item);
+};
+
 $('#aLyrics').onclick = () => {
   P.lyrMode = !P.lyrMode || innerWidth >= 900;
   placeLyrPanel();

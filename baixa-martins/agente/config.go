@@ -87,9 +87,15 @@ func loadConfig() {
 	home, _ := os.UserHomeDir()
 	if cfg.AudioDir == "" {
 		cfg.AudioDir = filepath.Join(musicDir(home), "BaixaMartins")
+		if d := os.Getenv("BM_AUDIO_DIR"); d != "" {
+			cfg.AudioDir = d
+		}
 	}
 	if cfg.VideoDir == "" {
 		cfg.VideoDir = filepath.Join(videosDir(home), "BaixaMartins")
+		if d := os.Getenv("BM_VIDEO_DIR"); d != "" {
+			cfg.VideoDir = d
+		}
 	}
 	if cfg.AudioFmt == "" {
 		cfg.AudioFmt = "mp3"
@@ -102,6 +108,9 @@ func loadConfig() {
 	}
 	if cfg.Model == "" {
 		cfg.Model = "otimo"
+		if os.Getenv("BM_PYTHON") != "" {
+			cfg.Model = "bom" // no celular a "Ótima" fica lenta demais
+		}
 	}
 	if cfg.Language == "" {
 		cfg.Language = "auto"

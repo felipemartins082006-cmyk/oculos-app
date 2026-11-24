@@ -208,6 +208,10 @@ func hms(h, m, s, ms string) float64 {
 }
 
 func threads() int {
+	if isAndroid() {
+		// celular: os núcleos rápidos (os outros são econômicos e atrasam)
+		return min(4, runtime.NumCPU())
+	}
 	n := runtime.NumCPU() - 1
 	if n < 1 {
 		n = 1

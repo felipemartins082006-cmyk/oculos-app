@@ -23,9 +23,14 @@ android {
     applicationId = "com.martins.baixa"
     minSdk = 26
     targetSdk = 36
-    versionCode = 1
-    versionName = "1.0"
+    versionCode = 2
+    versionName = "2.0"
+    // o yt-dlp, o ffmpeg e o Whisper estão compilados para celulares de 64 bits (quase todos desde 2017)
+    ndk { abiFilters += listOf("arm64-v8a") }
   }
+
+  // os programas (motor, Whisper, Python, ffmpeg) precisam ficar soltos numa pasta para rodar
+  packaging { jniLibs { useLegacyPackaging = true } }
 
   sourceSets { getByName("main") { assets.srcDir(webAssets) } }
 
@@ -69,4 +74,6 @@ dependencies {
   implementation(libs.androidx.activity)
   implementation(libs.androidx.core)
   implementation(libs.androidx.webkit)
+  implementation(libs.youtubedl.library)
+  implementation(libs.youtubedl.ffmpeg)
 }

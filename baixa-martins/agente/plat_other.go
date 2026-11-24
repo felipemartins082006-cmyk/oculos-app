@@ -40,7 +40,12 @@ func revealFile(p string) error    { return openPath(filepath.Dir(p)) }
 func killPortOwner(port int) error { return fmt.Errorf("não suportado") }
 func musicDir(home string) string  { return filepath.Join(home, "Music") }
 func videosDir(home string) string { return filepath.Join(home, "Videos") }
-func osName() string               { return runtime.GOOS }
+func osName() string {
+	if isAndroid() {
+		return "android"
+	}
+	return runtime.GOOS
+}
 func runTray() {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)

@@ -42,6 +42,9 @@ func ytdlpArgs(extra ...string) []string {
 	if runtime.GOOS == "windows" {
 		a = append(a, "--ffmpeg-location", binDir())
 	}
+	if isAndroid() {
+		a = append(a, "--ffmpeg-location", os.Getenv("BM_FFMPEG"), "--js-runtimes", "quickjs:"+os.Getenv("BM_QJS"))
+	}
 	return append(a, extra...)
 }
 
@@ -79,7 +82,7 @@ func runJSON(ctx context.Context, args ...string) (*ytInfo, error) {
 	if err := ensureTools(ctx, "ytdlp", "deno"); err != nil {
 		return nil, err
 	}
-	c := hiddenCmdCtx(ctx, toolPath("yt-dlp"), ytdlpArgs(args...)...)
+	c := ytdlpCmd(ctx, ytdlpArgs(args...)...)
 	c.Env = toolEnv()
 	var stderr strings.Builder
 	c.Stderr = &stderr
@@ -309,8 +312,11 @@ func runDownload(j *Job) error {
 		"--print-to-file", "after_move:%(.{id,title,uploader,channel,artist,artists,track,album,duration,width,height,ext})j", jFile,
 		"-P", dir, "-o", "%(title).150B.%(ext)s",
 	)
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == "windows" || isAndroid() {
 		args = append(args, "--windows-filenames")
+	}
+	if t := os.Getenv("BM_TEMP"); t != "" { // celular: baixa numa pasta do app e só depois move para Música/Filmes
+		args = append(args, "-P", "temp:"+t)
 	}
 	kbps := s.AudioKbps
 	if j.Kbps == 128 || j.Kbps == 192 || j.Kbps == 256 || j.Kbps == 320 {
@@ -319,7 +325,7 @@ func runDownload(j *Job) error {
 	args = append(args, formatArgs(j.Kind, quality, format, kbps)...)
 	args = append(args, "https://www.youtube.com/watch?v="+j.VideoID)
 
-	c := hiddenCmdCtx(ctx, toolPath("yt-dlp"), args...)
+	c := ytdlpCmd(ctx, args...)
 	c.Env = toolEnv()
 	stdout, _ := c.StdoutPipe()
 	stderrP, _ := c.StderrPipe()

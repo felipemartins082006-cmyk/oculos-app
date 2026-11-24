@@ -98,8 +98,48 @@ func exeName(n string) string {
 	return n
 }
 
+// No celular (APK) os programas vêm dentro do app; o Android passa onde estão.
+func isAndroid() bool { return os.Getenv("BM_PYTHON") != "" }
+
+func envTool(exe string) string {
+	switch exe {
+	case "yt-dlp":
+		return os.Getenv("BM_YTDLP")
+	case "ffmpeg":
+		return os.Getenv("BM_FFMPEG")
+	case "deno":
+		return os.Getenv("BM_QJS") // QuickJS faz o papel do Deno no celular
+	case "whisper-cli":
+		if v8 := os.Getenv("BM_WHISPER_V8"); v8 != "" && !cpuFast() {
+			return v8
+		}
+		return os.Getenv("BM_WHISPER")
+	}
+	return ""
+}
+
+// Processador ARM com instruções novas (dotprod): usa o Whisper mais rápido.
+func cpuFast() bool {
+	b, err := os.ReadFile("/proc/cpuinfo")
+	if err != nil {
+		return true
+	}
+	return strings.Contains(string(b), "asimddp")
+}
+
+// Comando do yt-dlp. No celular ele é um script Python.
+func ytdlpCmd(ctx context.Context, args ...string) *exec.Cmd {
+	if py := os.Getenv("BM_PYTHON"); py != "" {
+		return hiddenCmdCtx(ctx, py, append([]string{os.Getenv("BM_YTDLP")}, args...)...)
+	}
+	return hiddenCmdCtx(ctx, toolPath("yt-dlp"), args...)
+}
+
 // Caminho do programa. Fora do Windows (testes), usa o que estiver instalado no sistema.
 func toolPath(exe string) string {
+	if p := envTool(exe); p != "" {
+		return p
+	}
 	p := filepath.Join(binDir(), exeName(exe))
 	if _, err := os.Stat(p); err == nil {
 		return p
@@ -149,6 +189,12 @@ func toolSnapshot() []ToolState {
 		c := *st
 		toolMu.Unlock()
 		c.Label, c.Size = s.Label, s.Size
+		if isAndroid() {
+			c.Size = "já vem no app"
+			if s.Key == "deno" {
+				c.Label = "QuickJS (o YouTube precisa)"
+			}
+		}
 		c.Ready = toolPath(s.Exe) != ""
 		out = append(out, c)
 	}
@@ -159,6 +205,9 @@ func toolSnapshot() []ToolState {
 		c := *st
 		toolMu.Unlock()
 		c.Label, c.Size = "Modelo de IA: "+m.Label, m.Size
+		if isAndroid() {
+			c.Label = "Modelo de IA: " + map[string]string{"rapido": "Rápida", "bom": "Boa (recomendada)", "otimo": "Ótima (lenta no celular)"}[k]
+		}
 		_, err := os.Stat(filepath.Join(modelDir(), m.File))
 		c.Ready = err == nil
 		out = append(out, c)
@@ -378,10 +427,10 @@ func toolEnv() []string {
 // Atualiza o yt-dlp (o YouTube muda sempre; versão velha para de funcionar).
 func updateYtdlp(ctx context.Context) (string, error) {
 	p := toolPath("yt-dlp")
-	if p == "" || !strings.HasPrefix(p, binDir()) {
+	if p == "" || (!isAndroid() && !strings.HasPrefix(p, binDir())) {
 		return "", errors.New("yt-dlp não foi instalado pelo Baixa Martins")
 	}
-	c := hiddenCmdCtx(ctx, p, "-U")
+	c := ytdlpCmd(ctx, "-U")
 	c.Env = toolEnv()
 	out, err := c.CombinedOutput()
 	return strings.TrimSpace(string(out)), err
@@ -389,7 +438,7 @@ func updateYtdlp(ctx context.Context) (string, error) {
 
 // Na abertura: baixa o que falta para baixar músicas/vídeos e atualiza o yt-dlp uma vez por dia.
 func prepareAtStartup() {
-	if runtime.GOOS != "windows" {
+	if runtime.GOOS != "windows" && !isAndroid() {
 		return
 	}
 	ctx := context.Background()
@@ -397,6 +446,7 @@ func prepareAtStartup() {
 		log.Printf("preparar: %v", err)
 		return
 	}
+	_ = os.MkdirAll(binDir(), 0o755)
 	st, err := os.Stat(filepath.Join(binDir(), ".atualizado"))
 	if err == nil && time.Since(st.ModTime()) < 20*time.Hour {
 		return
