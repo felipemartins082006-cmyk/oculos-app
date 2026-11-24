@@ -33,11 +33,10 @@ func randomWalk(n int, seed uint64) []Kline {
 
 func allStrategies() []Params {
 	var out []Params
-	for _, s := range []string{"ema", "donchian", "tsmom", "rsi2", "ml"} {
+	for _, s := range []string{"ema", "donchian", "tsmom", "rsi2"} {
 		p := defaultParams()
 		p.Strategy = s
 		p.MomDays = 5
-		p.MLTrainDays, p.MLRetrainDays = 10, 1
 		out = append(out, p)
 	}
 	return out
@@ -60,17 +59,6 @@ func TestNoLookAhead(t *testing.T) {
 				}
 				if full.fraction(i, 1) != cut.fraction(i, 1) || full.initialStop(i, 100) != cut.initialStop(i, 100) || full.trailStop(i, 120) != cut.trailStop(i, 120) {
 					t.Fatalf("%s: tamanho/stop na vela %d usam o futuro", p.Strategy, i)
-				}
-			}
-			// modelo de previsão: o VALOR previsto (não só a decisão) tem que ser idêntico, inclusive nas velas
-			// em que o modelo é re-treinado (a cada 24 velas aqui) — é onde um vazamento apareceria
-			if p.Strategy == "ml" {
-				for i := 590; i < 650; i++ {
-					cut := p.prepare(ks[:i+1], time.Hour)
-					a, b := full.mlP[i], cut.mlP[i]
-					if !(math.IsNaN(a) && math.IsNaN(b)) && a != b || full.mlR[i] != cut.mlR[i] && !math.IsNaN(full.mlR[i]) {
-						t.Fatalf("ml: a previsão na vela %d muda quando existem velas futuras (%v x %v)", i, a, b)
-					}
 				}
 			}
 		}
@@ -404,4 +392,12 @@ func fakeKlineServer(t *testing.T, data map[string][]Kline) string {
 	}))
 	t.Cleanup(srv.Close)
 	return srv.URL
+}
+
+func TestUnknownStrategyFallsBackToDefault(t *testing.T) {
+	p := Params{Strategy: "ml"} // salva pela versão 2.2
+	p.normalize()
+	if p.Strategy != "ema" {
+		t.Fatalf("estratégia desconhecida deveria voltar para a padrão, ficou %q", p.Strategy)
+	}
 }

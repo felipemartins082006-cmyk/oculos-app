@@ -11,8 +11,6 @@ package main
 //   tsmom    Momentum de série temporal: fica comprado enquanto o preço de hoje está acima do de N dias atrás.
 //   rsi2     Reversão à média: compra quedas fortes e curtas (RSI curto muito baixo) dentro de uma tendência
 //            de alta; vende quando o RSI curto se recupera.
-//   ml       Modelo de previsão (curso Quant Trading Accelerator): um modelo treinado com os últimos log-retornos
-//            prevê a próxima vela (veja ml.go); compra quando a previsão é de alta, vende quando vira baixa.
 //
 // Risco (vale para todas):
 //   tamanho  "fixo": % do saldo; "vol": volatilidade-alvo (compra menos quando o mercado está mais agitado).
@@ -26,7 +24,7 @@ import (
 )
 
 type Params struct {
-	Strategy string `json:"strategy"` // ema | donchian | tsmom | rsi2 | ml
+	Strategy string `json:"strategy"` // ema | donchian | tsmom | rsi2
 
 	// ema
 	FastEMA   int     `json:"fastEMA"`
@@ -43,15 +41,6 @@ type Params struct {
 	MRRSI       int     `json:"mrRsi"`
 	MRBuyBelow  float64 `json:"mrBuyBelow"`
 	MRSellAbove float64 `json:"mrSellAbove"`
-	// ml (modelo de previsão)
-	MLModel       string  `json:"mlModel"`       // logit (classificação) | ar (regressão)
-	MLLags        int     `json:"mlLags"`        // quantos retornos passados o modelo usa
-	MLTrainDays   int     `json:"mlTrainDays"`   // janela de treino (dias)
-	MLRetrainDays int     `json:"mlRetrainDays"` // re-treina a cada N dias
-	MLBuyProb     float64 `json:"mlBuyProb"`     // logit: compra com probabilidade de alta ≥ isto
-	MLSellProb    float64 `json:"mlSellProb"`    // logit: vende com probabilidade de alta < isto
-	MLFeeFilter   bool    `json:"mlFeeFilter"`   // só compra se o ganho esperado passar do custo das taxas
-	MLCostPct     float64 `json:"mlCostPct"`     // custo de ida e volta (%), usado no filtro
 
 	// risco
 	StopMode      string  `json:"stopMode"`    // pct | atr
@@ -70,12 +59,11 @@ var strategyNames = map[string]string{
 	"donchian": "Rompimento (Donchian)",
 	"tsmom":    "Momentum",
 	"rsi2":     "Reversão à média (RSI curto)",
-	"ml":       "Modelo de previsão (ML)",
 }
 
 func defaultParams() Params {
 	p := Params{Strategy: "ema", FastEMA: 9, SlowEMA: 21, TrendEMA: 200, RSIPeriod: 14, RSIMaxBuy: 70,
-		StopMode: "pct", StopLossPct: 6, MLFeeFilter: true}
+		StopMode: "pct", StopLossPct: 6}
 	p.normalize()
 	return p
 }
@@ -93,7 +81,7 @@ func (p *Params) normalize() {
 			*v = d
 		}
 	}
-	if p.Strategy == "" {
+	if _, ok := strategyNames[p.Strategy]; !ok { // vazio ou de outra versão (ex.: "ml" da 2.2)
 		p.Strategy = "ema"
 	}
 	def(&p.FastEMA, 9)
@@ -116,28 +104,6 @@ func (p *Params) normalize() {
 	}
 	deff(&p.TargetVol, 50)
 	def(&p.VolDays, 30)
-	if p.MLModel == "" {
-		p.MLModel = "logit"
-	}
-	def(&p.MLLags, 3)
-	def(&p.MLTrainDays, 90)
-	def(&p.MLRetrainDays, 7)
-	deff(&p.MLBuyProb, 0.52)
-	deff(&p.MLSellProb, 0.50)
-	deff(&p.MLCostPct, 0.2)
-}
-
-// mlWindow / mlEvery: janela de treino e intervalo de re-treino, em velas.
-func (p Params) mlWindow(durMs int64) int {
-	return int(math.Round(float64(p.MLTrainDays) * float64(24*time.Hour/time.Millisecond) / float64(durMs)))
-}
-
-func (p Params) mlEvery(durMs int64) int {
-	e := int(math.Round(float64(p.MLRetrainDays) * float64(24*time.Hour/time.Millisecond) / float64(durMs)))
-	if e < 1 {
-		e = 1
-	}
-	return e
 }
 
 func candlesPerDay(dur time.Duration) float64 { return float64(24*time.Hour) / float64(dur) }
@@ -166,9 +132,6 @@ func (p Params) warmup(dur time.Duration) int {
 		max(daysToCandles(p.MomDays, dur) + 1)
 	case "rsi2":
 		max(p.MRRSI + 1)
-	case "ml":
-		ms := int64(dur / time.Millisecond)
-		max(p.MLLags + p.mlWindow(ms) + p.mlEvery(ms) + 2)
 	}
 	if p.Strategy != "tsmom" {
 		max(p.TrendEMA)
@@ -205,22 +168,6 @@ func (p Params) validate(dur time.Duration, live bool) error {
 	case "rsi2":
 		if p.MRRSI < 2 || p.MRBuyBelow <= 0 || p.MRSellAbove <= p.MRBuyBelow || p.MRSellAbove > 100 {
 			return fmt.Errorf("reversão à média: o RSI de venda precisa ser maior que o de compra")
-		}
-	case "ml":
-		ms := int64(dur / time.Millisecond)
-		switch {
-		case p.MLModel != "logit" && p.MLModel != "ar":
-			return fmt.Errorf("tipo de modelo inválido")
-		case p.MLLags < 1 || p.MLLags > 10:
-			return fmt.Errorf("o modelo usa de 1 a 10 retornos passados")
-		case p.mlWindow(ms) < 100:
-			return fmt.Errorf("janela de treino curta demais: com velas de %s, %d dias são só %d velas (precisa de pelo menos 100)", fmtInterval(dur), p.MLTrainDays, p.mlWindow(ms))
-		case p.MLRetrainDays < 1 || p.MLRetrainDays > p.MLTrainDays:
-			return fmt.Errorf("re-treino inválido (de 1 dia até o tamanho da janela de treino)")
-		case p.MLBuyProb < 0.5 || p.MLBuyProb > 0.95 || p.MLSellProb < 0.05 || p.MLSellProb > p.MLBuyProb:
-			return fmt.Errorf("probabilidades inválidas: compra entre 50%% e 95%%, venda menor ou igual à de compra")
-		case p.MLCostPct < 0 || p.MLCostPct > 5:
-			return fmt.Errorf("custo das taxas inválido")
 		}
 	default:
 		return fmt.Errorf("estratégia desconhecida")
@@ -273,9 +220,6 @@ type Prepared struct {
 	atr, vol, mom          []float64
 	ppy                    float64
 	momN                   int
-	// ml: previsão feita no fechamento de cada vela para a vela seguinte (sem olhar o futuro)
-	mlP, mlR, mlM []float64
-	mlModels      []*MLModel
 }
 
 func (p Params) prepare(ks []Kline, dur time.Duration) *Prepared {
@@ -298,8 +242,6 @@ func (p Params) prepare(ks []Kline, dur time.Duration) *Prepared {
 		pr.mom = momentum(c, pr.momN)
 	case "rsi2":
 		pr.mr = rsi(c, p.MRRSI)
-	case "ml":
-		pr.mlP, pr.mlR, pr.mlM, pr.mlModels = mlSeries(ks, c, p, int64(dur/time.Millisecond))
 	}
 	if p.TrendEMA > 0 && p.Strategy != "tsmom" {
 		pr.trend = ema(c, p.TrendEMA)
@@ -374,27 +316,6 @@ func (pr *Prepared) signal(i int, in bool) int {
 		}
 		if in && r > p.MRSellAbove {
 			return sigSell
-		}
-	case "ml":
-		pu, er := pr.mlP[i], pr.mlR[i]
-		if nan(pu) || nan(er) {
-			return sigNone
-		}
-		costOK := !p.MLFeeFilter || er > p.MLCostPct/100
-		if p.MLModel == "ar" {
-			if !in && er > 0 && costOK && pr.trendOK(i) {
-				return sigBuy
-			}
-			if in && er < 0 {
-				return sigSell
-			}
-		} else {
-			if !in && pu >= p.MLBuyProb && costOK && pr.trendOK(i) {
-				return sigBuy
-			}
-			if in && pu < p.MLSellProb {
-				return sigSell
-			}
 		}
 	}
 	return sigNone
@@ -528,30 +449,6 @@ func (pr *Prepared) info(i int) []InfoTile {
 		t = append(t, InfoTile{fmt.Sprintf("Momentum %d dias", p.MomDays), fmt.Sprintf("%+.1f%%", m), pick(m > 0, "positivo: fica comprado", "negativo: fica de fora"), tone(m > 0)})
 	case "rsi2":
 		t = append(t, InfoTile{fmt.Sprintf("RSI de %d", p.MRRSI), fmt.Sprintf("%.1f", nz(pr.mr[i])), fmt.Sprintf("compra abaixo de %.0f, vende acima de %.0f", p.MRBuyBelow, p.MRSellAbove), ""})
-	case "ml":
-		m := pr.mlModels[i]
-		if m == nil {
-			t = append(t, InfoTile{"Previsão", "—", "modelo ainda sem dados suficientes para treinar", ""})
-			break
-		}
-		er := nz(pr.mlR[i]) * 100
-		cost := ""
-		if p.MLFeeFilter {
-			cost = fmt.Sprintf(" · custo %.2f%%", p.MLCostPct)
-		}
-		if p.MLModel == "ar" {
-			t = append(t, InfoTile{"Retorno previsto", fmt.Sprintf("%+.3f%%", er), "na próxima vela" + cost, tone(er > 0)})
-		} else {
-			pu := nz(pr.mlP[i]) * 100
-			t = append(t, InfoTile{"Previsão", fmt.Sprintf("%.1f%% de subir", pu),
-				fmt.Sprintf("ganho esperado %+.3f%%%s · compra ≥ %.0f%%", er, cost, p.MLBuyProb*100), tone(pu >= p.MLBuyProb*100)})
-		}
-		kind := "momentum (o último movimento tende a continuar)"
-		if len(m.W) > 0 && m.W[0] < 0 {
-			kind = "reversão à média (o último movimento tende a se desfazer)"
-		}
-		t = append(t, InfoTile{"Modelo", pick(len(m.W) > 0 && m.W[0] < 0, "Reversão à média", "Momentum"),
-			fmt.Sprintf("%s · treinado em %s com %d velas", kind, time.UnixMilli(m.TrainedAt).Format("02/01"), m.Rows), ""})
 	}
 	if p.TrendEMA > 0 && p.Strategy != "tsmom" && len(t) < 2 {
 		ok := pr.trendOK(i)

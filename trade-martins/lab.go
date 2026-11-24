@@ -97,12 +97,6 @@ func gridFor(base Params, dur time.Duration) []Params {
 		for _, d := range []int{7, 14, 30, 60, 90, 120, 180} {
 			add(with(base, func(p *Params) { p.MomDays = d }))
 		}
-	case "ml":
-		for _, l := range []int{1, 2, 3, 5} {
-			for _, d := range []int{30, 90, 180} {
-				add(with(base, func(p *Params) { p.MLLags, p.MLTrainDays = l, d }))
-			}
-		}
 	case "rsi2":
 		for _, lo := range []float64{5, 10, 15, 25} {
 			for _, hi := range []float64{50, 65, 80} {
@@ -140,8 +134,6 @@ func paramLabel(p Params) string {
 		return fmt.Sprintf("%d dias", p.MomDays)
 	case "rsi2":
 		return fmt.Sprintf("RSI%d <%.0f / >%.0f%s", p.MRRSI, p.MRBuyBelow, p.MRSellAbove, t)
-	case "ml":
-		return fmt.Sprintf("%s, %d retornos, treino %dd", map[string]string{"logit": "logística", "ar": "regressão"}[p.MLModel], p.MLLags, p.MLTrainDays)
 	}
 	return p.Strategy
 }
@@ -341,9 +333,6 @@ func heatmapAxes(p Params) (xn, yn string, xs, ys []float64, set func(*Params, f
 	case "rsi2":
 		return "Compra abaixo de", "Vende acima de", []float64{5, 10, 15, 20, 25, 30}, []float64{50, 60, 70, 80, 90},
 			func(q *Params, x, y float64) { q.MRBuyBelow, q.MRSellAbove = x, y }, [2]float64{p.MRBuyBelow, p.MRSellAbove}
-	case "ml":
-		return "Retornos passados (lags)", "Treino (dias)", []float64{1, 2, 3, 4, 6, 8}, []float64{30, 60, 90, 180, 365},
-			func(q *Params, x, y float64) { q.MLLags, q.MLTrainDays = int(x), int(y) }, [2]float64{float64(p.MLLags), float64(p.MLTrainDays)}
 	}
 	// tsmom: período × stop
 	xs = []float64{7, 14, 21, 30, 45, 60, 90, 120, 180}

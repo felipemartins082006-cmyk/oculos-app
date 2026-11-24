@@ -281,7 +281,7 @@ func (b *Bot) TestKeys(which, key, secret string) (any, error) {
 const maxBacktestCandles = 60000
 
 type LabRequest struct {
-	Kind      string   `json:"kind"` // backtest | walkforward | heatmap | montecarlo | multi | diagnostico | cv
+	Kind      string   `json:"kind"` // backtest | walkforward | heatmap | montecarlo | multi
 	Symbol    string   `json:"symbol"`
 	Symbols   []string `json:"symbols"`
 	Interval  string   `json:"interval"`
@@ -356,17 +356,6 @@ func (b *Bot) Lab(req LabRequest) (any, error) {
 		return walkForward(ks, req.Params, o, req.TrainDays, req.TestDays, req.Objective)
 	case "heatmap":
 		return heatmap(ks, req.Params, o), nil
-	case "diagnostico":
-		d, err := mlDiagnose(ks, req.Params, o)
-		if err == nil {
-			d.Interval = req.Interval
-		}
-		return d, err
-	case "cv":
-		if req.TestDays < 7 {
-			req.TestDays = 30
-		}
-		return mlCrossValidate(ks, req.Params, o, req.TestDays)
 	}
 	res := runBacktest(ks, req.Params, o)
 	if res.Candles < 10 {

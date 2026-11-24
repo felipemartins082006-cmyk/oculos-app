@@ -10,7 +10,6 @@ const STRATS = {
   donchian: { name: "Rompimento (Donchian)", help: "Estilo \"Turtle\": compra quando o fechamento passa da maior máxima das últimas N velas; vende quando fecha abaixo da menor mínima das últimas M velas. Segue tendências fortes." },
   tsmom: { name: "Momentum", help: "Momentum de série temporal: fica comprado enquanto o preço está acima do de N dias atrás, e de fora quando está abaixo. A estratégia de tendência mais estudada." },
   rsi2: { name: "Reversão à média (RSI curto)", help: "Compra quedas fortes e curtas (RSI de 2 períodos muito baixo) dentro de uma tendência de alta e vende quando o RSI se recupera. Muitas operações curtas." },
-  ml: { name: "Modelo de previsão (ML)", help: "Aprende com os últimos retornos (como no curso Quant Trading Accelerator): uma regressão logística estima a chance da próxima vela fechar em alta, ou uma regressão AR robusta estima o próximo retorno. Re-treina sozinho, só com o passado. Compra quando a previsão é boa e, com o filtro de taxas ligado, só se o ganho previsto passar do custo. Rode o Laboratório → \"Diagnóstico do modelo\" antes de operar." },
 };
 const SFIELDS = [
   { k: "fastEMA", l: "EMA rápida", s: ["ema"], int: true },
@@ -23,15 +22,7 @@ const SFIELDS = [
   { k: "mrRsi", l: "Período do RSI curto", s: ["rsi2"], int: true },
   { k: "mrBuyBelow", l: "Compra com RSI abaixo de", s: ["rsi2"] },
   { k: "mrSellAbove", l: "Vende com RSI acima de", s: ["rsi2"] },
-  { k: "mlModel", l: "Tipo de modelo", s: ["ml"], sel: { logit: "Classificação (regressão logística)", ar: "Regressão AR (robusta, Huber)" } },
-  { k: "mlLags", l: "Quantos retornos passados o modelo usa", s: ["ml"], int: true, min: 1 },
-  { k: "mlTrainDays", l: "Treinar com os últimos (dias)", s: ["ml"], int: true, min: 1 },
-  { k: "mlRetrainDays", l: "Re-treinar a cada (dias)", s: ["ml"], int: true, min: 1 },
-  { k: "mlBuyProb", l: "Comprar com chance de alta de pelo menos (0,5–0,95)", s: ["ml"], show: (p) => p.mlModel !== "ar" },
-  { k: "mlSellProb", l: "Vender com chance de alta abaixo de", s: ["ml"], show: (p) => p.mlModel !== "ar" },
-  { k: "mlFeeFilter", l: "Filtro de taxas", s: ["ml"], check: "Só compra se o ganho previsto for maior que o custo de ida e volta" },
-  { k: "mlCostPct", l: "Custo de ida e volta (%)", s: ["ml"], show: (p) => p.mlFeeFilter },
-  { k: "trendEMA", l: "Filtro de tendência: EMA de (0 = desliga)", s: ["ema", "donchian", "rsi2", "ml"], int: true, min: 0 },
+  { k: "trendEMA", l: "Filtro de tendência: EMA de (0 = desliga)", s: ["ema", "donchian", "rsi2"], int: true, min: 0 },
 ];
 const RFIELDS = [
   { k: "sizeMode", l: "Tamanho da compra", sel: { fixo: "% fixo do saldo", vol: "Volatilidade-alvo" },
@@ -52,27 +43,19 @@ function buildParamBoxes(form) {
   const sbox = $('[data-pbox="strategy"]', form), rbox = $('[data-pbox="risk"]', form);
   sbox.innerHTML = `<label class="wide">Estratégia<select name="strategy">${Object.entries(STRATS).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join("")}</select></label>
     <p class="muted small strat-help"></p><div class="grid">` +
-    SFIELDS.map((f) => {
-      const ds = `data-s="${f.s.join(" ")}" data-k="${f.k}"`;
-      if (f.sel) return `<label ${ds}>${f.l}<select name="${f.k}">${Object.entries(f.sel).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select></label>`;
-      if (f.check) return `<label class="check" ${ds}><input type="checkbox" name="${f.k}"><span><b>${f.l}</b><small class="muted">${f.check}</small></span></label>`;
-      return `<label ${ds}>${f.l}<input name="${f.k}" type="number" step="${f.int ? 1 : "any"}" min="${f.min ?? 0}"></label>`;
-    }).join("") + `</div>`;
+    SFIELDS.map((f) => `<label data-s="${f.s.join(" ")}">${f.l}<input name="${f.k}" type="number" step="${f.int ? 1 : "any"}" min="${f.min ?? 0}"></label>`).join("") + `</div>`;
   rbox.innerHTML = `<div class="grid">` + RFIELDS.map((f) => {
     if (f.sel) return `<label data-r="${f.k}">${f.l}<select name="${f.k}">${Object.entries(f.sel).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select>${f.hint ? `<small class="muted">${f.hint}</small>` : ""}</label>`;
     if (f.check) return `<label class="check" data-r="${f.k}"><input type="checkbox" name="${f.k}"><span><b>${f.l}</b><small class="muted">${f.check}</small></span></label>`;
     return `<label data-r="${f.k}">${f.l}<input name="${f.k}" type="number" step="${f.int ? 1 : "any"}" min="0">${f.hint ? `<small class="muted">${f.hint}</small>` : ""}</label>`;
   }).join("") + `</div>`;
-  form.addEventListener("change", (e) => { if (["strategy", "sizeMode", "stopMode", "mlModel", "mlFeeFilter"].includes(e.target.name)) syncParamVisibility(form); });
+  form.addEventListener("change", (e) => { if (["strategy", "sizeMode", "stopMode"].includes(e.target.name)) syncParamVisibility(form); });
   syncParamVisibility(form);
 }
 
 function syncParamVisibility(form) {
   const p = readParams(form);
-  $$("[data-s]", form).forEach((el) => {
-    const f = SFIELDS.find((x) => x.k === el.dataset.k);
-    el.hidden = !el.dataset.s.split(" ").includes(p.strategy) || !!(f && f.show && !f.show(p));
-  });
+  $$("[data-s]", form).forEach((el) => (el.hidden = !el.dataset.s.split(" ").includes(p.strategy)));
   RFIELDS.forEach((f) => { const el = $(`[data-r="${f.k}"]`, form); if (el) el.hidden = f.show ? !f.show(p) : false; });
   const h = $(".strat-help", form);
   if (h) h.textContent = (STRATS[p.strategy] || {}).help || "";
