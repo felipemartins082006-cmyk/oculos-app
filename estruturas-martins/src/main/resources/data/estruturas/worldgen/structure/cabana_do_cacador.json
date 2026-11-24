@@ -1,0 +1,8 @@
+{
+  "type": "estruturas:estrutura",
+  "tipo": "cabana_do_cacador",
+  "biomes": "#estruturas:has_structure/cabana_do_cacador",
+  "spawn_overrides": {},
+  "step": "surface_structures",
+  "terrain_adaptation": "beard_thin"
+}

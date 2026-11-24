@@ -1,0 +1,8 @@
+{
+  "type": "estruturas:estrutura",
+  "tipo": "torre_do_mago",
+  "biomes": "#estruturas:has_structure/torre_do_mago",
+  "spawn_overrides": {},
+  "step": "surface_structures",
+  "terrain_adaptation": "beard_thin"
+}

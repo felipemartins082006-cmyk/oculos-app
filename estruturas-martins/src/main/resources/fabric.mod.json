@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "estruturas",
+  "version": "${version}",
+  "name": "Estruturas Martins",
+  "description": "Adiciona novas estruturas ao mundo: Torre do Mago, Ruínas Antigas e Cabana do Caçador.",
+  "authors": ["Felipe Martins"],
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": { "main": ["com.martins.estruturas.EstruturasMod"] },
+  "depends": {
+    "fabricloader": ">=0.20.0",
+    "minecraft": "~26.2",
+    "java": ">=25",
+    "fabric-api": "*"
+  }
+}

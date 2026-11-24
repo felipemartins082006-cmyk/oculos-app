@@ -1,0 +1,8 @@
+{
+  "type": "estruturas:estrutura",
+  "tipo": "ruinas_antigas",
+  "biomes": "#estruturas:has_structure/ruinas_antigas",
+  "spawn_overrides": {},
+  "step": "surface_structures",
+  "terrain_adaptation": "beard_thin"
+}
