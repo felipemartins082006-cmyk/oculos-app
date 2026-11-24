@@ -77,6 +77,31 @@ main { max-width: 1100px; margin: 0 auto; padding: 18px 16px 80px; }
 canvas { width: 100%; display: block; }
 #chart { height: 340px; }
 #bt-chart { height: 280px; }
+/* parâmetros da estratégia */
+.pbox .wide { display: flex; flex-direction: column; gap: 5px; font-size: 13.5px; max-width: 420px; margin-bottom: 6px; }
+.strat-help { margin: 4px 0 12px; max-width: 760px; }
+h4.sub { font-size: 14px; margin: 18px 0 8px; color: var(--muted); font-weight: 600; }
+.top-gap { margin-top: 14px; }
+
+/* laboratório */
+.lab-actions { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+.lab-act { background: var(--card2); border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.lab-act label { display: flex; flex-direction: column; gap: 4px; width: 100%; }
+.mini-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; width: 100%; font-size: 12.5px; }
+.mini-grid label { display: flex; flex-direction: column; gap: 3px; }
+.mini-grid input, .mini-grid select { padding: 6px 8px; }
+#lab-out { display: flex; flex-direction: column; gap: 14px; }
+.verdict { margin: 10px 0 14px 18px; display: flex; flex-direction: column; gap: 6px; max-width: 900px; }
+.mtable td small { display: block; font-size: 11.5px; white-space: normal; max-width: 260px; }
+.mtable td.best { color: var(--ok); font-weight: 700; }
+.mtable .sep { border-left: 1px solid var(--line); }
+.mtable tr.total td { border-top: 2px solid var(--line); font-weight: 600; }
+.heat td, .heat th { text-align: center; }
+.heat td.hc { cursor: pointer; font-weight: 700; color: #fff; border: 2px solid transparent; }
+.heat td.hc small { display: block; font-weight: 400; font-size: 11px; opacity: .85; }
+.heat td.cur { border-color: #fff; }
+.heat td.na { color: var(--muted); }
+
 @media (max-width: 760px) { #chart { height: 260px; } #bt-chart { height: 220px; } }
 .legend { display: flex; gap: 6px 14px; align-items: center; font-size: 12.5px; color: var(--muted); flex-wrap: wrap; }
 .legend i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; background: var(--c); margin-right: -8px; }
@@ -128,6 +153,7 @@ dialog input { margin-top: 6px; }
   .stats { grid-template-columns: 1fr 1fr; }
   .pos-grid { grid-template-columns: 1fr 1fr; }
   .modes { grid-template-columns: 1fr; }
+  .mini-grid { grid-template-columns: 1fr 1fr; }
   .price { font-size: 30px; }
   .hero-actions { align-items: stretch; width: 100%; }
   .top { padding: 10px 16px; gap: 10px; justify-content: space-between; }

@@ -3,11 +3,87 @@
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const INTERVALS = ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d"];
-const PARAM_KEYS = ["fastEMA", "slowEMA", "trendEMA", "rsiPeriod", "rsiMaxBuy", "stopLossPct", "takeProfitPct"];
+
+// ---------- parâmetros da estratégia (os mesmos campos em Ajustes e no Laboratório) ----------
+const STRATS = {
+  ema: { name: "Cruzamento de médias", help: "Compra quando a EMA rápida cruza para cima da lenta (com RSI abaixo do limite e preço acima da EMA de tendência). Vende no cruzamento para baixo." },
+  donchian: { name: "Rompimento (Donchian)", help: "Estilo \"Turtle\": compra quando o fechamento passa da maior máxima das últimas N velas; vende quando fecha abaixo da menor mínima das últimas M velas. Segue tendências fortes." },
+  tsmom: { name: "Momentum", help: "Momentum de série temporal: fica comprado enquanto o preço está acima do de N dias atrás, e de fora quando está abaixo. A estratégia de tendência mais estudada." },
+  rsi2: { name: "Reversão à média (RSI curto)", help: "Compra quedas fortes e curtas (RSI de 2 períodos muito baixo) dentro de uma tendência de alta e vende quando o RSI se recupera. Muitas operações curtas." },
+};
+const SFIELDS = [
+  { k: "fastEMA", l: "EMA rápida", s: ["ema"], int: true },
+  { k: "slowEMA", l: "EMA lenta", s: ["ema"], int: true },
+  { k: "rsiPeriod", l: "Período do RSI", s: ["ema"], int: true },
+  { k: "rsiMaxBuy", l: "Não comprar com RSI acima de", s: ["ema"] },
+  { k: "breakoutN", l: "Compra ao romper a máxima de (velas)", s: ["donchian"], int: true },
+  { k: "exitN", l: "Vende ao perder a mínima de (velas)", s: ["donchian"], int: true },
+  { k: "momDays", l: "Comparar com o preço de quantos dias atrás", s: ["tsmom"], int: true },
+  { k: "mrRsi", l: "Período do RSI curto", s: ["rsi2"], int: true },
+  { k: "mrBuyBelow", l: "Compra com RSI abaixo de", s: ["rsi2"] },
+  { k: "mrSellAbove", l: "Vende com RSI acima de", s: ["rsi2"] },
+  { k: "trendEMA", l: "Filtro de tendência: EMA de (0 = desliga)", s: ["ema", "donchian", "rsi2"], int: true, min: 0 },
+];
+const RFIELDS = [
+  { k: "sizeMode", l: "Tamanho da compra", sel: { fixo: "% fixo do saldo", vol: "Volatilidade-alvo" },
+    hint: "Volatilidade-alvo compra menos quando o mercado está agitado e mais quando está calmo (sempre até o % máximo)." },
+  { k: "targetVol", l: "Volatilidade-alvo (% ao ano)", show: (p) => p.sizeMode === "vol", hint: "Cripto costuma oscilar 50–90% ao ano. Alvo 40% = posição menor que o máximo na maior parte do tempo." },
+  { k: "volDays", l: "Medir a volatilidade em (dias)", int: true, show: (p) => p.sizeMode === "vol" },
+  { k: "stopMode", l: "Tipo de stop", sel: { pct: "% abaixo da compra", atr: "ATR (tamanho médio das velas)" },
+    hint: "O ATR se adapta: em mercado agitado o stop fica mais longe, em mercado calmo mais perto." },
+  { k: "stopLossPct", l: "Stop-loss % (0 = desliga)", show: (p) => p.stopMode === "pct" },
+  { k: "atrMult", l: "Stop a quantos ATR da compra", show: (p) => p.stopMode === "atr" },
+  { k: "atrPeriod", l: "Período do ATR (velas)", int: true, show: (p) => p.stopMode === "atr" },
+  { k: "trailing", l: "Stop móvel", check: "O stop sobe junto com o maior fechamento desde a compra (nunca desce)" },
+  { k: "takeProfitPct", l: "Take-profit % (0 = desliga)" },
+];
+
+// monta os campos dentro de cada .pbox de um formulário
+function buildParamBoxes(form) {
+  const sbox = $('[data-pbox="strategy"]', form), rbox = $('[data-pbox="risk"]', form);
+  sbox.innerHTML = `<label class="wide">Estratégia<select name="strategy">${Object.entries(STRATS).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join("")}</select></label>
+    <p class="muted small strat-help"></p><div class="grid">` +
+    SFIELDS.map((f) => `<label data-s="${f.s.join(" ")}">${f.l}<input name="${f.k}" type="number" step="${f.int ? 1 : "any"}" min="${f.min ?? 0}"></label>`).join("") + `</div>`;
+  rbox.innerHTML = `<div class="grid">` + RFIELDS.map((f) => {
+    if (f.sel) return `<label data-r="${f.k}">${f.l}<select name="${f.k}">${Object.entries(f.sel).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select>${f.hint ? `<small class="muted">${f.hint}</small>` : ""}</label>`;
+    if (f.check) return `<label class="check" data-r="${f.k}"><input type="checkbox" name="${f.k}"><span><b>${f.l}</b><small class="muted">${f.check}</small></span></label>`;
+    return `<label data-r="${f.k}">${f.l}<input name="${f.k}" type="number" step="${f.int ? 1 : "any"}" min="0">${f.hint ? `<small class="muted">${f.hint}</small>` : ""}</label>`;
+  }).join("") + `</div>`;
+  form.addEventListener("change", (e) => { if (["strategy", "sizeMode", "stopMode"].includes(e.target.name)) syncParamVisibility(form); });
+  syncParamVisibility(form);
+}
+
+function syncParamVisibility(form) {
+  const p = readParams(form);
+  $$("[data-s]", form).forEach((el) => (el.hidden = !el.dataset.s.split(" ").includes(p.strategy)));
+  RFIELDS.forEach((f) => { const el = $(`[data-r="${f.k}"]`, form); if (el) el.hidden = f.show ? !f.show(p) : false; });
+  const h = $(".strat-help", form);
+  if (h) h.textContent = (STRATS[p.strategy] || {}).help || "";
+}
+
+function readParams(form) {
+  const p = { strategy: form.elements.strategy.value };
+  for (const f of [...SFIELDS, ...RFIELDS]) {
+    const el = form.elements[f.k];
+    if (!el) continue;
+    p[f.k] = f.check ? el.checked : f.sel ? el.value : +el.value;
+  }
+  return p;
+}
+
+function fillParams(form, p) {
+  if (!p) return;
+  form.elements.strategy.value = p.strategy || "ema";
+  for (const f of [...SFIELDS, ...RFIELDS]) {
+    const el = form.elements[f.k];
+    if (!el || p[f.k] === undefined) continue;
+    if (f.check) el.checked = !!p[f.k]; else el.value = p[f.k];
+  }
+  syncParamVisibility(form);
+}
 
 let S = null;          // último status
 let cfgLoaded = false; // formulário de ajustes já preenchido
-let lastBT = null;     // último backtest + parâmetros usados
 
 // ---------- utilidades ----------
 async function api(path, body) {
@@ -81,7 +157,7 @@ $$(".tabs button").forEach((b) => b.addEventListener("click", () => {
   $$(".tabs button").forEach((x) => x.classList.toggle("on", x === b));
   $$(".tab").forEach((x) => x.classList.toggle("on", x.id === b.dataset.tab));
   if (b.dataset.tab === "painel" && S) drawChart();
-  if (b.dataset.tab === "testar" && lastBT) drawBT();
+  if (b.dataset.tab === "testar" && window.labRedraw) window.labRedraw();
 }));
 $$("select[name=interval]").forEach((s) => (s.innerHTML = INTERVALS.map((i) => `<option>${i}</option>`).join("")));
 
@@ -105,7 +181,7 @@ function render() {
   $("#warn-teste").hidden = c.mode !== "teste";
   document.title = (L.price ? priceFmt(L.price) + " · " : "") + "TradeMartins";
 
-  $("#pair-label").textContent = `${c.symbol} · velas de ${c.interval}`;
+  $("#pair-label").textContent = `${c.symbol} · velas de ${c.interval} · ${S.strategyName || ""}`;
   $("#price").textContent = L.price ? priceFmt(L.price) + " " + q : "—";
   $("#updated").textContent = L.updated ? "atualizado às " + hm(L.updated) : "conectando…";
   const eb = $("#err-banner");
@@ -126,17 +202,15 @@ function render() {
   const n = sm.wins + sm.losses;
   $("#pnl-sub").textContent = n ? `${n} vendas · ${sm.wins} com lucro (${num((sm.wins / n) * 100, 0)}%)` : "nenhuma venda ainda";
 
-  const I = L.inds || {};
-  $("#rsi").textContent = I.rsi ? num(I.rsi, 1) : "—";
-  $("#rsi-sub").textContent = !I.rsi ? "" : I.rsi >= c.params.rsiMaxBuy ? "acima do limite: não compra" : I.rsi < 30 ? "sobrevendido" : "ok para comprar";
-  if (I.fast && I.slow) {
-    const up = I.fast > I.slow;
-    $("#trend").textContent = up ? "Alta ▲" : "Baixa ▼";
-    $("#trend").className = up ? "pos" : "neg";
-    let sub = up ? "EMA rápida acima da lenta" : "EMA rápida abaixo da lenta";
-    if (I.trend) sub += L.price > I.trend ? " · acima da longa" : " · abaixo da longa";
-    $("#trend-sub").textContent = sub;
-  }
+  const info = L.info || [];
+  [0, 1].forEach((i) => {
+    const t = info[i];
+    $(`#info${i}`).parentElement.hidden = !t && i === 1;
+    $(`#info${i}-label`).textContent = t ? t.label : S.strategyName || "Estratégia";
+    $(`#info${i}`).textContent = t ? t.value : "—";
+    $(`#info${i}`).className = t ? t.tone : "";
+    $(`#info${i}-sub`).textContent = t ? t.sub : "";
+  });
 
   const p = S.position;
   $("#pos-card").hidden = !p;
@@ -233,7 +307,9 @@ function drawChart() {
   const n = ch.t.length;
   let lo = Infinity, hi = -Infinity;
   ch.ohlc.forEach((k) => { lo = Math.min(lo, k[2]); hi = Math.max(hi, k[1]); });
-  [ch.fast, ch.slow, ch.trend || []].forEach((a) => a.forEach((v) => { if (v) { lo = Math.min(lo, v); hi = Math.max(hi, v); } }));
+  const lines = ch.lines || [];
+  lines.forEach((ln) => ln.values.forEach((v) => { if (v) { lo = Math.min(lo, v); hi = Math.max(hi, v); } }));
+  $("#chart-legend").innerHTML = lines.map((ln) => `<i style="--c:var(${ln.color})"></i>${esc(ln.name)}`).join(" ");
   const st = S.stopTake || [];
   st.forEach((v) => { if (v) { lo = Math.min(lo, v); hi = Math.max(hi, v); } });
   const m = (hi - lo) * 0.06 || 1; lo -= m; hi += m;
@@ -259,9 +335,7 @@ function drawChart() {
     const y1 = Y(Math.max(o, c)), y2 = Y(Math.min(o, c));
     g.fillRect(X(i) - bw / 2, y1, bw, Math.max(1, y2 - y1));
   });
-  if (ch.trend) line(g, X, ch.trend.map((v) => (v ? Y(v) : null)), css("--trendc"), 1.4);
-  line(g, X, ch.slow.map((v) => (v ? Y(v) : null)), css("--slow"), 1.8);
-  line(g, X, ch.fast.map((v) => (v ? Y(v) : null)), css("--fast"), 1.8);
+  lines.slice().reverse().forEach((ln) => line(g, X, ln.values.map((v) => (v ? Y(v) : null)), css(ln.color), ln.color === "--trendc" ? 1.4 : 1.8));
 
   // stop / take da posição aberta
   [[st[0], dn, "stop"], [st[1], up, "alvo"]].forEach(([v, col, lb]) => {
@@ -294,34 +368,9 @@ function drawChart() {
   g.fillText(priceFmt(last), w - pad.r + 6, Y(last) + 4);
 }
 
-function drawBT() {
-  const r = lastBT.res;
-  const cv = $("#bt-chart");
-  const { g, w, h } = setupCanvas(cv);
-  const eq = r.equity, pr = r.price;
-  if (!eq.length) return;
-  const bh = pr.map((p) => (r.startEquity * p.v) / pr[0].v);
-  let lo = Infinity, hi = -Infinity;
-  eq.forEach((p, i) => { lo = Math.min(lo, p.v, bh[i]); hi = Math.max(hi, p.v, bh[i]); });
-  const m = (hi - lo) * 0.06 || 1; lo -= m; hi += m;
-  const pad = { l: 8, r: 78, t: 10, b: 22 };
-  const X = (i) => pad.l + ((w - pad.l - pad.r) * i) / Math.max(1, eq.length - 1);
-  const Y = (v) => pad.t + (h - pad.t - pad.b) * (1 - (v - lo) / (hi - lo));
-  axis(g, w, h, pad, lo, hi, (v) => num(v, 0));
-  g.fillStyle = css("--muted");
-  const nl = Math.max(2, Math.floor((w - pad.r) / 90));
-  for (let i = 0; i < eq.length; i += Math.ceil(eq.length / nl)) {
-    g.fillText(new Date(eq[i].t).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" }), Math.max(pad.l, X(i) - 22), h - 6);
-  }
-  g.strokeStyle = css("--line"); g.setLineDash([3, 3]);
-  g.beginPath(); g.moveTo(pad.l, Y(r.startEquity)); g.lineTo(w - pad.r, Y(r.startEquity)); g.stroke(); g.setLineDash([]);
-  line(g, X, bh.map(Y), css("--muted"), 1.4);
-  line(g, X, eq.map((p) => Y(p.v)), css("--accent"), 2);
-}
-
 window.addEventListener("resize", () => {
   if (S && $("#painel").classList.contains("on")) drawChart();
-  if (lastBT && $("#testar").classList.contains("on")) drawBT();
+  if (window.labRedraw && $("#testar").classList.contains("on")) window.labRedraw();
 });
 
 // ---------- botões do painel ----------
@@ -357,7 +406,7 @@ $("#btn-sell").addEventListener("click", (e) => act(e.target, async () => {
 function fillForm(form, c) {
   const set = (k, v) => { const el = form.elements[k]; if (el && v !== undefined) el.value = v; };
   set("symbol", c.symbol); set("interval", c.interval); set("tradePct", c.tradePct); set("maxBuy", c.maxBuy);
-  PARAM_KEYS.forEach((k) => set(k, c.params[k]));
+  fillParams(form, c.params);
 }
 
 function fillConfig() {
@@ -371,14 +420,9 @@ function fillConfig() {
   f.elements.telegramChat.value = c.telegramChat || "";
   f.elements.autostart.checked = !c.noAutostart;
   f.elements.pingUrl.value = c.pingUrl || "";
-  fillForm($("#bt-form"), c);
+  fillForm($("#lab-form"), c);
 }
 
-function readParams(form) {
-  const p = {};
-  PARAM_KEYS.forEach((k) => (p[k] = +form.elements[k].value));
-  return p;
-}
 
 $("#cfg-form").addEventListener("submit", (e) => {
   e.preventDefault();
@@ -457,52 +501,8 @@ $("#btn-tg-del").addEventListener("click", (e) => act(e.target, async () => {
   toast("Avisos desligados");
 }));
 
-// ---------- backtest ----------
-$("#bt-fill").addEventListener("click", () => S && fillForm($("#bt-form"), S.config));
-
-$("#bt-form").addEventListener("submit", (e) => {
-  e.preventDefault();
-  const f = e.target, btn = $("#bt-run");
-  const req = {
-    symbol: f.elements.symbol.value, interval: f.elements.interval.value, days: +f.elements.days.value,
-    params: readParams(f), tradePct: +f.elements.tradePct.value, maxBuy: +f.elements.maxBuy.value || 0, start: +f.elements.start.value,
-  };
-  btn.textContent = "Baixando preços…";
-  act(btn, async () => {
-    const res = await api("backtest", req);
-    lastBT = { req, res };
-    showBT();
-  }).finally(() => (btn.textContent = "Rodar teste"));
-});
-
-function showBT() {
-  const { req, res: r } = lastBT;
-  const q = r.symbol.endsWith("BRL") ? "BRL" : r.symbol.replace(/^.*(USDT|USDC|FDUSD|BTC|ETH|BNB|EUR|TRY)$/, "$1");
-  $("#bt-out").hidden = false;
-  $("#bt-ret").textContent = pct(r.returnPct);
-  $("#bt-ret").className = cls(r.returnPct);
-  $("#bt-end").textContent = `${money(r.startEquity, q)} → ${money(r.endEquity, q)}`;
-  $("#bt-bh").textContent = pct(r.buyHoldPct);
-  $("#bt-bh").className = cls(r.buyHoldPct);
-  $("#bt-dd").textContent = "-" + num(r.maxDDPct, 2) + "%";
-  const n = r.wins + r.losses;
-  $("#bt-n").textContent = n;
-  $("#bt-wr").textContent = n ? `${r.wins} com lucro (${num(r.winRate, 0)}%) · taxas ${money(r.feesPaid, q)}` : "nenhuma operação";
-  $("#bt-title").textContent = `Patrimônio — ${r.symbol} ${r.interval}, ${dt(r.from)} a ${dt(r.to)} (${r.candles} velas)`;
-  const tr = r.trades.slice().reverse();
-  $("#bt-trades").innerHTML = tradeRows(tr.slice(0, 100), q) +
-    (tr.length > 100 ? `<tr><td colspan="7" class="muted">… e mais ${tr.length - 100} operações mais antigas</td></tr>` : "");
-  drawBT();
-}
-
-$("#bt-apply").addEventListener("click", (e) => act(e.target, async () => {
-  if (!lastBT) return;
-  const { req } = lastBT, c = S.config;
-  if (!(await ask("Usar estes ajustes?", `<p>O robô passa a usar <b>${esc(req.symbol.toUpperCase())}</b>, velas de <b>${req.interval}</b> e os parâmetros do teste.</p>`, { okText: "Usar" }))) return;
-  await patchConfig({ symbol: req.symbol, interval: req.interval, params: req.params, tradePct: req.tradePct, maxBuy: req.maxBuy });
-  toast("Ajustes aplicados ao robô");
-  fillConfig();
-}));
+buildParamBoxes($("#cfg-form"));
+buildParamBoxes($("#lab-form"));
 
 refresh();
 setInterval(refresh, 3000);

@@ -12,7 +12,7 @@
   <div class="brand"><img src="icon.svg" alt=""><b>TradeMartins</b></div>
   <nav class="tabs">
     <button data-tab="painel" class="on">Painel</button>
-    <button data-tab="testar">Testar estratégia</button>
+    <button data-tab="testar">Laboratório</button>
     <button data-tab="historico">Histórico</button>
     <button data-tab="ajustes">Ajustes</button>
   </nav>
@@ -41,8 +41,8 @@
     <div class="stats">
       <div class="card stat"><span class="muted">Patrimônio</span><b id="equity">—</b><small id="equity-sub" class="muted"></small></div>
       <div class="card stat"><span class="muted">Resultado das vendas</span><b id="pnl">—</b><small id="pnl-sub" class="muted"></small></div>
-      <div class="card stat"><span class="muted">RSI</span><b id="rsi">—</b><small class="muted" id="rsi-sub"></small></div>
-      <div class="card stat"><span class="muted">Tendência</span><b id="trend">—</b><small class="muted" id="trend-sub"></small></div>
+      <div class="card stat"><span class="muted" id="info0-label">Estratégia</span><b id="info0">—</b><small class="muted" id="info0-sub"></small></div>
+      <div class="card stat"><span class="muted" id="info1-label">Sinal</span><b id="info1">—</b><small class="muted" id="info1-sub"></small></div>
     </div>
 
     <div class="card" id="pos-card" hidden>
@@ -61,7 +61,7 @@
 
     <div class="card">
       <div class="row between"><h3>Gráfico</h3>
-        <div class="legend"><i style="--c:var(--fast)"></i>EMA rápida <i style="--c:var(--slow)"></i>EMA lenta <i style="--c:var(--trendc)"></i>Tendência</div>
+        <div class="legend" id="chart-legend"></div>
       </div>
       <canvas id="chart" height="320"></canvas>
     </div>
@@ -75,44 +75,57 @@
   <!-- TESTAR -->
   <section id="testar" class="tab">
     <div class="card">
-      <h3>Testar a estratégia no passado (backtest)</h3>
-      <p class="muted">Usa os preços reais da Binance dos últimos dias e simula o que o robô teria feito, descontando a taxa de 0,1% por operação e considerando que o stop-loss vende, em média, 0,25% abaixo do preço de stop. Resultado passado não garante resultado futuro.</p>
-      <form id="bt-form" class="grid">
-        <label>Par<input name="symbol" required></label>
-        <label>Velas<select name="interval"></select></label>
-        <label>Dias para trás<input name="days" type="number" min="1" max="1500" value="180"></label>
-        <label>Saldo inicial<input name="start" type="number" min="1" step="any" value="1000"></label>
-        <label>EMA rápida<input name="fastEMA" type="number" min="2"></label>
-        <label>EMA lenta<input name="slowEMA" type="number" min="3"></label>
-        <label>EMA de tendência <small>(0 = desliga)</small><input name="trendEMA" type="number" min="0"></label>
-        <label>Período do RSI<input name="rsiPeriod" type="number" min="2"></label>
-        <label>Não comprar com RSI acima de<input name="rsiMaxBuy" type="number" min="1" max="100" step="any"></label>
-        <label>Stop-loss % <small>(0 = desliga)</small><input name="stopLossPct" type="number" min="0" step="any"></label>
-        <label>Take-profit % <small>(0 = desliga)</small><input name="takeProfitPct" type="number" min="0" step="any"></label>
-        <label>% do saldo por compra<input name="tradePct" type="number" min="1" max="100" step="any"></label>
-        <label>Valor máximo por compra <small>(0 = sem limite)</small><input name="maxBuy" type="number" min="0" step="any"></label>
-        <div class="form-actions">
-          <button class="btn primary" type="submit" id="bt-run">Rodar teste</button>
-          <button class="btn" type="button" id="bt-fill">Carregar ajustes do robô</button>
+      <h3>Laboratório quantitativo</h3>
+      <p class="muted">Teste estratégias com os preços reais da Binance. O objetivo é descobrir se uma estratégia funciona de verdade ou se o bom resultado foi sorte. Taxa de 0,1% por operação e stop vendendo, em média, 0,25% abaixo do preço de stop. <b>Resultado passado não garante resultado futuro.</b></p>
+      <form id="lab-form" onsubmit="return false">
+        <div class="grid">
+          <label>Par<input name="symbol" required></label>
+          <label>Velas<select name="interval"></select></label>
+          <label>Dias para trás<input name="days" type="number" min="1" max="3000" value="1095"></label>
+          <label>Saldo inicial<input name="start" type="number" min="1" step="any" value="1000"></label>
+          <label>% máximo do saldo por compra<input name="tradePct" type="number" min="1" max="100" step="any"></label>
+          <label>Valor máximo por compra <small>(0 = sem limite)</small><input name="maxBuy" type="number" min="0" step="any"></label>
         </div>
+        <div class="pbox" data-pbox="strategy"></div>
+        <h4 class="sub">Risco</h4>
+        <div class="pbox" data-pbox="risk"></div>
+        <div class="form-actions top-gap"><button class="btn" type="button" id="lab-fill">Carregar ajustes do robô</button></div>
       </form>
     </div>
-    <div id="bt-out" hidden>
-      <div class="stats">
-        <div class="card stat"><span class="muted">Resultado do robô</span><b id="bt-ret"></b><small class="muted" id="bt-end"></small></div>
-        <div class="card stat"><span class="muted">Só comprar e segurar</span><b id="bt-bh"></b><small class="muted">no mesmo período</small></div>
-        <div class="card stat"><span class="muted">Maior queda (drawdown)</span><b id="bt-dd" class="neg"></b><small class="muted">do pico ao fundo</small></div>
-        <div class="card stat"><span class="muted">Operações</span><b id="bt-n"></b><small class="muted" id="bt-wr"></small></div>
-      </div>
-      <div class="card">
-        <div class="row between"><h3 id="bt-title">Patrimônio</h3>
-          <div class="legend"><i style="--c:var(--accent)"></i>Robô <i style="--c:var(--muted)"></i>Comprar e segurar</div>
+
+    <div class="card">
+      <h3>O que testar</h3>
+      <div class="lab-actions">
+        <div class="lab-act">
+          <button class="btn primary" data-kind="backtest">Backtest</button>
+          <p class="muted small">Resultado da estratégia no período, com as métricas de um gestor quantitativo, comparado com só comprar e segurar.</p>
         </div>
-        <canvas id="bt-chart" height="280"></canvas>
-        <div class="row end"><button class="btn primary" id="bt-apply">Usar estes ajustes no robô</button></div>
+        <div class="lab-act">
+          <button class="btn primary" data-kind="walkforward">Walk-forward</button>
+          <p class="muted small">O teste que importa: otimiza os parâmetros num pedaço do passado e mede nos meses seguintes, que o otimizador não viu.</p>
+          <div class="mini-grid">
+            <label>Treino (dias)<input id="wf-train" type="number" min="30" value="365"></label>
+            <label>Teste (dias)<input id="wf-test" type="number" min="7" value="90"></label>
+            <label>Otimizar<select id="wf-obj"><option value="sharpe">Sharpe</option><option value="calmar">Calmar</option><option value="retorno">Retorno</option></select></label>
+          </div>
+        </div>
+        <div class="lab-act">
+          <button class="btn primary" data-kind="heatmap">Mapa de parâmetros</button>
+          <p class="muted small">Resultado para uma grade de parâmetros. Estratégia robusta = uma região grande boa, não uma casa isolada.</p>
+        </div>
+        <div class="lab-act">
+          <button class="btn primary" data-kind="montecarlo">Monte Carlo</button>
+          <p class="muted small">Sorteia a ordem das operações 2.000 vezes: a faixa de resultados e de quedas que podem acontecer só por sorte.</p>
+        </div>
+        <div class="lab-act">
+          <button class="btn primary" data-kind="multi">Vários pares</button>
+          <p class="muted small">A mesma estratégia em várias criptos, e numa carteira dividida igualmente entre elas.</p>
+          <label class="small">Pares<input id="multi-syms" value="BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT, ADAUSDT, DOGEUSDT, LINKUSDT"></label>
+        </div>
       </div>
-      <div class="card"><h3>Operações do teste</h3><div class="table-wrap"><table id="bt-trades"></table></div></div>
     </div>
+
+    <div id="lab-out"></div>
   </section>
 
   <!-- HISTÓRICO -->
@@ -138,21 +151,14 @@
       </div>
       <div class="card">
         <h3>Estratégia</h3>
-        <p class="muted">Compra quando a EMA rápida cruza para cima da EMA lenta (com RSI abaixo do limite e preço acima da EMA de tendência). Vende no cruzamento para baixo, no stop-loss ou no take-profit.</p>
-        <div class="grid">
-          <label>EMA rápida<input name="fastEMA" type="number" min="2"></label>
-          <label>EMA lenta<input name="slowEMA" type="number" min="3"></label>
-          <label>EMA de tendência <small>(0 = desliga)</small><input name="trendEMA" type="number" min="0"></label>
-          <label>Período do RSI<input name="rsiPeriod" type="number" min="2"></label>
-          <label>Não comprar com RSI acima de<input name="rsiMaxBuy" type="number" min="1" max="100" step="any"></label>
-        </div>
+        <p class="muted">Antes de trocar, compare as estratégias no <b>Laboratório</b> (principalmente no walk-forward).</p>
+        <div class="pbox" data-pbox="strategy"></div>
       </div>
       <div class="card">
         <h3>Risco</h3>
-        <div class="grid">
-          <label>Stop-loss % <small>(0 = desliga)</small><input name="stopLossPct" type="number" min="0" step="any"><small class="muted">Vende se cair isso desde a compra</small></label>
-          <label>Take-profit % <small>(0 = desliga)</small><input name="takeProfitPct" type="number" min="0" step="any"><small class="muted">Vende se subir isso desde a compra</small></label>
-          <label>% do saldo por compra<input name="tradePct" type="number" min="1" max="100" step="any"></label>
+        <div class="pbox" data-pbox="risk"></div>
+        <div class="grid top-gap">
+          <label>% máximo do saldo por compra<input name="tradePct" type="number" min="1" max="100" step="any"></label>
           <label>Valor máximo por compra <small>(0 = sem limite)</small><input name="maxBuy" type="number" min="0" step="any"><small class="muted">Em USDT (ou na moeda do par). <b>Obrigatório no modo real</b>: o robô nunca usa mais que isso por compra, mesmo que a conta tenha mais saldo.</small></label>
           <label>Perda máxima do dia % <small>(0 = desliga)</small><input name="maxDailyLossPct" type="number" min="0" step="any"><small class="muted">Passou disso, não compra mais até amanhã</small></label>
         </div>
@@ -245,5 +251,6 @@
 <div id="toast" class="toast" hidden></div>
 
 <script src="app.js"></script>
+<script src="lab.js"></script>
 </body>
 </html>

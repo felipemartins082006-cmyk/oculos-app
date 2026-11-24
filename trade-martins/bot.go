@@ -38,7 +38,7 @@ type Config struct {
 func defaultConfig() Config {
 	return Config{
 		Symbol: "BTCUSDT", Interval: "4h",
-		Params:   Params{FastEMA: 9, SlowEMA: 21, TrendEMA: 200, RSIPeriod: 14, RSIMaxBuy: 70, StopLossPct: 6, TakeProfitPct: 0},
+		Params:   defaultParams(),
 		TradePct: 95, MaxDailyLossPct: 5, CheckSeconds: 30,
 		Mode: "simulado", PaperStart: 1000,
 	}
@@ -81,6 +81,9 @@ type Position struct {
 	// Ordem de stop-loss registrada na Binance (modos real e teste). 0 = nenhuma.
 	StopOrderID    int64   `json:"stopOrderId,omitempty"`
 	StopOrderPrice float64 `json:"stopOrderPrice,omitempty"`
+	// Maior fechamento desde a compra (para o stop móvel) e "stop precisa ser recalculado" (ajustes mudaram).
+	Highest   float64 `json:"highest,omitempty"`
+	StopDirty bool    `json:"stopDirty,omitempty"`
 }
 
 type LogLine struct {
@@ -107,17 +110,17 @@ type State struct {
 
 // Live = o que o painel mostra e não precisa ser salvo.
 type Live struct {
-	Price     float64            `json:"price"`
-	Equity    float64            `json:"equity"`
-	QuoteBal  float64            `json:"quoteBal"`
-	BaseBal   float64            `json:"baseBal"`
-	Base      string             `json:"base"`
-	Quote     string             `json:"quote"`
-	Inds      map[string]float64 `json:"inds"`
-	Updated   int64              `json:"updated"`
-	LastError string             `json:"lastError"`
-	Candles   []Kline            `json:"-"`
-	NextCheck int64              `json:"nextCheck"`
+	Price     float64    `json:"price"`
+	Equity    float64    `json:"equity"`
+	QuoteBal  float64    `json:"quoteBal"`
+	BaseBal   float64    `json:"baseBal"`
+	Base      string     `json:"base"`
+	Quote     string     `json:"quote"`
+	Info      []InfoTile `json:"info"`
+	Updated   int64      `json:"updated"`
+	LastError string     `json:"lastError"`
+	Candles   []Kline    `json:"-"`
+	NextCheck int64      `json:"nextCheck"`
 }
 
 type Bot struct {
@@ -128,6 +131,8 @@ type Bot struct {
 	bn   *Binance // Binance do modo atual (normal ou de teste)
 	data *Binance // Binance normal, só dados públicos (backtest)
 	info *SymbolInfo
+	prep *Prepared // indicadores da última checagem (usados na compra: tamanho e stop)
+	last int       // índice da última vela fechada em prep
 	wake chan struct{}
 	dir  string
 
@@ -145,6 +150,7 @@ func NewBot(dir string) *Bot {
 	b := &Bot{dir: dir, cfg: defaultConfig(), wake: make(chan struct{}, 1), data: NewBinance(),
 		httpc: &http.Client{Timeout: 10 * time.Second}}
 	readJSON(filepath.Join(dir, "config.json"), &b.cfg)
+	b.cfg.Params.normalize() // ajustes de versões antigas ganham os campos novos
 	if readJSON(filepath.Join(dir, "estado.json"), &b.st) != nil {
 		b.st.PaperQuote = b.cfg.PaperStart
 	}
@@ -311,11 +317,7 @@ func (b *Bot) tick() {
 	}
 	price := ks[len(ks)-1].C // vela atual (ainda aberta) = preço agora
 	closed := ks[:len(ks)-1]
-	closes := make([]float64, len(closed))
-	for i, k := range closed {
-		closes[i] = k.C
-	}
-	ind := compute(closes, cfg.Params)
+	pr := cfg.Params.prepare(closed, intervalDur(cfg.Interval))
 	last := len(closed) - 1
 
 	// saldo
@@ -343,10 +345,13 @@ func (b *Bot) tick() {
 	b.live.Base, b.live.Quote = info.Base, info.Quote
 	b.live.Equity = quoteBal + baseBal*price
 	b.live.Candles = ks
-	b.live.Inds = map[string]float64{"fast": nz(ind.Fast[last]), "slow": nz(ind.Slow[last]), "rsi": nz(ind.RSI[last])}
-	if ind.Trend != nil {
-		b.live.Inds["trend"] = nz(ind.Trend[last])
+	b.live.Info = pr.info(last)
+	b.prep, b.last = pr, last
+	if b.cfg.Params != cfg.Params { // ajustes mudaram durante a checagem: não decide com indicadores velhos
+		b.prep = nil
+		return
 	}
+	b.updateStopLocked(closed, pr, last)
 	b.live.Updated = time.Now().UnixMilli()
 	if !balErr {
 		b.live.LastError = ""
@@ -397,7 +402,7 @@ func (b *Bot) tick() {
 
 	if closed[last].OpenTime != b.st.LastCandle {
 		b.st.LastCandle = closed[last].OpenTime
-		sig := signalAt(ind, closes, last, cfg.Params)
+		sig := pr.signal(last, b.st.Position != nil)
 		switch {
 		case sig == sigBuy && b.st.Position == nil:
 			if b.st.DayBlocked {
@@ -447,7 +452,7 @@ func (b *Bot) buyLocked(price float64) (retry bool) {
 			_, refused := err.(*APIError)
 			return !refused
 		}
-		spend := free[info.Quote] * cfg.TradePct / 100
+		spend := free[info.Quote] * b.sizeFractionLocked()
 		if cfg.MaxBuy > 0 && spend > cfg.MaxBuy {
 			spend = cfg.MaxBuy
 		}
@@ -468,7 +473,7 @@ func (b *Bot) buyLocked(price float64) (retry bool) {
 		pos.Cost = r.QuoteQty + r.Commission[info.Quote] + b.otherFeesLocked(r.Commission)
 		pos.Entry = r.QuoteQty / r.ExecutedQty
 	} else {
-		spend := b.st.PaperQuote * cfg.TradePct / 100
+		spend := b.st.PaperQuote * b.sizeFractionLocked()
 		if cfg.MaxBuy > 0 && spend > cfg.MaxBuy {
 			spend = cfg.MaxBuy
 		}
@@ -484,7 +489,7 @@ func (b *Bot) buyLocked(price float64) (retry bool) {
 		b.st.PaperBase += pos.Qty
 		b.st.PaperSymbol = cfg.Symbol
 	}
-	pos.Stop, pos.Take = cfg.Params.stops(pos.Entry)
+	pos.Stop, pos.Take, pos.Highest = b.entryStopLocked(pos.Entry), cfg.Params.take(pos.Entry), pos.Entry
 	b.st.Position = pos
 	b.st.Trades = append(b.st.Trades, Trade{Time: now, Side: "COMPRA", Symbol: cfg.Symbol, Mode: cfg.Mode,
 		Price: pos.Entry, Qty: pos.Qty, Quote: pos.Cost, Reason: "sinal"})
@@ -713,20 +718,10 @@ func (b *Bot) UpdateConfig(nc Config) error {
 	nc.Symbol = strings.ToUpper(strings.TrimSpace(nc.Symbol))
 	nc.PingURL = strings.TrimSpace(nc.PingURL)
 	nc.TelegramChat = strings.TrimSpace(nc.TelegramChat)
-	p := nc.Params
+	nc.Params.normalize()
 	switch {
 	case nc.Symbol == "":
 		return fmt.Errorf("informe o par (ex.: BTCUSDT)")
-	case p.FastEMA < 2 || p.SlowEMA <= p.FastEMA:
-		return fmt.Errorf("a EMA lenta precisa ser maior que a rápida (e a rápida pelo menos 2)")
-	case p.TrendEMA != 0 && p.TrendEMA <= p.SlowEMA:
-		return fmt.Errorf("a EMA de tendência precisa ser maior que a lenta (ou 0 para desligar)")
-	case p.TrendEMA > 800 || p.SlowEMA > 800:
-		return fmt.Errorf("médias acima de 800 velas não são suportadas")
-	case p.RSIPeriod < 2 || p.RSIMaxBuy <= 0 || p.RSIMaxBuy > 100:
-		return fmt.Errorf("RSI inválido")
-	case p.StopLossPct < 0 || p.StopLossPct >= 50 || p.TakeProfitPct < 0 || p.TakeProfitPct > 500:
-		return fmt.Errorf("stop-loss ou take-profit inválido")
 	case nc.TradePct <= 0 || nc.TradePct > 100:
 		return fmt.Errorf("o tamanho da compra precisa ficar entre 1%% e 100%% do saldo")
 	case nc.Mode != "simulado" && nc.Mode != "teste" && nc.Mode != "real":
@@ -740,6 +735,9 @@ func (b *Bot) UpdateConfig(nc Config) error {
 	}
 	if _, ok := map[string]bool{"1m": true, "3m": true, "5m": true, "15m": true, "30m": true, "1h": true, "2h": true, "4h": true, "6h": true, "8h": true, "12h": true, "1d": true}[nc.Interval]; !ok {
 		return fmt.Errorf("intervalo inválido")
+	}
+	if err := nc.Params.validate(intervalDur(nc.Interval), true); err != nil {
+		return err
 	}
 	if nc.CheckSeconds < 5 {
 		nc.CheckSeconds = 5
@@ -769,8 +767,17 @@ func (b *Bot) UpdateConfig(nc Config) error {
 	}
 	b.bn.Key, b.bn.Secret = nc.keys(nc.Mode)
 	if b.cfg.Params != nc.Params && b.st.Position != nil {
-		b.st.Position.Stop, b.st.Position.Take = nc.Params.stops(b.st.Position.Entry)
+		pos := b.st.Position
+		if nc.Params.StopMode == "pct" {
+			// dá para recalcular já (não precisa do ATR)
+			pos.Stop = math.Max(pctStop(nc.Params, pos.Entry), (&Prepared{p: nc.Params}).trailStop(-1, math.Max(pos.Highest, pos.Entry)))
+			pos.StopDirty = false
+		} else {
+			pos.StopDirty = true // stop por ATR: recalcula na próxima checagem, com as velas
+		}
+		pos.Take = nc.Params.take(pos.Entry)
 		b.stopRetryAt = time.Time{} // a ordem de stop na Binance é atualizada na próxima checagem
+		b.prep = nil
 	}
 	b.cfg = nc
 	b.tgMu.Lock()
@@ -823,5 +830,49 @@ func (b *Bot) resumeLocked() {
 	} else {
 		b.logf("info", "Robô retomado automaticamente (versão %s: %s, %s, modo %s).", version, b.cfg.Symbol, b.cfg.Interval, b.cfg.Mode)
 		b.alert(fmt.Sprintf("▶️ Robô retomado (versão %s): %s, velas de %s%s", version, b.cfg.Symbol, b.cfg.Interval, modeTag(b.cfg.Mode)))
+	}
+}
+
+// sizeFractionLocked = que fração do saldo usar na compra (volatilidade-alvo ou % fixo).
+func (b *Bot) sizeFractionLocked() float64 {
+	max := b.cfg.TradePct / 100
+	if b.prep == nil {
+		return max
+	}
+	return b.prep.fraction(b.last, max)
+}
+
+// entryStopLocked = stop logo depois da compra (por % ou por ATR, com os indicadores da última checagem).
+func (b *Bot) entryStopLocked(entry float64) float64 {
+	if b.prep == nil {
+		return pctStop(b.cfg.Params, entry)
+	}
+	return b.prep.initialStop(b.last, entry)
+}
+
+// updateStopLocked: stop móvel (sobe com o maior fechamento desde a compra) e recálculo depois de mudar ajustes.
+// Roda a cada checagem; o stop nunca desce, a não ser que os ajustes tenham mudado.
+func (b *Bot) updateStopLocked(closed []Kline, pr *Prepared, last int) {
+	pos := b.st.Position
+	if pos == nil || pos.Symbol != b.cfg.Symbol || pos.Mode != b.cfg.Mode {
+		return
+	}
+	// maior fechamento desde a compra (vale também depois de o robô ficar fora do ar)
+	for i := len(closed) - 1; i >= 0 && closed[i].OpenTime >= pos.Time-int64(intervalDur(b.cfg.Interval)/time.Millisecond); i-- {
+		if closed[i].CloseTime > pos.Time && closed[i].C > pos.Highest {
+			pos.Highest = closed[i].C
+		}
+	}
+	old := pos.Stop
+	if pos.StopDirty {
+		pos.Stop = pr.initialStop(last, pos.Entry)
+		pos.StopDirty = false
+	}
+	if ts := pr.trailStop(last, math.Max(pos.Highest, pos.Entry)); ts > pos.Stop {
+		pos.Stop = ts
+	}
+	if pos.Stop != old {
+		b.logf("info", "Stop-loss ajustado: %s → %s.", fmtPrice(old), fmtPrice(pos.Stop))
+		b.stopRetryAt = time.Time{}
 	}
 }

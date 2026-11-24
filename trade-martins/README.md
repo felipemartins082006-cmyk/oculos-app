@@ -11,8 +11,10 @@ Robô de trade de cripto para a **Binance (Spot)**, com painel no navegador.
   stop na própria Binance, então a proteção funciona **mesmo com o PC desligado**.
 - **Avisos no celular pelo Telegram**: compras, vendas, erros, robô ligado/desligado e quando ele volta depois de
   ficar fora do ar.
-- **Testar estratégia** (backtest): roda a estratégia sobre os preços dos últimos meses ou anos e mostra
-  quanto teria ganhado ou perdido, comparando com "só comprar e segurar".
+- **4 estratégias** (cruzamento de médias, rompimento, momentum, reversão à média) com risco quantitativo:
+  tamanho por **volatilidade-alvo**, stop por **ATR** e **stop móvel**.
+- **Laboratório quantitativo**: backtest com métricas profissionais (Sharpe, Sortino, Calmar…), **walk-forward**,
+  mapa de parâmetros, **Monte Carlo** e teste em vários pares com carteira.
 
 > ⚠️ **Robô de trade não garante lucro.** Nos testes com os últimos 2 a 3 anos, a estratégia padrão
 > **perdeu menos que segurar a moeda nas quedas, mas ganhou menos nas altas**, e em vários pares e períodos
@@ -48,22 +50,28 @@ O painel só abre **neste computador**. Ninguém de fora consegue acessar, e a c
 
 ## 2. Como o robô decide
 
-Ele olha as **velas** do par (por padrão BTCUSDT, velas de 4 horas) e usa três indicadores:
+O robô olha as **velas** do par (por padrão BTCUSDT, velas de 4 horas) e segue **uma de quatro estratégias**,
+escolhida em **Ajustes › Estratégia**. Só opera **comprado** (Spot): ou o dinheiro está em USDT, ou está na
+cripto. Nunca usa alavancagem.
 
-| Indicador | Para quê |
-|---|---|
-| **EMA rápida (9)** e **EMA lenta (21)** | Médias dos preços. Quando a rápida cruza **para cima** da lenta, o preço está ganhando força. |
-| **EMA de tendência (200)** | Só compra se o preço estiver **acima** dela, ou seja, em tendência de alta. 0 desliga. |
-| **RSI (14)** | Não compra se o RSI estiver acima de 70 (preço "esticado" demais). |
+| Estratégia | Compra quando… | Vende quando… |
+|---|---|---|
+| **Cruzamento de médias** (padrão) | a EMA rápida (9) cruza para cima da lenta (21), com RSI abaixo de 70 e preço acima da EMA de tendência (200) | a EMA rápida cruza para baixo da lenta |
+| **Rompimento (Donchian)** | o fechamento passa da maior máxima das últimas 20 velas (estilo "Turtle") | o fechamento fica abaixo da menor mínima das últimas 10 velas |
+| **Momentum** | o preço está acima do de N dias atrás (padrão 30) | o preço fica abaixo do de N dias atrás |
+| **Reversão à média** | o RSI de 2 períodos cai abaixo de 10 (queda forte e curta) dentro de uma tendência de alta | o RSI de 2 períodos passa de 70 |
 
-- **Compra** quando a EMA rápida cruza para cima da lenta e os filtros deixam.
-- **Vende** quando a EMA rápida cruza para baixo da lenta, **ou** se cair o **stop-loss** (padrão 6%)
-  desde a compra, **ou** se subir o **take-profit** (padrão desligado).
-- Só opera **comprado** (Spot): ou o dinheiro está em USDT, ou está na cripto. Nunca usa alavancagem.
-- **Perda máxima do dia** (padrão 5%): se o patrimônio cair isso no dia, não faz novas compras até o dia seguinte.
-- O sinal é conferido quando a vela **fecha**. O stop-loss é vigiado a cada 30 segundos.
+**Risco** (vale para todas, em **Ajustes › Risco**):
 
-Tudo isso pode ser mudado em **Ajustes**. Antes de mudar, teste em **Testar estratégia**.
+- **Tamanho da compra:** "% fixo do saldo" ou **volatilidade-alvo**. Na volatilidade-alvo, o robô compra
+  menos quando o mercado está agitado: se a cripto oscila 80% ao ano e o alvo é 40%, usa metade do % máximo.
+- **Stop:** "% abaixo da compra" ou **ATR** (N vezes o tamanho médio das velas, que se adapta ao mercado).
+- **Stop móvel:** o stop sobe junto com o maior fechamento desde a compra e nunca desce. Protege o lucro.
+- **Take-profit** opcional, **valor máximo por compra** e **perda máxima do dia** (padrão 5%).
+
+O sinal é conferido quando a vela **fecha**; o stop-loss é vigiado a cada 30 segundos (e fica registrado na
+Binance nos modos real e de teste). **O robô ao vivo, o backtest e o laboratório usam exatamente o mesmo código
+de estratégia**, então nunca discordam.
 
 ### As contas
 
@@ -72,41 +80,64 @@ Tudo isso pode ser mudado em **Ajustes**. Antes de mudar, teste em **Testar estr
   O robô calcula sobre as últimas 1000 velas fechadas.
 - **RSI de 14 (método de Wilder):** médias suavizadas das altas e das baixas;
   `RSI = 100 − 100 / (1 + média das altas / média das baixas)`.
-- **Quanto compra:** saldo livre × "% do saldo por compra", limitado ao "valor máximo por compra".
+- **ATR de N velas:** média (suavizada) da amplitude de cada vela: máxima − mínima, incluindo saltos desde o
+  fechamento anterior.
+- **Volatilidade:** desvio padrão dos retornos diários das velas dos últimos N dias, convertido para "% ao ano".
+- **Quanto compra:** saldo livre × "% máximo do saldo" (ou × alvo ÷ volatilidade, se menor), limitado ao
+  "valor máximo por compra".
 - **Taxas:** 0,1% na compra e na venda (no modo real, usa a taxa que a Binance cobrou, inclusive a paga em BNB).
-- **Stop-loss:** preço médio de compra × (1 − stop%). Take-profit: × (1 + take%).
+- **Stop-loss:** preço médio de compra × (1 − stop%), ou preço de compra − N × ATR. Com stop móvel, a mesma
+  conta é feita a partir do maior fechamento desde a compra, e o stop só sobe. Take-profit: × (1 + take%).
 - **Resultado de uma operação:** valor líquido da venda − custo total da compra (as duas taxas incluídas).
   Exemplo: compra 100 USDT a 60.000 → taxa 0,10 → 0,001665 BTC. Vende a 63.000 → 104,90 − 0,10 de taxa
   = 104,79 → **+4,79 USDT (+4,79%)**.
 - **Patrimônio:** moeda (USDT…) + cripto × preço atual. A perda do dia compara com o patrimônio da primeira
   checagem do dia.
 
-## 3. Testar a estratégia (backtest)
+## 3. Laboratório quantitativo
 
-Na aba **Testar estratégia**, escolha o par, o tamanho das velas, quantos dias para trás e os parâmetros,
-e clique em **Rodar teste**. A simulação:
+A aba **Laboratório** testa as estratégias com os preços reais da Binance. A ideia é a de um gestor quantitativo:
+**tentar provar que a estratégia NÃO funciona** antes de colocar dinheiro.
 
-- usa o preço de fechamento de cada vela; o sinal aparece quando a vela fecha e a ordem sai na abertura da
-  vela seguinte (igual ao robô);
-- desconta 0,1% de taxa na compra e na venda;
-- considera que o stop-loss vende, em média, 0,25% abaixo do preço de stop (como a ordem de stop na Binance);
-- se o stop e o take-profit forem tocados na mesma vela, conta o stop (a hipótese pior);
-- respeita o "% do saldo" e o "valor máximo por compra";
-- baixa velas a mais antes do período só para "aquecer" as médias, então os valores das médias batem com os do
-  robô ao vivo (que usa as últimas 1000 velas).
+| Teste | O que responde |
+|---|---|
+| **Backtest** | Como a estratégia teria ido no período, comparada a só comprar e segurar |
+| **Walk-forward** | **O teste que importa.** Otimiza os parâmetros num pedaço do passado (treino, ex.: 365 dias) e mede nos meses seguintes (teste, ex.: 90 dias), que o otimizador não viu. Anda no tempo e emenda os testes. |
+| **Mapa de parâmetros** | O resultado numa grade de parâmetros. Robusto = região grande boa; frágil = uma casa boa isolada |
+| **Monte Carlo** | Sorteia 2.000 vezes a ordem das operações: faixa de resultados e de quedas possíveis só por sorte |
+| **Vários pares** | A mesma estratégia em várias criptos, e numa carteira dividida igualmente entre elas |
 
-Você vê:
+**Métricas:** retorno total e ao ano (CAGR), volatilidade, **Sharpe** (retorno por unidade de risco), Sortino,
+maior queda (medida na mínima das velas), Calmar (retorno ao ano ÷ maior queda), número de operações, acerto,
+fator de lucro, média por operação, tempo comprado e se o Sharpe é **estatisticamente significativo**
+(t = Sharpe × √anos acima de 1,96). Cada resultado vem com uma explicação em português do que ele quer dizer.
 
-- **Resultado do robô** e o resultado de **só comprar e segurar** no mesmo período.
-- **Maior queda (drawdown)**: o pior tombo do patrimônio entre um pico e um fundo.
-- Quantas operações deram lucro, quanto foi pago em taxas (0,1% por operação) e o gráfico.
+**Como a simulação funciona:** o sinal aparece no fechamento da vela e a ordem sai na abertura da seguinte;
+0,1% de taxa na compra e na venda; o stop vende, em média, 0,25% abaixo do preço de stop; se stop e take-profit
+forem tocados na mesma vela, conta o stop; velas a mais antes do período servem só para "aquecer" os indicadores.
+Um teste automático garante que **nenhuma estratégia usa dados do futuro**, e outro que o walk-forward escolhe
+os parâmetros de cada janela **só com dados anteriores a ela**.
 
-Se gostar do resultado, clique em **Usar estes ajustes no robô**.
+### O que os testes mostraram (novembro de 2026, velas de 4h, 3 anos)
 
-Dicas:
-- **Velas curtas (1m, 5m, 15m, 1h) quase sempre perdem**: o robô opera demais e as taxas comem o lucro.
-- Teste em **vários períodos e pares**. Um ajuste que só funciona num período específico provavelmente
-  foi sorte e não vai se repetir.
+Para ser honesto sobre o que esperar:
+
+- **Nenhuma estratégia, em nenhum par, foi estatisticamente significativa** (nem só segurar a moeda).
+  Três anos de cripto é pouco tempo para provar alguma coisa.
+- **Walk-forward:** em todas as estratégias, otimizar os parâmetros no passado deu Sharpe ≈ 1 no treino e
+  **Sharpe negativo nos meses seguintes**. É overfitting: não otimize os parâmetros procurando o melhor resultado.
+  Os parâmetros "escolhidos" mudavam de janela para janela (ex.: momentum de 90 dias, depois 14, depois 180).
+- **No BTC sozinho**, nenhuma estratégia rendeu mais que só segurar. A melhor por risco foi o momentum com
+  volatilidade-alvo (sem stop fixo): mesmo Sharpe de segurar (0,57), mas maior queda de 35% em vez de 56%.
+- **O que mais ajudou foi diversificar.** Numa carteira com peso igual em 8 criptos, com os parâmetros padrão
+  (sem otimizar): momentum + volatilidade-alvo teve Sharpe 0,80 e maior queda de 33%; cruzamento de médias,
+  Sharpe 0,89 e queda de 25%; só segurar as 8, Sharpe 0,43 e queda de 69%. Ainda assim não significativo, e com
+  viés de sobrevivência (a lista tem criptos que são grandes hoje).
+- **Monte Carlo** do momentum no BTC: a mesma estratégia, com as operações em outra ordem, teria 28% de chance
+  de terminar no prejuízo e maior queda típica de 32%.
+
+Resumo: as estratégias **reduzem as quedas** em relação a segurar, mas **nenhuma mostrou lucro comprovado**.
+O robô ao vivo ainda opera **um par por vez**; uma carteira de vários pares ao vivo seria o próximo passo.
 
 ## 4. Stop-loss registrado na Binance
 
@@ -208,10 +239,15 @@ O painel (`web/`) vai embutido no `.exe`.
 | `bot.go` | Laço do robô, compra/venda simulada, ajustes, estado salvo em JSON |
 | `exchange.go` | Ordens de verdade: stop-loss registrado na Binance, cancelamento e conferência quando a conexão cai |
 | `notify.go` | Avisos pelo Telegram e sinal de vida (healthchecks.io) |
-| `strategy.go` | EMA, RSI, sinal de compra/venda e backtest |
+| `indicators.go` | EMA, RSI, ATR, canal de Donchian, volatilidade, momentum (sem olhar o futuro) |
+| `strategy.go` | As 4 estratégias, tamanho da compra, stop por % / ATR / móvel (usado pelo robô, backtest e laboratório) |
+| `backtest.go` | Simulação vela a vela |
+| `metrics.go` | Sharpe, Sortino, Calmar, maior queda, fator de lucro, significância… |
+| `lab.go` | Walk-forward, mapa de parâmetros, Monte Carlo, vários pares e carteira |
+| `telegram_cmd.go` | Comandos pelo Telegram |
 | `binance.go` | API da Binance (normal e de teste): velas, regras do par, saldo, ordens (assinatura HMAC-SHA256) |
 | `server.go` | API do painel (só aceita pedidos do próprio painel) |
-| `web/` | Painel (HTML/CSS/JS, gráficos em canvas) |
+| `web/` | Painel (HTML/CSS/JS, gráficos em canvas); `web/lab.js` é o laboratório |
 
 Os testes de `exchange_test.go` rodam o modo real contra uma **Binance falsa** (imita a API, confere a
 assinatura, trava as moedas da ordem de stop, executa o stop quando o preço cai e derruba a conexão no meio de

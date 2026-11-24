@@ -195,7 +195,7 @@ func (b *Bot) statusText() string {
 	c, L := b.cfg, b.live
 	q := L.Quote
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "📊 %s — velas de %s%s\n", c.Symbol, c.Interval, modeTag(c.Mode))
+	fmt.Fprintf(&sb, "📊 %s — velas de %s%s\nEstratégia: %s\n", c.Symbol, c.Interval, modeTag(c.Mode), strategyNames[c.Params.Strategy])
 	switch {
 	case b.st.Running && b.st.DayBlocked:
 		sb.WriteString("Robô: LIGADO (sem novas compras hoje: limite de perda do dia)\n")

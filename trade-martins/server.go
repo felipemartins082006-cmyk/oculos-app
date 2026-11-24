@@ -63,13 +63,13 @@ func newServer(b *Bot) http.Handler {
 		}
 		reply(w, nil, telegramSend(b.httpc, tok, strings.TrimSpace(c.Chat), "TradeMartins: ✅ Teste de aviso. Se você recebeu isto, os avisos estão funcionando!"))
 	})
-	mux.HandleFunc("POST /api/backtest", func(w http.ResponseWriter, r *http.Request) {
-		var req BTRequest
+	mux.HandleFunc("POST /api/lab", func(w http.ResponseWriter, r *http.Request) {
+		var req LabRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			reply(w, nil, fmt.Errorf("dados inválidos"))
 			return
 		}
-		v, err := b.Backtest(req)
+		v, err := b.Lab(req)
 		reply(w, v, err)
 	})
 	return guard(mux)
@@ -118,9 +118,7 @@ func reply(w http.ResponseWriter, v any, err error) {
 type ChartData struct {
 	T     []int64      `json:"t"`
 	OHLC  [][4]float64 `json:"ohlc"`
-	Fast  []float64    `json:"fast"`
-	Slow  []float64    `json:"slow"`
-	Trend []float64    `json:"trend,omitempty"`
+	Lines []ChartLine  `json:"lines"`
 }
 
 func (b *Bot) Status() map[string]any {
@@ -143,25 +141,16 @@ func (b *Bot) Status() map[string]any {
 	// gráfico com as últimas velas
 	var ch *ChartData
 	if ks := b.live.Candles; len(ks) > 0 {
-		closes := make([]float64, len(ks))
-		for i, k := range ks {
-			closes[i] = k.C
-		}
-		ind := compute(closes, b.cfg.Params)
+		pr := b.cfg.Params.prepare(ks, intervalDur(b.cfg.Interval))
 		from := len(ks) - 120
 		if from < 0 {
 			from = 0
 		}
-		ch = &ChartData{}
+		ch = &ChartData{Lines: pr.lines(from, len(ks))}
 		for i := from; i < len(ks); i++ {
 			k := ks[i]
 			ch.T = append(ch.T, k.OpenTime)
 			ch.OHLC = append(ch.OHLC, [4]float64{k.O, k.H, k.L, k.C})
-			ch.Fast = append(ch.Fast, nz(ind.Fast[i]))
-			ch.Slow = append(ch.Slow, nz(ind.Slow[i]))
-			if ind.Trend != nil {
-				ch.Trend = append(ch.Trend, nz(ind.Trend[i]))
-			}
 		}
 	}
 
@@ -198,8 +187,9 @@ func (b *Bot) Status() map[string]any {
 		"version": version, "running": b.st.Running, "config": cfg, "keys": keys,
 		"live": b.live, "position": b.st.Position, "stopTake": stopTake, "trades": trades, "logs": logs,
 		"chart": ch, "dayBlocked": b.st.DayBlocked, "dayStartEquity": b.st.DayStartEquity,
-		"summary": map[string]any{"pnl": pnl, "wins": wins, "losses": losses},
-		"now":     time.Now().UnixMilli(),
+		"summary":      map[string]any{"pnl": pnl, "wins": wins, "losses": losses},
+		"strategyName": strategyNames[b.cfg.Params.Strategy], "strategies": strategyNames,
+		"now": time.Now().UnixMilli(),
 	}
 }
 
@@ -252,33 +242,34 @@ func (b *Bot) TestKeys(which, key, secret string) (any, error) {
 	return res, nil
 }
 
-// ---------- backtest ----------
+// ---------- laboratório (backtest, walk-forward, mapa, Monte Carlo, vários pares) ----------
 
 const maxBacktestCandles = 60000
 
-type BTRequest struct {
-	Symbol   string  `json:"symbol"`
-	Interval string  `json:"interval"`
-	Days     int     `json:"days"`
-	Params   Params  `json:"params"`
-	TradePct float64 `json:"tradePct"`
-	MaxBuy   float64 `json:"maxBuy"`
-	Start    float64 `json:"start"`
+type LabRequest struct {
+	Kind      string   `json:"kind"` // backtest | walkforward | heatmap | montecarlo | multi
+	Symbol    string   `json:"symbol"`
+	Symbols   []string `json:"symbols"`
+	Interval  string   `json:"interval"`
+	Days      int      `json:"days"`
+	Params    Params   `json:"params"`
+	TradePct  float64  `json:"tradePct"`
+	MaxBuy    float64  `json:"maxBuy"`
+	Start     float64  `json:"start"`
+	TrainDays int      `json:"trainDays"`
+	TestDays  int      `json:"testDays"`
+	Objective string   `json:"objective"`
 }
 
-func (b *Bot) Backtest(req BTRequest) (*BTResult, error) {
+func (b *Bot) Lab(req LabRequest) (any, error) {
 	req.Symbol = strings.ToUpper(strings.TrimSpace(req.Symbol))
-	if req.Days < 1 || req.Days > 1500 {
-		return nil, fmt.Errorf("escolha entre 1 e 1500 dias")
+	req.Params.normalize()
+	dur := intervalDur(req.Interval)
+	if req.Days < 1 || req.Days > 3000 {
+		return nil, fmt.Errorf("escolha entre 1 e 3000 dias")
 	}
-	if req.Params.FastEMA < 2 || req.Params.SlowEMA <= req.Params.FastEMA {
-		return nil, fmt.Errorf("a EMA lenta precisa ser maior que a rápida")
-	}
-	if req.Params.TrendEMA != 0 && req.Params.TrendEMA <= req.Params.SlowEMA {
-		return nil, fmt.Errorf("a EMA de tendência precisa ser maior que a lenta (ou 0)")
-	}
-	if req.Params.RSIPeriod < 2 {
-		return nil, fmt.Errorf("RSI inválido")
+	if err := req.Params.validate(dur, false); err != nil {
+		return nil, err
 	}
 	if req.TradePct <= 0 || req.TradePct > 100 {
 		req.TradePct = 95
@@ -289,24 +280,72 @@ func (b *Bot) Backtest(req BTRequest) (*BTResult, error) {
 	if req.MaxBuy < 0 {
 		req.MaxBuy = 0
 	}
-	// Baixa velas a mais ANTES do período, só para "aquecer" as médias (a EMA "lembra" de onde começou).
-	// Assim os valores batem com os do robô ao vivo, que usa 1000 velas.
-	extra := 3 * warmup(req.Params)
-	dur := intervalDur(req.Interval)
 	if maxDays := int(time.Duration(maxBacktestCandles) * dur / (24 * time.Hour)); req.Days > maxDays {
 		return nil, fmt.Errorf("com velas de %s dá para testar no máximo %d dias (limite de %d velas)", req.Interval, maxDays, maxBacktestCandles)
 	}
+
+	// Velas a mais ANTES do período, só para "aquecer" os indicadores (3× o necessário: a EMA "lembra" de onde
+	// começou). No walk-forward e no mapa, o aquecimento cobre a combinação mais exigente da grade.
+	warm := req.Params.warmup(dur)
+	switch req.Kind {
+	case "walkforward":
+		warm = maxWarmup(append(gridFor(req.Params, dur), req.Params), dur)
+	case "heatmap":
+		warm = maxWarmup(heatGrid(req.Params, dur), dur)
+	}
+	extra := 3 * warm
 	extraDays := int(time.Duration(extra)*dur/(24*time.Hour)) + 1
 	from := time.Now().Add(-time.Duration(req.Days) * 24 * time.Hour)
-	ks, err := b.data.History(req.Symbol, req.Interval, req.Days+extraDays, maxBacktestCandles+extra)
+	o := BTOptions{TradePct: req.TradePct, MaxBuy: req.MaxBuy, FeePct: paperFeePct, Start: req.Start,
+		StopSlipPct: backtestStopSlipPct, TradeFrom: from.UnixMilli(), Interval: dur}
+
+	if req.Kind == "multi" {
+		syms := parseSymbols(req.Symbols)
+		if len(syms) < 2 {
+			return nil, fmt.Errorf("informe pelo menos 2 pares (ex.: BTCUSDT, ETHUSDT, SOLUSDT)")
+		}
+		return b.multi(syms, req.Interval, req.Days, extraDays, maxBacktestCandles+extra, req.Params, o), nil
+	}
+
+	ks, err := b.history(req.Symbol, req.Interval, req.Days+extraDays, maxBacktestCandles+extra)
 	if err != nil {
 		return nil, err
 	}
-	res := runBacktest(ks, req.Params, BTOptions{TradePct: req.TradePct, MaxBuy: req.MaxBuy, FeePct: paperFeePct,
-		Start: req.Start, StopSlipPct: backtestStopSlipPct, TradeFrom: from.UnixMilli()})
+	switch req.Kind {
+	case "walkforward":
+		if req.TrainDays < 30 || req.TestDays < 7 {
+			return nil, fmt.Errorf("use pelo menos 30 dias de treino e 7 de teste")
+		}
+		if req.Days < req.TrainDays+req.TestDays {
+			return nil, fmt.Errorf("o período (%d dias) precisa ser maior que treino + teste (%d dias)", req.Days, req.TrainDays+req.TestDays)
+		}
+		return walkForward(ks, req.Params, o, req.TrainDays, req.TestDays, req.Objective)
+	case "heatmap":
+		return heatmap(ks, req.Params, o), nil
+	}
+	res := runBacktest(ks, req.Params, o)
 	if res.Candles < 10 {
-		return nil, fmt.Errorf("poucos dados para esse período: aumente os dias ou diminua as médias")
+		return nil, fmt.Errorf("poucos dados para esse período: aumente os dias ou diminua os períodos dos indicadores")
 	}
 	res.Symbol, res.Interval = req.Symbol, req.Interval
+	if req.Kind == "montecarlo" {
+		return monteCarlo(res, 2000)
+	}
 	return &res, nil
+}
+
+// heatGrid = todas as combinações do mapa (para saber quanto histórico baixar).
+func heatGrid(p Params, dur time.Duration) []Params {
+	_, _, xs, ys, set, _ := heatmapAxes(p)
+	var g []Params
+	for _, y := range ys {
+		for _, x := range xs {
+			q := p
+			set(&q, x, y)
+			if q.validate(dur, false) == nil {
+				g = append(g, q)
+			}
+		}
+	}
+	return append(g, p)
 }

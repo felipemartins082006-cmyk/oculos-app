@@ -571,8 +571,11 @@ func TestSignalSellIsRetriedAfterFailure(t *testing.T) {
 	}
 	closes[998] = closes[997] - 2000
 	closes[999] = closes[998] // vela aberta
-	chk := closes[:999]
-	if signalAt(compute(chk, b.cfg.Params), chk, len(chk)-1, b.cfg.Params) != sigSell {
+	chk := make([]Kline, 999)
+	for i := range chk {
+		chk[i] = Kline{OpenTime: int64(i) * 3600000, O: closes[i], H: closes[i], L: closes[i], C: closes[i]}
+	}
+	if b.cfg.Params.prepare(chk, time.Hour).signal(len(chk)-1, true) != sigSell {
 		t.Fatalf("pré-condição: a série deveria dar sinal de venda")
 	}
 
