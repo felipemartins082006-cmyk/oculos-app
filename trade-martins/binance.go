@@ -18,13 +18,18 @@ import (
 	"time"
 )
 
-const tradeHost = "https://api.binance.com"
-
 // Dados públicos (velas, preço). Se o endereço principal falhar, usa o espelho oficial só de dados.
-var dataHosts = []string{"https://api.binance.com", "https://data-api.binance.vision"}
+var mainDataHosts = []string{"https://api.binance.com", "https://data-api.binance.vision"}
+
+const (
+	mainTradeHost = "https://api.binance.com"
+	testnetHost   = "https://testnet.binance.vision" // Binance de teste: ordens de verdade com dinheiro de mentira
+)
 
 type Binance struct {
 	Key, Secret string
+	TradeHost   string
+	DataHosts   []string
 
 	mu         sync.Mutex
 	timeOffset int64 // diferença (ms) entre o relógio da Binance e o do PC
@@ -33,7 +38,19 @@ type Binance struct {
 }
 
 func NewBinance() *Binance {
-	return &Binance{client: &http.Client{Timeout: 20 * time.Second}}
+	return &Binance{TradeHost: mainTradeHost, DataHosts: mainDataHosts, client: &http.Client{Timeout: 20 * time.Second}}
+}
+
+func NewBinanceTestnet() *Binance {
+	return &Binance{TradeHost: testnetHost, DataHosts: []string{testnetHost}, client: &http.Client{Timeout: 20 * time.Second}}
+}
+
+// newFor devolve o cliente certo para o modo: "teste" usa a Binance de teste, o resto a Binance normal.
+func newFor(mode string) *Binance {
+	if mode == "teste" {
+		return NewBinanceTestnet()
+	}
+	return NewBinance()
 }
 
 type APIError struct {
@@ -50,6 +67,8 @@ func (e *APIError) Error() string {
 		-2015: "chave de API recusada: confira a chave, a permissão de Spot e a restrição de IP",
 		-2010: "ordem recusada (saldo insuficiente ou valor pequeno demais)",
 		-1013: "quantidade fora das regras do par (valor pequeno demais?)",
+		-2011: "ordem não encontrada (já executada ou cancelada)",
+		-2013: "ordem não encontrada",
 	}
 	if m, ok := pt[e.Code]; ok {
 		return fmt.Sprintf("Binance: %s (%d %s)", m, e.Code, e.Msg)
@@ -78,7 +97,7 @@ func decodeResp(resp *http.Response, out any) error {
 // public faz GET em dados públicos, tentando os endereços em ordem.
 func (b *Binance) public(path string, q url.Values, out any) error {
 	b.mu.Lock()
-	hosts := append([]string{}, dataHosts...)
+	hosts := append([]string{}, b.DataHosts...)
 	if b.goodHost != "" {
 		hosts = append([]string{b.goodHost}, hosts...)
 	}
@@ -100,6 +119,9 @@ func (b *Binance) public(path string, q url.Values, out any) error {
 		if resp.StatusCode == 451 || resp.StatusCode == 403 || resp.StatusCode >= 500 {
 			resp.Body.Close()
 			lastErr = fmt.Errorf("Binance respondeu HTTP %d", resp.StatusCode)
+			if resp.StatusCode == 451 {
+				lastErr = fmt.Errorf("a Binance bloqueia o acesso a partir deste país/rede (HTTP 451)")
+			}
 			continue
 		}
 		err = decodeResp(resp, out)
@@ -154,7 +176,7 @@ func (b *Binance) signed(method, path string, q url.Values, out any) error {
 		qq.Set("timestamp", strconv.FormatInt(time.Now().UnixMilli()+off, 10))
 		qq.Set("recvWindow", "10000")
 		payload := qq.Encode()
-		full := tradeHost + path + "?" + payload + "&signature=" + sign(b.Secret, payload)
+		full := b.TradeHost + path + "?" + payload + "&signature=" + sign(b.Secret, payload)
 		req, err := http.NewRequest(method, full, nil)
 		if err != nil {
 			return err
@@ -166,7 +188,7 @@ func (b *Binance) signed(method, path string, q url.Values, out any) error {
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode == 451 {
-			return fmt.Errorf("a Binance bloqueia operações a partir deste país/servidor (HTTP 451)")
+			return &APIError{Code: 451, Msg: "a Binance bloqueia operações a partir deste país/servidor"}
 		}
 		return decodeResp(resp, out)
 	}
@@ -243,6 +265,7 @@ type SymbolInfo struct {
 	Symbol, Base, Quote string
 	Status              string
 	StepSize, MinQty    float64
+	TickSize            float64
 	MinNotional         float64
 	QuotePrecision      int
 }
@@ -274,6 +297,8 @@ func (b *Binance) Symbol(symbol string) (*SymbolInfo, error) {
 		switch f["filterType"] {
 		case "LOT_SIZE":
 			info.StepSize, info.MinQty = num(f, "stepSize"), num(f, "minQty")
+		case "PRICE_FILTER":
+			info.TickSize = num(f, "tickSize")
 		case "NOTIONAL", "MIN_NOTIONAL":
 			if v := num(f, "minNotional"); v > info.MinNotional {
 				info.MinNotional = v
@@ -309,19 +334,26 @@ func (b *Binance) Balances() (free map[string]float64, total map[string]float64,
 }
 
 type OrderResult struct {
+	OrderID     int64
 	ExecutedQty float64
 	QuoteQty    float64
 	Commission  map[string]float64 // taxa cobrada por moeda
 }
 
-func (b *Binance) MarketOrder(symbol, side string, quantity, quoteQty string) (*OrderResult, error) {
+// MarketOrder manda uma ordem a mercado. clientID identifica a ordem: se a conexão cair no meio,
+// dá para perguntar à Binance se ela foi executada (veja Bot.marketOrder).
+func (b *Binance) MarketOrder(symbol, side, quantity, quoteQty, clientID string) (*OrderResult, error) {
 	q := url.Values{"symbol": {symbol}, "side": {side}, "type": {"MARKET"}, "newOrderRespType": {"FULL"}}
+	if clientID != "" {
+		q.Set("newClientOrderId", clientID)
+	}
 	if quantity != "" {
 		q.Set("quantity", quantity)
 	} else {
 		q.Set("quoteOrderQty", quoteQty)
 	}
 	var r struct {
+		OrderID             int64  `json:"orderId"`
 		ExecutedQty         string `json:"executedQty"`
 		CummulativeQuoteQty string `json:"cummulativeQuoteQty"`
 		Fills               []struct {
@@ -332,7 +364,7 @@ func (b *Binance) MarketOrder(symbol, side string, quantity, quoteQty string) (*
 	if err := b.signed("POST", "/api/v3/order", q, &r); err != nil {
 		return nil, err
 	}
-	res := &OrderResult{Commission: map[string]float64{}}
+	res := &OrderResult{OrderID: r.OrderID, Commission: map[string]float64{}}
 	res.ExecutedQty, _ = strconv.ParseFloat(r.ExecutedQty, 64)
 	res.QuoteQty, _ = strconv.ParseFloat(r.CummulativeQuoteQty, 64)
 	for _, f := range r.Fills {
@@ -374,3 +406,81 @@ func intervalDur(iv string) time.Duration {
 	}
 	return time.Hour
 }
+
+// ---------- ordens de stop ----------
+
+type OrderStatus struct {
+	OrderID     int64   `json:"orderId"`
+	Status      string  `json:"status"` // NEW, PARTIALLY_FILLED, FILLED, CANCELED, EXPIRED, REJECTED
+	ExecutedQty float64 `json:"-"`
+	QuoteQty    float64 `json:"-"`
+}
+
+func parseOrder(r map[string]any) *OrderStatus {
+	f := func(k string) float64 {
+		v, _ := strconv.ParseFloat(fmt.Sprint(r[k]), 64)
+		return v
+	}
+	id, _ := r["orderId"].(float64)
+	st, _ := r["status"].(string)
+	return &OrderStatus{OrderID: int64(id), Status: st, ExecutedQty: f("executedQty"), QuoteQty: f("cummulativeQuoteQty")}
+}
+
+// StopLossLimit registra na Binance uma venda que dispara quando o preço cai até stopPrice.
+func (b *Binance) StopLossLimit(symbol, qty, stopPrice, limitPrice, clientID string) (*OrderStatus, error) {
+	q := url.Values{"symbol": {symbol}, "side": {"SELL"}, "type": {"STOP_LOSS_LIMIT"}, "timeInForce": {"GTC"},
+		"quantity": {qty}, "stopPrice": {stopPrice}, "price": {limitPrice}, "newOrderRespType": {"RESULT"}}
+	if clientID != "" {
+		q.Set("newClientOrderId", clientID)
+	}
+	var r map[string]any
+	if err := b.signed("POST", "/api/v3/order", q, &r); err != nil {
+		return nil, err
+	}
+	return parseOrder(r), nil
+}
+
+// GetOrder consulta uma ordem pelo número (orderID) ou pelo identificador que o robô deu (clientID).
+func (b *Binance) GetOrder(symbol string, orderID int64, clientID string) (*OrderStatus, error) {
+	q := url.Values{"symbol": {symbol}}
+	if orderID != 0 {
+		q.Set("orderId", strconv.FormatInt(orderID, 10))
+	} else {
+		q.Set("origClientOrderId", clientID)
+	}
+	var r map[string]any
+	if err := b.signed("GET", "/api/v3/order", q, &r); err != nil {
+		return nil, err
+	}
+	return parseOrder(r), nil
+}
+
+func (b *Binance) CancelOrder(symbol string, orderID int64) (*OrderStatus, error) {
+	q := url.Values{"symbol": {symbol}, "orderId": {strconv.FormatInt(orderID, 10)}}
+	var r map[string]any
+	if err := b.signed("DELETE", "/api/v3/order", q, &r); err != nil {
+		return nil, err
+	}
+	return parseOrder(r), nil
+}
+
+// Commissions soma as taxas cobradas nas execuções de uma ordem.
+func (b *Binance) Commissions(symbol string, orderID int64) (map[string]float64, error) {
+	q := url.Values{"symbol": {symbol}, "orderId": {strconv.FormatInt(orderID, 10)}}
+	var r []struct {
+		Commission      string `json:"commission"`
+		CommissionAsset string `json:"commissionAsset"`
+	}
+	if err := b.signed("GET", "/api/v3/myTrades", q, &r); err != nil {
+		return nil, err
+	}
+	out := map[string]float64{}
+	for _, t := range r {
+		c, _ := strconv.ParseFloat(t.Commission, 64)
+		out[t.CommissionAsset] += c
+	}
+	return out, nil
+}
+
+// floorTick arredonda um preço para baixo no passo de preço do par.
+func floorTick(v, tick float64) string { return floorStep(v, tick) }

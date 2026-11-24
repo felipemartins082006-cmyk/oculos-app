@@ -37,6 +37,7 @@ h3 { font-size: 16px; margin-bottom: 10px; }
 .tabs button.on { background: var(--card2); color: var(--text); }
 .badge { font-size: 12px; font-weight: 700; letter-spacing: .05em; padding: 5px 10px; border-radius: 99px; background: rgba(245,176,65,.15); color: var(--warn); }
 .badge.real { background: rgba(255,93,93,.18); color: var(--danger); }
+.badge.teste { background: rgba(79,140,255,.18); color: #8fb6ff; }
 
 main { max-width: 1100px; margin: 0 auto; padding: 18px 16px 80px; }
 .tab { display: none; flex-direction: column; gap: 14px; }
@@ -48,6 +49,7 @@ main { max-width: 1100px; margin: 0 auto; padding: 18px 16px 80px; }
 
 .banner { padding: 10px 14px; border-radius: 12px; font-weight: 600; }
 .banner.danger { background: rgba(255,93,93,.14); color: var(--danger); border: 1px solid rgba(255,93,93,.35); }
+.banner.info { background: rgba(79,140,255,.12); color: #8fb6ff; border: 1px solid rgba(79,140,255,.35); }
 .banner.warn { background: rgba(245,176,65,.12); color: var(--warn); border: 1px solid rgba(245,176,65,.3); font-weight: 500; }
 
 .hero { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
@@ -85,18 +87,22 @@ canvas { width: 100%; display: block; }
 .logs li.err { color: var(--danger); }
 .logs li.warn { color: var(--warn); }
 .logs li.ok { color: var(--ok); }
-.logs li.trade { color: #8fb6ff; font-weight: 600; }
+.logs li.trade, .logs li.sale { color: #8fb6ff; font-weight: 600; }
 
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px 14px; }
 .grid label { display: flex; flex-direction: column; gap: 5px; font-size: 13.5px; }
 .form-actions { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
 .steps { padding-left: 18px; margin-bottom: 10px; }
-.modes { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+.modes { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 14px; }
 .mode { display: flex; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; cursor: pointer; background: var(--card2); }
 .mode input { width: auto; margin-top: 3px; }
 .mode span { display: flex; flex-direction: column; }
 .mode:has(input:checked) { border-color: var(--warn); }
 .mode.real:has(input:checked) { border-color: var(--danger); }
+.mode.teste:has(input:checked) { border-color: var(--accent); }
+.more { margin-top: 14px; }
+.more summary { cursor: pointer; color: var(--muted); font-size: 13.5px; }
+.more p { margin: 8px 0; }
 .sticky-save { position: sticky; bottom: 12px; display: flex; justify-content: flex-end; margin-top: 4px; }
 #cfg-form { display: flex; flex-direction: column; gap: 14px; }
 

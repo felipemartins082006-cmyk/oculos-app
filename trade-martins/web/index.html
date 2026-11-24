@@ -23,6 +23,7 @@
   <!-- PAINEL -->
   <section id="painel" class="tab on">
     <div id="warn-real" class="banner danger" hidden>Modo REAL: o robô compra e vende com o seu dinheiro na Binance.</div>
+    <div id="warn-teste" class="banner info" hidden>Modo BINANCE DE TESTE: ordens de verdade na Binance de teste, com dinheiro de mentira. Os preços de lá podem ser diferentes dos da Binance normal.</div>
     <div id="err-banner" class="banner warn" hidden></div>
 
     <div class="hero card">
@@ -53,7 +54,7 @@
         <div><span class="muted">Quantidade</span><b id="pos-qty"></b></div>
         <div><span class="muted">Preço de compra</span><b id="pos-entry"></b></div>
         <div><span class="muted">Resultado agora</span><b id="pos-pnl"></b></div>
-        <div><span class="muted">Stop-loss</span><b id="pos-stop" class="neg"></b></div>
+        <div><span class="muted">Stop-loss</span><b id="pos-stop" class="neg"></b><small id="pos-stop-where" class="muted"></small></div>
         <div><span class="muted">Take-profit</span><b id="pos-take" class="pos"></b></div>
       </div>
     </div>
@@ -157,6 +158,7 @@
         <h3>Modo</h3>
         <div class="modes">
           <label class="mode"><input type="radio" name="mode" value="simulado"><span><b>Simulado</b><small>Preços reais, dinheiro de mentira. Comece por aqui.</small></span></label>
+          <label class="mode teste"><input type="radio" name="mode" value="teste"><span><b>Binance de teste</b><small>Ordens de verdade na Binance de teste, com dinheiro de mentira. Use antes do real.</small></span></label>
           <label class="mode real"><input type="radio" name="mode" value="real"><span><b>Real</b><small>Compra e vende de verdade na sua conta da Binance.</small></span></label>
         </div>
         <div class="grid">
@@ -165,21 +167,62 @@
         </div>
       </div>
       <div class="card">
-        <h3>Chave de API da Binance <small class="muted">(só para o modo real)</small></h3>
+        <h3>Chave da Binance de teste <small class="muted">(para o modo "Binance de teste")</small></h3>
+        <ol class="muted small steps">
+          <li>Abra <b>testnet.binance.vision</b> e entre com a sua conta do GitHub.</li>
+          <li>Clique em <b>Generate HMAC_SHA256 Key</b>, dê um nome e copie a <b>API Key</b> e a <b>Secret Key</b> (a secreta só aparece uma vez).</li>
+          <li>A conta de teste já vem com saldo de mentira (USDT, BTC…).</li>
+        </ol>
+        <p class="small" id="key-status-teste"></p>
+        <div class="grid">
+          <label>API Key de teste<input name="testApiKey" autocomplete="off" spellcheck="false" placeholder="deixe vazio para manter a atual"></label>
+          <label>Secret Key de teste<input name="testApiSecret" type="password" autocomplete="off" placeholder="deixe vazio para manter a atual"></label>
+          <div class="form-actions">
+            <button class="btn" type="button" data-testkeys="teste">Testar chave</button>
+            <button class="btn" type="button" data-delkeys="teste">Apagar chave</button>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Chave da Binance <small class="muted">(para o modo real)</small></h3>
         <ol class="muted small steps">
           <li>Na Binance: <b>Perfil › Gerenciamento de API › Criar API</b> (tipo "gerada pelo sistema").</li>
           <li>Marque só <b>Ativar leitura</b> e <b>Ativar negociação Spot e de margem</b>. <b>NUNCA</b> marque saques.</li>
           <li>Em restrição de IP, coloque o IP da sua internet (mais seguro).</li>
         </ol>
-        <p class="small" id="key-status"></p>
+        <p class="small" id="key-status-real"></p>
         <div class="grid">
           <label>API Key<input name="apiKey" autocomplete="off" spellcheck="false" placeholder="deixe vazio para manter a atual"></label>
           <label>Secret Key<input name="apiSecret" type="password" autocomplete="off" placeholder="deixe vazio para manter a atual"></label>
           <div class="form-actions">
-            <button class="btn" type="button" id="btn-testkeys">Testar chave</button>
-            <button class="btn" type="button" id="btn-delkeys">Apagar chave</button>
+            <button class="btn" type="button" data-testkeys="real">Testar chave</button>
+            <button class="btn" type="button" data-delkeys="real">Apagar chave</button>
           </div>
         </div>
+      </div>
+      <div class="card">
+        <h3>Avisos no celular (Telegram)</h3>
+        <p class="muted">Receba uma mensagem a cada compra, venda, erro, quando o robô liga/desliga e quando ele volta depois de ficar fora do ar.</p>
+        <ol class="muted small steps">
+          <li>No Telegram, abra o <b>@BotFather</b>, mande <b>/newbot</b>, escolha um nome e copie o <b>token</b> que ele dá.</li>
+          <li>Cole o token abaixo. Abra o seu bot novo no Telegram e mande <b>/start</b> para ele.</li>
+          <li>Clique em <b>Descobrir meu chat</b>, depois em <b>Enviar teste</b> e, se chegar, em <b>Salvar ajustes</b>.</li>
+        </ol>
+        <p class="small" id="key-status-telegram"></p>
+        <div class="grid">
+          <label>Token do bot<input name="telegramToken" type="password" autocomplete="off" placeholder="deixe vazio para manter o atual"></label>
+          <label>Chat<input name="telegramChat" autocomplete="off" placeholder="ex.: 123456789"></label>
+          <div class="form-actions">
+            <button class="btn" type="button" id="btn-tg-find">Descobrir meu chat</button>
+            <button class="btn" type="button" id="btn-tg-test">Enviar teste</button>
+            <button class="btn" type="button" id="btn-tg-del">Apagar</button>
+          </div>
+        </div>
+        <details class="more">
+          <summary>Avisar se o PC desligar (opcional)</summary>
+          <p class="muted small">O robô não consegue avisar que morreu. Para isso, crie uma checagem grátis em <b>healthchecks.io</b> (período: 5 minutos, tolerância: 10 minutos), ligue lá os avisos por Telegram ou e-mail e cole aqui o endereço de "ping". Enquanto o robô estiver ligado, ele manda sinal de vida a cada checagem. Se o sinal parar, o healthchecks.io avisa você.</p>
+          <label class="small">Endereço de ping<input name="pingUrl" autocomplete="off" spellcheck="false" placeholder="https://hc-ping.com/…"></label>
+        </details>
       </div>
       <div class="sticky-save"><button class="btn primary big" type="submit">Salvar ajustes</button></div>
     </form>

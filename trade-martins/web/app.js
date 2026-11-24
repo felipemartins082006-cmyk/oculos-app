@@ -99,9 +99,10 @@ async function refresh() {
 function render() {
   const c = S.config, L = S.live, q = L.quote || "USDT", b = L.base || "";
   const real = c.mode === "real";
-  $("#mode-badge").textContent = real ? "REAL" : "SIMULADO";
-  $("#mode-badge").classList.toggle("real", real);
+  $("#mode-badge").textContent = { real: "REAL", teste: "BINANCE DE TESTE", simulado: "SIMULADO" }[c.mode];
+  $("#mode-badge").className = "badge " + c.mode;
   $("#warn-real").hidden = !real;
+  $("#warn-teste").hidden = c.mode !== "teste";
   document.title = (L.price ? priceFmt(L.price) + " · " : "") + "TradeMartins";
 
   $("#pair-label").textContent = `${c.symbol} · velas de ${c.interval}`;
@@ -144,8 +145,9 @@ function render() {
     const r = val - p.cost;
     $("#pos-qty").textContent = qtyFmt(p.qty) + " " + b;
     $("#pos-entry").textContent = priceFmt(p.entry);
-    $("#pos-pnl").innerHTML = `<span class="${cls(r)}">${signed(r, q)} (${pct((r / p.cost) * 100)})</span>`;
+    $("#pos-pnl").innerHTML = !L.price ? "—" : `<span class="${cls(r)}">${signed(r, q)} (${pct((r / p.cost) * 100)})</span>`;
     $("#pos-stop").textContent = p.stop ? priceFmt(p.stop) : "desligado";
+    $("#pos-stop-where").textContent = !p.stop ? "" : p.stopOrderId ? "registrado na Binance ✔" : p.mode === "simulado" ? "vigiado pelo robô" : "vigiado pelo PC (sem ordem na Binance)";
     $("#pos-take").textContent = p.take ? priceFmt(p.take) : "desligado";
   }
 
@@ -156,7 +158,10 @@ function render() {
   renderHistory();
   if ($("#painel").classList.contains("on")) drawChart();
   if (!cfgLoaded) { fillConfig(); cfgLoaded = true; }
-  $("#key-status").innerHTML = S.hasKey ? `Chave salva: <b>${esc(S.keyHint)}</b>` : `<span class="muted">Nenhuma chave salva.</span>`;
+  for (const k of ["real", "teste", "telegram"]) {
+    const v = S.keys[k];
+    $("#key-status-" + k).innerHTML = v.has ? `Salvo: <b>${esc(v.hint)}</b>` : `<span class="muted">Nada salvo ainda.</span>`;
+  }
 }
 
 function tradeRows(trades, q) {
@@ -321,7 +326,9 @@ window.addEventListener("resize", () => {
 // ---------- botões do painel ----------
 $("#btn-toggle").addEventListener("click", (e) => act(e.target, async () => {
   if (S.running) {
-    if (S.position && !(await ask("Desligar o robô?", "<p>A posição aberta <b>continua aberta</b>. Com o robô desligado, o stop-loss e o take-profit não são vigiados.</p>", { okText: "Desligar" }))) return;
+    const p = S.position;
+    const stopMsg = p && p.stopOrderId ? "O stop-loss <b>continua registrado na Binance</b>, mas o take-profit e a venda pelo sinal param." : "Com o robô desligado, o stop-loss e o take-profit não são vigiados.";
+    if (p && !(await ask("Desligar o robô?", `<p>A posição aberta <b>continua aberta</b>. ${stopMsg}</p>`, { okText: "Desligar" }))) return;
     await api("stop", {});
     toast("Robô desligado");
   } else {
@@ -359,7 +366,9 @@ function fillConfig() {
   f.elements.maxDailyLossPct.value = c.maxDailyLossPct;
   f.elements.paperStart.value = c.paperStart;
   $$("input[name=mode]", f).forEach((r) => (r.checked = r.value === c.mode));
-  f.elements.apiKey.value = ""; f.elements.apiSecret.value = "";
+  ["apiKey", "apiSecret", "testApiKey", "testApiSecret", "telegramToken"].forEach((k) => (f.elements[k].value = ""));
+  f.elements.telegramChat.value = c.telegramChat || "";
+  f.elements.pingUrl.value = c.pingUrl || "";
   fillForm($("#bt-form"), c);
 }
 
@@ -375,12 +384,15 @@ $("#cfg-form").addEventListener("submit", (e) => {
   act(f.querySelector("[type=submit]"), async () => {
     const mode = f.querySelector("input[name=mode]:checked").value;
     if (mode === "real" && S.config.mode !== "real" &&
-      !(await ask("Mudar para o modo real?", "<p>No modo real o robô usa o seu dinheiro na Binance. Recomendado: deixar rodando no simulado por alguns dias e testar a estratégia antes.</p>", { okText: "Mudar para real", danger: true }))) return;
+      !(await ask("Mudar para o modo real?", "<p>No modo real o robô usa o seu dinheiro na Binance. Recomendado: antes, deixar rodando alguns dias no modo <b>Binance de teste</b> e conferir as compras, vendas e o stop.</p>", { okText: "Mudar para real", danger: true }))) return;
     await api("config", {
       symbol: f.elements.symbol.value, interval: f.elements.interval.value, params: readParams(f),
       tradePct: +f.elements.tradePct.value, maxDailyLossPct: +f.elements.maxDailyLossPct.value,
       checkSeconds: +f.elements.checkSeconds.value, mode, paperStart: +f.elements.paperStart.value,
       apiKey: f.elements.apiKey.value.trim(), apiSecret: f.elements.apiSecret.value.trim(),
+      testApiKey: f.elements.testApiKey.value.trim(), testApiSecret: f.elements.testApiSecret.value.trim(),
+      telegramToken: f.elements.telegramToken.value.trim(), telegramChat: f.elements.telegramChat.value.trim(),
+      pingUrl: f.elements.pingUrl.value.trim() || "-",
     });
     toast("Ajustes salvos");
     await refresh();
@@ -395,18 +407,47 @@ $("#btn-reset").addEventListener("click", (e) => act(e.target, async () => {
   await refresh();
 }));
 
-$("#btn-testkeys").addEventListener("click", (e) => act(e.target, async () => {
+$$("[data-testkeys]").forEach((btn) => btn.addEventListener("click", () => act(btn, async () => {
+  const f = $("#cfg-form"), which = btn.dataset.testkeys, t = which === "teste";
+  const r = await api("test-keys", {
+    Which: which,
+    APIKey: f.elements[t ? "testApiKey" : "apiKey"].value.trim(),
+    APISecret: f.elements[t ? "testApiSecret" : "apiSecret"].value.trim(),
+  });
+  await ask("Chave funcionando ✔", `<p>Saldo na Binance${t ? " de teste" : ""}:</p><p><b>${money(r.quoteBal, r.quote)}</b> e <b>${qtyFmt(r.baseBal)} ${esc(r.base)}</b></p><p class="muted">Lembre de clicar em <b>Salvar ajustes</b> para guardar a chave.</p>`);
+})));
+
+// salva só uma alteração, mantendo o resto dos ajustes como estão
+async function patchConfig(extra) {
+  await api("config", { ...S.config, apiKey: "", apiSecret: "", testApiKey: "", testApiSecret: "", telegramToken: "", pingUrl: S.config.pingUrl || "-", ...extra });
+  await refresh();
+}
+
+$$("[data-delkeys]").forEach((btn) => btn.addEventListener("click", () => act(btn, async () => {
+  const t = btn.dataset.delkeys === "teste";
+  if (!(await ask("Apagar a chave?", `<p>A chave da Binance${t ? " de teste" : ""} será apagada deste computador.</p>`, { okText: "Apagar", danger: true }))) return;
+  await patchConfig(t ? { testApiKey: "-", testApiSecret: "-" } : { apiKey: "-", apiSecret: "-" });
+  toast("Chave apagada");
+})));
+
+$("#btn-tg-find").addEventListener("click", (e) => act(e.target, async () => {
   const f = $("#cfg-form");
-  const r = await api("test-keys", { APIKey: f.elements.apiKey.value.trim(), APISecret: f.elements.apiSecret.value.trim() });
-  await ask("Chave funcionando ✔", `<p>Saldo na Binance:</p><p><b>${money(r.quoteBal, r.quote)}</b> e <b>${qtyFmt(r.baseBal)} ${esc(r.base)}</b></p><p class="muted">Lembre de clicar em <b>Salvar ajustes</b> para guardar a chave.</p>`);
+  const r = await api("telegram-find", { Token: f.elements.telegramToken.value.trim() });
+  f.elements.telegramChat.value = r.chat;
+  toast(`Chat encontrado: ${r.name}`);
 }));
 
-$("#btn-delkeys").addEventListener("click", (e) => act(e.target, async () => {
-  if (!(await ask("Apagar a chave?", "<p>A chave da Binance será apagada deste computador.</p>", { okText: "Apagar", danger: true }))) return;
-  const c = S.config;
-  await api("config", { ...c, apiKey: "-", apiSecret: "-" });
-  toast("Chave apagada");
-  await refresh();
+$("#btn-tg-test").addEventListener("click", (e) => act(e.target, async () => {
+  const f = $("#cfg-form");
+  await api("telegram-test", { Token: f.elements.telegramToken.value.trim(), Chat: f.elements.telegramChat.value.trim() });
+  toast("Mensagem enviada. Confira o Telegram e clique em Salvar ajustes.");
+}));
+
+$("#btn-tg-del").addEventListener("click", (e) => act(e.target, async () => {
+  if (!(await ask("Apagar o Telegram?", "<p>Os avisos no celular param de ser enviados.</p>", { okText: "Apagar", danger: true }))) return;
+  await patchConfig({ telegramToken: "-", telegramChat: "" });
+  fillConfig();
+  toast("Avisos desligados");
 }));
 
 // ---------- backtest ----------
@@ -451,9 +492,8 @@ $("#bt-apply").addEventListener("click", (e) => act(e.target, async () => {
   if (!lastBT) return;
   const { req } = lastBT, c = S.config;
   if (!(await ask("Usar estes ajustes?", `<p>O robô passa a usar <b>${esc(req.symbol.toUpperCase())}</b>, velas de <b>${req.interval}</b> e os parâmetros do teste.</p>`, { okText: "Usar" }))) return;
-  await api("config", { ...c, symbol: req.symbol, interval: req.interval, params: req.params, tradePct: req.tradePct, apiKey: "", apiSecret: "" });
+  await patchConfig({ symbol: req.symbol, interval: req.interval, params: req.params, tradePct: req.tradePct });
   toast("Ajustes aplicados ao robô");
-  await refresh();
   fillConfig();
 }));
 

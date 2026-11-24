@@ -34,10 +34,27 @@ func newServer(b *Bot) http.Handler {
 		reply(w, nil, b.UpdateConfig(c))
 	})
 	mux.HandleFunc("POST /api/test-keys", func(w http.ResponseWriter, r *http.Request) {
-		var c struct{ APIKey, APISecret string }
+		var c struct{ Which, APIKey, APISecret string }
 		_ = json.NewDecoder(r.Body).Decode(&c)
-		v, err := b.TestKeys(c.APIKey, c.APISecret)
+		v, err := b.TestKeys(c.Which, c.APIKey, c.APISecret)
 		reply(w, v, err)
+	})
+	mux.HandleFunc("POST /api/telegram-find", func(w http.ResponseWriter, r *http.Request) {
+		var c struct{ Token string }
+		_ = json.NewDecoder(r.Body).Decode(&c)
+		tok := b.telegramToken(c.Token)
+		id, name, err := telegramFindChat(b.httpc, tok)
+		reply(w, map[string]string{"chat": id, "name": name}, err)
+	})
+	mux.HandleFunc("POST /api/telegram-test", func(w http.ResponseWriter, r *http.Request) {
+		var c struct{ Token, Chat string }
+		_ = json.NewDecoder(r.Body).Decode(&c)
+		tok := b.telegramToken(c.Token)
+		if tok == "" || strings.TrimSpace(c.Chat) == "" {
+			reply(w, nil, fmt.Errorf("preencha o token e o chat"))
+			return
+		}
+		reply(w, nil, telegramSend(b.httpc, tok, strings.TrimSpace(c.Chat), "TradeMartins: ✅ Teste de aviso. Se você recebeu isto, os avisos estão funcionando!"))
 	})
 	mux.HandleFunc("POST /api/backtest", func(w http.ResponseWriter, r *http.Request) {
 		var req BTRequest
@@ -103,11 +120,18 @@ func (b *Bot) Status() map[string]any {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	cfg := b.cfg
-	hint := ""
-	if len(cfg.APIKey) > 6 {
-		hint = cfg.APIKey[:4] + "…" + cfg.APIKey[len(cfg.APIKey)-4:]
+	hint := func(k string) string {
+		if len(k) > 8 {
+			return k[:4] + "…" + k[len(k)-4:]
+		}
+		return ""
 	}
-	cfg.APIKey, cfg.APISecret = "", ""
+	keys := map[string]any{
+		"real":     map[string]any{"has": cfg.APIKey != "", "hint": hint(cfg.APIKey)},
+		"teste":    map[string]any{"has": cfg.TestAPIKey != "", "hint": hint(cfg.TestAPIKey)},
+		"telegram": map[string]any{"has": cfg.TelegramToken != "", "hint": hint(cfg.TelegramToken)},
+	}
+	cfg.APIKey, cfg.APISecret, cfg.TestAPIKey, cfg.TestAPISecret, cfg.TelegramToken = "", "", "", "", ""
 
 	// gráfico com as últimas velas
 	var ch *ChartData
@@ -164,7 +188,7 @@ func (b *Bot) Status() map[string]any {
 		stopTake = []float64{p.Stop, p.Take}
 	}
 	return map[string]any{
-		"version": version, "running": b.st.Running, "config": cfg, "hasKey": b.cfg.APIKey != "", "keyHint": hint,
+		"version": version, "running": b.st.Running, "config": cfg, "keys": keys,
 		"live": b.live, "position": b.st.Position, "stopTake": stopTake, "trades": trades, "logs": logs,
 		"chart": ch, "dayBlocked": b.st.DayBlocked, "dayStartEquity": b.st.DayStartEquity,
 		"summary": map[string]any{"pnl": pnl, "wins": wins, "losses": losses},
@@ -172,20 +196,33 @@ func (b *Bot) Status() map[string]any {
 	}
 }
 
-func (b *Bot) TestKeys(key, secret string) (any, error) {
+func (b *Bot) telegramToken(t string) string {
+	if t = strings.TrimSpace(t); t != "" {
+		return t
+	}
 	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.cfg.TelegramToken
+}
+
+func (b *Bot) TestKeys(which, key, secret string) (any, error) {
+	if which != "teste" {
+		which = "real"
+	}
+	b.mu.Lock()
+	k0, s0 := b.cfg.keys(which)
 	if key == "" {
-		key = b.cfg.APIKey
+		key = k0
 	}
 	if secret == "" {
-		secret = b.cfg.APISecret
+		secret = s0
 	}
 	sym := b.cfg.Symbol
 	b.mu.Unlock()
 	if key == "" || secret == "" {
 		return nil, fmt.Errorf("preencha a chave e a chave secreta")
 	}
-	c := NewBinance()
+	c := newFor(which)
 	c.Key, c.Secret = key, secret
 	info, err := c.Symbol(sym)
 	if err != nil {
@@ -229,7 +266,7 @@ func (b *Bot) Backtest(req BTRequest) (*BTResult, error) {
 	if req.Start <= 0 {
 		req.Start = 1000
 	}
-	ks, err := b.bn.History(req.Symbol, req.Interval, req.Days, 60000)
+	ks, err := b.data.History(req.Symbol, req.Interval, req.Days, 60000)
 	if err != nil {
 		return nil, err
 	}

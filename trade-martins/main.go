@@ -22,7 +22,7 @@ import (
 var webFS embed.FS
 
 const addr = "127.0.0.1:47900"
-const version = "1.0"
+const version = "1.1"
 
 func configDir() string {
 	base, err := os.UserConfigDir()

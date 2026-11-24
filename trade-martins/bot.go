@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,10 +22,15 @@ type Config struct {
 	TradePct        float64 `json:"tradePct"`        // % do saldo em moeda usado por compra
 	MaxDailyLossPct float64 `json:"maxDailyLossPct"` // 0 = sem limite
 	CheckSeconds    int     `json:"checkSeconds"`
-	Mode            string  `json:"mode"` // "simulado" | "real"
+	Mode            string  `json:"mode"` // "simulado" | "teste" (Binance de teste) | "real"
 	PaperStart      float64 `json:"paperStart"`
 	APIKey          string  `json:"apiKey"`
 	APISecret       string  `json:"apiSecret"`
+	TestAPIKey      string  `json:"testApiKey"`
+	TestAPISecret   string  `json:"testApiSecret"`
+	TelegramToken   string  `json:"telegramToken"`
+	TelegramChat    string  `json:"telegramChat"`
+	PingURL         string  `json:"pingUrl"`
 }
 
 func defaultConfig() Config {
@@ -34,6 +40,16 @@ func defaultConfig() Config {
 		TradePct: 95, MaxDailyLossPct: 5, CheckSeconds: 30,
 		Mode: "simulado", PaperStart: 1000,
 	}
+}
+
+// isExchange: o modo manda ordens de verdade para uma Binance (a real ou a de teste).
+func isExchange(mode string) bool { return mode == "real" || mode == "teste" }
+
+func (c Config) keys(mode string) (string, string) {
+	if mode == "teste" {
+		return c.TestAPIKey, c.TestAPISecret
+	}
+	return c.APIKey, c.APISecret
 }
 
 type Trade struct {
@@ -60,12 +76,15 @@ type Position struct {
 	Time   int64   `json:"time"`
 	Stop   float64 `json:"stop"`
 	Take   float64 `json:"take"`
+	// Ordem de stop-loss registrada na Binance (modos real e teste). 0 = nenhuma.
+	StopOrderID    int64   `json:"stopOrderId,omitempty"`
+	StopOrderPrice float64 `json:"stopOrderPrice,omitempty"`
 }
 
 type LogLine struct {
 	T    int64  `json:"t"`
 	Msg  string `json:"msg"`
-	Kind string `json:"kind"` // info | ok | warn | err | trade
+	Kind string `json:"kind"` // info | ok | warn | err | trade | sale
 }
 
 type State struct {
@@ -80,6 +99,7 @@ type State struct {
 	DayKey         string    `json:"dayKey"`
 	DayStartEquity float64   `json:"dayStartEquity"`
 	DayBlocked     bool      `json:"dayBlocked"`
+	LastAlive      int64     `json:"lastAlive"` // última checagem feita (para saber se o robô ficou fora do ar)
 }
 
 // Live = o que o painel mostra e não precisa ser salvo.
@@ -102,19 +122,37 @@ type Bot struct {
 	cfg  Config
 	st   State
 	live Live
-	bn   *Binance
+	bn   *Binance // Binance do modo atual (normal ou de teste)
+	data *Binance // Binance normal, só dados públicos (backtest)
 	info *SymbolInfo
 	wake chan struct{}
 	dir  string
+
+	notify      *Notifier
+	tgMu        sync.Mutex
+	tgToken     string
+	tgChat      string
+	httpc       *http.Client
+	stopRetryAt time.Time
+	lastErrMsg  string
+	lastErrAt   time.Time
 }
 
 func NewBot(dir string) *Bot {
-	b := &Bot{dir: dir, bn: NewBinance(), cfg: defaultConfig(), wake: make(chan struct{}, 1)}
+	b := &Bot{dir: dir, cfg: defaultConfig(), wake: make(chan struct{}, 1), data: NewBinance(),
+		httpc: &http.Client{Timeout: 10 * time.Second}}
 	readJSON(filepath.Join(dir, "config.json"), &b.cfg)
 	if readJSON(filepath.Join(dir, "estado.json"), &b.st) != nil {
 		b.st.PaperQuote = b.cfg.PaperStart
 	}
-	b.bn.Key, b.bn.Secret = b.cfg.APIKey, b.cfg.APISecret
+	b.bn = newFor(b.cfg.Mode)
+	b.bn.Key, b.bn.Secret = b.cfg.keys(b.cfg.Mode)
+	b.tgToken, b.tgChat = b.cfg.TelegramToken, b.cfg.TelegramChat
+	b.notify = NewNotifier(func() (string, string) {
+		b.tgMu.Lock()
+		defer b.tgMu.Unlock()
+		return b.tgToken, b.tgChat
+	})
 	return b
 }
 
@@ -142,6 +180,7 @@ func (b *Bot) saveConfigLocked() {
 	writeJSON(filepath.Join(b.dir, "config.json"), b.cfg)
 }
 
+// logf grava no registro. Avisos (warn) e erros (err) também vão para o Telegram.
 func (b *Bot) logf(kind, format string, a ...any) {
 	msg := fmt.Sprintf(format, a...)
 	log.Printf("[%s] %s", kind, msg)
@@ -149,6 +188,20 @@ func (b *Bot) logf(kind, format string, a ...any) {
 	if len(b.st.Logs) > 300 {
 		b.st.Logs = b.st.Logs[len(b.st.Logs)-300:]
 	}
+	switch kind {
+	case "warn":
+		b.alert("⚠️ " + msg)
+	case "err":
+		// o mesmo erro só é avisado de novo depois de 30 minutos
+		if msg != b.lastErrMsg || time.Since(b.lastErrAt) > 30*time.Minute {
+			b.lastErrMsg, b.lastErrAt = msg, time.Now()
+			b.alert("❌ " + msg)
+		}
+	}
+}
+
+func (b *Bot) alert(msg string) {
+	b.notify.Send("TradeMartins: " + msg)
 }
 
 func (b *Bot) poke() {
@@ -162,7 +215,21 @@ func (b *Bot) poke() {
 func (b *Bot) Run() {
 	b.mu.Lock()
 	if b.st.Running {
+		wait := time.Duration(b.cfg.CheckSeconds) * time.Second
+		gap := time.Since(time.UnixMilli(b.st.LastAlive))
+		if b.st.LastAlive > 0 && gap > 3*wait+90*time.Second {
+			msg := fmt.Sprintf("O robô ficou FORA DO AR por %s (desde %s).", fmtDur(gap), time.UnixMilli(b.st.LastAlive).Format("02/01 15:04"))
+			if p := b.st.Position; p != nil {
+				if p.StopOrderID != 0 {
+					msg += " O stop-loss continuou registrado na Binance."
+				} else {
+					msg += " A posição aberta ficou sem stop vigiado."
+				}
+			}
+			b.logf("warn", "%s", msg)
+		}
 		b.logf("info", "Robô retomado automaticamente (%s, %s, modo %s).", b.cfg.Symbol, b.cfg.Interval, b.cfg.Mode)
+		b.alert(fmt.Sprintf("▶️ Robô retomado: %s, velas de %s%s", b.cfg.Symbol, b.cfg.Interval, modeTag(b.cfg.Mode)))
 	}
 	b.mu.Unlock()
 	for {
@@ -181,18 +248,32 @@ func (b *Bot) Run() {
 	}
 }
 
+func fmtDur(d time.Duration) string {
+	if d < time.Hour {
+		return fmt.Sprintf("%d min", int(d.Minutes()))
+	}
+	if d < 48*time.Hour {
+		return fmt.Sprintf("%dh%02d", int(d.Hours()), int(d.Minutes())%60)
+	}
+	return fmt.Sprintf("%d dias", int(d.Hours()/24))
+}
+
 func (b *Bot) tick() {
 	b.mu.Lock()
-	cfg := b.cfg
+	cfg, bn, info := b.cfg, b.bn, b.info
 	b.mu.Unlock()
 
-	if b.info == nil || b.info.Symbol != cfg.Symbol {
-		info, err := b.bn.Symbol(cfg.Symbol)
-		if err != nil {
+	if info == nil || info.Symbol != cfg.Symbol {
+		var err error
+		if info, err = bn.Symbol(cfg.Symbol); err != nil {
 			b.setErr(err)
 			return
 		}
 		b.mu.Lock()
+		if b.bn != bn { // o modo mudou no meio do caminho
+			b.mu.Unlock()
+			return
+		}
 		b.info = info
 		b.mu.Unlock()
 	}
@@ -201,7 +282,7 @@ func (b *Bot) tick() {
 	if need > 1000 {
 		need = 1000
 	}
-	ks, err := b.bn.Klines(cfg.Symbol, cfg.Interval, need, 0)
+	ks, err := bn.Klines(cfg.Symbol, cfg.Interval, need, 0)
 	if err != nil {
 		b.setErr(err)
 		return
@@ -221,22 +302,27 @@ func (b *Bot) tick() {
 
 	// saldo
 	var quoteBal, baseBal float64
-	if cfg.Mode == "real" {
-		_, total, err := b.bn.Balances()
+	balErr := false
+	if isExchange(cfg.Mode) {
+		_, total, err := bn.Balances()
 		if err != nil {
 			b.setErr(err)
+			balErr = true
 		} else {
-			quoteBal, baseBal = total[b.info.Quote], total[b.info.Base]
+			quoteBal, baseBal = total[info.Quote], total[info.Base]
 		}
 	}
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if cfg.Mode != "real" {
+	if b.bn != bn || b.cfg.Symbol != cfg.Symbol {
+		return // ajustes mudaram durante a checagem; a próxima usa os novos
+	}
+	if !isExchange(cfg.Mode) {
 		quoteBal, baseBal = b.st.PaperQuote, b.st.PaperBase
 	}
 	b.live.Price, b.live.QuoteBal, b.live.BaseBal = price, quoteBal, baseBal
-	b.live.Base, b.live.Quote = b.info.Base, b.info.Quote
+	b.live.Base, b.live.Quote = info.Base, info.Quote
 	b.live.Equity = quoteBal + baseBal*price
 	b.live.Candles = ks
 	b.live.Inds = map[string]float64{"fast": nz(ind.Fast[last]), "slow": nz(ind.Slow[last]), "rsi": nz(ind.RSI[last])}
@@ -244,50 +330,58 @@ func (b *Bot) tick() {
 		b.live.Inds["trend"] = nz(ind.Trend[last])
 	}
 	b.live.Updated = time.Now().UnixMilli()
-	b.live.LastError = ""
+	if !balErr {
+		b.live.LastError = ""
+	}
 
 	// limite de perda do dia
 	today := dayKey(time.Now())
-	if b.st.DayKey != today {
+	if b.st.DayKey != today && !balErr {
 		b.st.DayKey, b.st.DayStartEquity, b.st.DayBlocked = today, b.live.Equity, false
-		b.saveLocked()
 	}
+
+	// O stop na Binance é acompanhado mesmo com o robô desligado.
+	if p := b.st.Position; p != nil && isExchange(p.Mode) && p.Mode == cfg.Mode && p.Symbol == cfg.Symbol {
+		b.syncStopLocked(price)
+	}
+
 	if !b.st.Running {
+		b.saveLocked()
 		return
 	}
-	if cfg.MaxDailyLossPct > 0 && !b.st.DayBlocked && b.st.DayStartEquity > 0 &&
+	b.st.LastAlive = time.Now().UnixMilli()
+	if cfg.PingURL != "" {
+		go ping(b.httpc, cfg.PingURL)
+	}
+	if cfg.MaxDailyLossPct > 0 && !b.st.DayBlocked && b.st.DayStartEquity > 0 && !balErr &&
 		b.live.Equity < b.st.DayStartEquity*(1-cfg.MaxDailyLossPct/100) {
 		b.st.DayBlocked = true
 		b.logf("warn", "Perda do dia passou de %.1f%%. Sem novas compras até amanhã.", cfg.MaxDailyLossPct)
-		b.saveLocked()
 	}
 
-	pos := b.st.Position
-	if pos != nil && pos.Symbol == cfg.Symbol {
+	if pos := b.st.Position; pos != nil && pos.Symbol == cfg.Symbol && pos.Mode == cfg.Mode {
 		switch {
-		case pos.Stop > 0 && price <= pos.Stop:
+		case pos.StopOrderID == 0 && pos.Stop > 0 && price <= pos.Stop:
+			// sem ordem na Binance (modo simulado ou falha ao registrar): o próprio robô vende
 			b.sellLocked(price, "stop-loss")
-			return
 		case pos.Take > 0 && price >= pos.Take:
 			b.sellLocked(price, "take-profit")
-			return
 		}
 	}
 
-	if closed[last].OpenTime == b.st.LastCandle {
-		return // esta vela já foi avaliada
-	}
-	b.st.LastCandle = closed[last].OpenTime
-	sig := signalAt(ind, closes, last, cfg.Params)
-	switch {
-	case sig == sigBuy && b.st.Position == nil:
-		if b.st.DayBlocked {
-			b.logf("warn", "Sinal de compra ignorado: limite de perda do dia atingido.")
-		} else {
-			b.buyLocked(price)
+	if closed[last].OpenTime != b.st.LastCandle {
+		b.st.LastCandle = closed[last].OpenTime
+		sig := signalAt(ind, closes, last, cfg.Params)
+		switch {
+		case sig == sigBuy && b.st.Position == nil:
+			if b.st.DayBlocked {
+				b.logf("info", "Sinal de compra ignorado: limite de perda do dia atingido.")
+			} else {
+				b.buyLocked(price)
+			}
+		case sig == sigSell && b.st.Position != nil:
+			b.sellLocked(price, "sinal")
 		}
-	case sig == sigSell && b.st.Position != nil:
-		b.sellLocked(price, "sinal")
 	}
 	b.saveLocked()
 }
@@ -316,21 +410,18 @@ func (b *Bot) buyLocked(price float64) {
 	now := time.Now().UnixMilli()
 	pos := &Position{Symbol: cfg.Symbol, Mode: cfg.Mode, Time: now}
 
-	if cfg.Mode == "real" {
-		spend := b.live.QuoteBal * cfg.TradePct / 100
+	if isExchange(cfg.Mode) {
 		free, _, err := b.bn.Balances()
 		if err != nil {
 			b.logf("err", "Compra cancelada: %v", err)
 			return
 		}
-		if f := free[info.Quote] * cfg.TradePct / 100; f < spend {
-			spend = f
-		}
+		spend := free[info.Quote] * cfg.TradePct / 100
 		if spend < info.MinNotional*1.02 || spend <= 0 {
 			b.logf("err", "Compra cancelada: saldo de %s pequeno demais (mínimo da Binance: %.2f).", info.Quote, info.MinNotional)
 			return
 		}
-		r, err := b.bn.MarketOrder(cfg.Symbol, "BUY", "", floorDec(spend, info.QuotePrecision))
+		r, err := b.marketOrderLocked(cfg.Symbol, "BUY", "", floorDec(spend, info.QuotePrecision))
 		if err != nil {
 			b.logf("err", "Compra recusada: %v", err)
 			return
@@ -357,72 +448,93 @@ func (b *Bot) buyLocked(price float64) {
 	b.st.Trades = append(b.st.Trades, Trade{Time: now, Side: "COMPRA", Symbol: cfg.Symbol, Mode: cfg.Mode,
 		Price: pos.Entry, Qty: pos.Qty, Quote: pos.Cost, Reason: "sinal"})
 	b.logf("trade", "COMPRA %s %s a %s (%s %.2f)%s", fmtQty(pos.Qty), info.Base, fmtPrice(pos.Entry), info.Quote, pos.Cost, modeTag(cfg.Mode))
+	msg := fmt.Sprintf("🟢 COMPRA%s\n%s %s a %s\nValor: %.2f %s", modeTag(cfg.Mode), fmtQty(pos.Qty), info.Base, fmtPrice(pos.Entry), pos.Cost, info.Quote)
+	if pos.Stop > 0 {
+		msg += "\nStop-loss: " + fmtPrice(pos.Stop)
+	}
+	if pos.Take > 0 {
+		msg += "\nTake-profit: " + fmtPrice(pos.Take)
+	}
+	b.alert(msg)
 	b.saveLocked()
+	if isExchange(cfg.Mode) {
+		b.stopRetryAt = time.Time{}
+		b.syncStopLocked(price) // registra o stop na Binance na hora
+	}
 }
 
+// sellLocked vende a posição inteira a preço de mercado.
 func (b *Bot) sellLocked(price float64, reason string) {
 	pos := b.st.Position
 	if pos == nil {
 		return
 	}
-	info := b.info
-	now := time.Now().UnixMilli()
-	var proceeds, qty, avg float64
-
-	if pos.Mode == "real" {
-		free, _, err := b.bn.Balances()
-		if err != nil {
-			b.logf("err", "Venda (%s) não enviada: %v. Tento de novo na próxima checagem.", reason, err)
-			return
-		}
-		q := math.Min(pos.Qty, free[info.Base])
-		qs := floorStep(q, info.StepSize)
-		var qv float64
-		fmt.Sscan(qs, &qv)
-		if qv < info.MinQty || qv*price < info.MinNotional {
-			b.logf("warn", "Quantidade de %s pequena demais para vender (%s). Posição encerrada no robô.", info.Base, qs)
-			b.st.Position = nil
-			b.saveLocked()
-			return
-		}
-		r, err := b.bn.MarketOrder(pos.Symbol, "SELL", qs, "")
-		if err != nil {
-			b.logf("err", "Venda (%s) recusada: %v. Tento de novo na próxima checagem.", reason, err)
-			return
-		}
-		qty = r.ExecutedQty
-		proceeds = r.QuoteQty - r.Commission[info.Quote]
-		avg = r.QuoteQty / r.ExecutedQty
-	} else {
-		qty = pos.Qty
-		gross := qty * price
-		proceeds = gross - gross*paperFeePct/100
-		avg = price
-		b.st.PaperBase -= qty
-		if b.st.PaperBase < 1e-12 {
-			b.st.PaperBase = 0
-		}
-		b.st.PaperQuote += proceeds
+	if isExchange(pos.Mode) {
+		b.sellExchangeLocked(price, reason)
+		return
 	}
-	pnl := proceeds - pos.Cost
-	t := Trade{Time: now, Side: "VENDA", Symbol: pos.Symbol, Mode: pos.Mode, Price: avg, Qty: qty, Quote: proceeds,
-		Reason: reason, PnL: pnl, PnLPct: pnl / pos.Cost * 100, EntryTime: pos.Time, EntryPrice: pos.Entry}
+	qty := pos.Qty
+	gross := qty * price
+	proceeds := gross - gross*paperFeePct/100
+	b.st.PaperBase -= qty
+	if b.st.PaperBase < 1e-12 {
+		b.st.PaperBase = 0
+	}
+	b.st.PaperQuote += proceeds
+	b.recordSaleLocked(qty, proceeds, price, reason, true)
+}
+
+// recordSaleLocked registra uma venda. closeAll=false = venda parcial (parte da posição continua aberta).
+func (b *Bot) recordSaleLocked(qty, proceeds, avg float64, reason string, closeAll bool) {
+	pos := b.st.Position
+	if pos == nil || qty <= 0 {
+		return
+	}
+	frac := math.Min(qty/pos.Qty, 1)
+	if frac > 0.995 {
+		closeAll = true
+	}
+	cost := pos.Cost * frac
+	if closeAll {
+		cost = pos.Cost
+	}
+	pnl := proceeds - cost
+	t := Trade{Time: time.Now().UnixMilli(), Side: "VENDA", Symbol: pos.Symbol, Mode: pos.Mode, Price: avg, Qty: qty, Quote: proceeds,
+		Reason: reason, PnL: pnl, EntryTime: pos.Time, EntryPrice: pos.Entry}
+	if cost > 0 {
+		t.PnLPct = pnl / cost * 100
+	}
 	b.st.Trades = append(b.st.Trades, t)
 	if len(b.st.Trades) > 2000 {
 		b.st.Trades = b.st.Trades[len(b.st.Trades)-2000:]
 	}
-	b.st.Position = nil
-	kind := "ok"
-	if pnl < 0 {
-		kind = "warn"
+	base, quote := pos.Symbol, ""
+	if b.info != nil {
+		base, quote = b.info.Base, b.info.Quote
 	}
-	b.logf(kind, "VENDA (%s) %s %s a %s → resultado %+.2f %s (%+.2f%%)%s", reason, fmtQty(qty), info.Base, fmtPrice(avg), pnl, info.Quote, t.PnLPct, modeTag(pos.Mode))
+	part := ""
+	if closeAll {
+		b.st.Position = nil
+	} else {
+		pos.Qty -= qty
+		pos.Cost -= cost
+		part = " (parcial)"
+	}
+	b.logf("sale", "VENDA%s (%s) %s %s a %s → resultado %+.2f %s (%+.2f%%)%s", part, reason, fmtQty(qty), base, fmtPrice(avg), pnl, quote, t.PnLPct, modeTag(pos.Mode))
+	icon := "✅"
+	if pnl < 0 {
+		icon = "🔻"
+	}
+	b.alert(fmt.Sprintf("%s VENDA%s%s — %s\n%s %s a %s\nResultado: %+.2f %s (%+.2f%%)", icon, part, modeTag(pos.Mode), reason, fmtQty(qty), base, fmtPrice(avg), pnl, quote, t.PnLPct))
 	b.saveLocked()
 }
 
 func modeTag(m string) string {
-	if m == "real" {
+	switch m {
+	case "real":
 		return " [REAL]"
+	case "teste":
+		return " [Binance de teste]"
 	}
 	return " [simulado]"
 }
@@ -452,20 +564,25 @@ func (b *Bot) Start(confirmReal bool) error {
 	if b.st.Running {
 		return nil
 	}
-	if b.cfg.Mode == "real" {
-		if b.cfg.APIKey == "" || b.cfg.APISecret == "" {
+	if isExchange(b.cfg.Mode) {
+		if k, s := b.cfg.keys(b.cfg.Mode); k == "" || s == "" {
+			if b.cfg.Mode == "teste" {
+				return fmt.Errorf("configure a chave da Binance de TESTE (testnet.binance.vision) em Ajustes")
+			}
 			return fmt.Errorf("configure a chave de API da Binance antes de usar o modo real")
 		}
-		if !confirmReal {
-			return fmt.Errorf("confirme que quer operar com dinheiro real")
-		}
+	}
+	if b.cfg.Mode == "real" && !confirmReal {
+		return fmt.Errorf("confirme que quer operar com dinheiro real")
 	}
 	if b.st.Position != nil && (b.st.Position.Symbol != b.cfg.Symbol || b.st.Position.Mode != b.cfg.Mode) {
 		return fmt.Errorf("existe uma posição aberta em %s (%s). Volte para esse par/modo ou feche a posição", b.st.Position.Symbol, b.st.Position.Mode)
 	}
 	b.st.Running = true
 	b.st.LastCandle = 0
+	b.st.LastAlive = time.Now().UnixMilli()
 	b.logf("ok", "Robô LIGADO: %s, velas de %s, modo %s.", b.cfg.Symbol, b.cfg.Interval, strings.ToUpper(b.cfg.Mode))
+	b.alert(fmt.Sprintf("▶️ Robô ligado: %s, velas de %s%s", b.cfg.Symbol, b.cfg.Interval, modeTag(b.cfg.Mode)))
 	b.saveLocked()
 	go b.poke()
 	return nil
@@ -479,10 +596,15 @@ func (b *Bot) Stop() {
 	}
 	b.st.Running = false
 	msg := "Robô DESLIGADO."
-	if b.st.Position != nil {
-		msg += " A posição aberta continua aberta (sem stop automático enquanto desligado)."
+	if p := b.st.Position; p != nil {
+		if p.StopOrderID != 0 {
+			msg += " A posição continua aberta e o stop-loss continua registrado na Binance."
+		} else {
+			msg += " A posição continua aberta, sem stop vigiado enquanto o robô estiver desligado."
+		}
 	}
 	b.logf("info", "%s", msg)
+	b.alert("⏸️ " + msg)
 	b.saveLocked()
 }
 
@@ -505,13 +627,13 @@ func (b *Bot) SellNow() error {
 func (b *Bot) ResetPaper() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.st.Position != nil && b.st.Position.Mode != "real" {
+	if b.st.Position != nil && b.st.Position.Mode == "simulado" {
 		b.st.Position = nil
 	}
 	b.st.PaperQuote, b.st.PaperBase = b.cfg.PaperStart, 0
 	kept := b.st.Trades[:0]
 	for _, t := range b.st.Trades {
-		if t.Mode == "real" {
+		if t.Mode != "simulado" && t.Mode != "" {
 			kept = append(kept, t)
 		}
 	}
@@ -523,10 +645,23 @@ func (b *Bot) ResetPaper() error {
 	return nil
 }
 
+// keep: texto vazio = manter o valor atual; "-" = apagar.
+func keep(newV, oldV string) string {
+	switch strings.TrimSpace(newV) {
+	case "":
+		return oldV
+	case "-":
+		return ""
+	}
+	return strings.TrimSpace(newV)
+}
+
 func (b *Bot) UpdateConfig(nc Config) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	nc.Symbol = strings.ToUpper(strings.TrimSpace(nc.Symbol))
+	nc.PingURL = strings.TrimSpace(nc.PingURL)
+	nc.TelegramChat = strings.TrimSpace(nc.TelegramChat)
 	p := nc.Params
 	switch {
 	case nc.Symbol == "":
@@ -543,10 +678,12 @@ func (b *Bot) UpdateConfig(nc Config) error {
 		return fmt.Errorf("stop-loss ou take-profit inválido")
 	case nc.TradePct <= 0 || nc.TradePct > 100:
 		return fmt.Errorf("o tamanho da compra precisa ficar entre 1%% e 100%% do saldo")
-	case nc.Mode != "simulado" && nc.Mode != "real":
+	case nc.Mode != "simulado" && nc.Mode != "teste" && nc.Mode != "real":
 		return fmt.Errorf("modo inválido")
 	case nc.PaperStart <= 0:
 		return fmt.Errorf("saldo inicial da simulação inválido")
+	case nc.PingURL != "" && nc.PingURL != "-" && !validPingURL(nc.PingURL):
+		return fmt.Errorf("o endereço de monitoramento precisa começar com https://")
 	}
 	if _, ok := map[string]bool{"1m": true, "3m": true, "5m": true, "15m": true, "30m": true, "1h": true, "2h": true, "4h": true, "6h": true, "8h": true, "12h": true, "1d": true}[nc.Interval]; !ok {
 		return fmt.Errorf("intervalo inválido")
@@ -560,29 +697,35 @@ func (b *Bot) UpdateConfig(nc Config) error {
 	if b.st.Position != nil && (nc.Symbol != b.st.Position.Symbol || nc.Mode != b.st.Position.Mode) {
 		return fmt.Errorf("feche a posição aberta em %s antes de trocar o par ou o modo", b.st.Position.Symbol)
 	}
-	// chave em branco = manter a atual
-	if nc.APIKey == "" {
-		nc.APIKey = b.cfg.APIKey
+	nc.APIKey, nc.APISecret = keep(nc.APIKey, b.cfg.APIKey), keep(nc.APISecret, b.cfg.APISecret)
+	nc.TestAPIKey, nc.TestAPISecret = keep(nc.TestAPIKey, b.cfg.TestAPIKey), keep(nc.TestAPISecret, b.cfg.TestAPISecret)
+	nc.TelegramToken = keep(nc.TelegramToken, b.cfg.TelegramToken)
+	if nc.PingURL == "-" {
+		nc.PingURL = ""
 	}
-	if nc.APISecret == "" {
-		nc.APISecret = b.cfg.APISecret
-	}
-	if nc.APIKey == "-" {
-		nc.APIKey, nc.APISecret = "", ""
-	}
-	if nc.Symbol != b.cfg.Symbol {
+	if nc.Symbol != b.cfg.Symbol || nc.Mode != b.cfg.Mode {
 		b.info = nil
 		if b.st.Position == nil && b.st.PaperBase > 0 {
 			b.st.PaperBase = 0 // resíduo do par anterior
 		}
 	}
+	if nc.Mode != b.cfg.Mode {
+		b.bn = newFor(nc.Mode)
+		b.live = Live{}
+		b.st.DayKey = ""
+	}
+	b.bn.Key, b.bn.Secret = nc.keys(nc.Mode)
 	if b.cfg.Params != nc.Params && b.st.Position != nil {
 		b.st.Position.Stop, b.st.Position.Take = nc.Params.stops(b.st.Position.Entry)
+		b.stopRetryAt = time.Time{} // a ordem de stop na Binance é atualizada na próxima checagem
 	}
 	b.cfg = nc
-	b.bn.Key, b.bn.Secret = nc.APIKey, nc.APISecret
+	b.tgMu.Lock()
+	b.tgToken, b.tgChat = nc.TelegramToken, nc.TelegramChat
+	b.tgMu.Unlock()
 	b.saveConfigLocked()
-	b.logf("info", "Configurações salvas (%s, %s, modo %s).", nc.Symbol, nc.Interval, nc.Mode)
+	b.saveLocked()
+	b.logf("info", "Ajustes salvos (%s, %s, modo %s).", nc.Symbol, nc.Interval, nc.Mode)
 	go b.poke()
 	return nil
 }
