@@ -323,23 +323,24 @@
   };
   const incomes = () => db.incomes || [];
   const dimOf = s => { const d = pd(s); return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); };
-  // Renda contada todo dia: o valor do mês é dividido pelos dias que FALTAM no mês a partir do dia em que
-  // o dinheiro chega (começo do mês, começo da renda ou dia da recarga). Recarga no dia 1 → ÷ 30/31;
-  // recarga com 4 dias para acabar o mês → ÷ 4.
-  function dayWindow(src, d) {
-    const me = d.slice(0, 8) + pad(dimOf(d));
-    let a = d.slice(0, 8) + '01';
-    if (src.start && src.start > a) a = src.start;
-    if (src.cycle && src.mode === 'daily') { const r = d.slice(0, 8) + pad(Math.min(+src.payday || 1, dimOf(d))); if (r > a) a = r; }
-    return { a, e: me, n: a > me ? 0 : daysBetween(a, me) };
-  }
-  function dailyShare(src, d, monthly) {
-    const w = dayWindow(src, d); if (!w.n || d < w.a) return 0;
-    const k = daysBetween(w.a, d);
-    return r2(r2(monthly * k / w.n) - r2(monthly * (k - 1) / w.n));
-  }
-  // quanto entra por dia hoje (0 se o dinheiro deste mês ainda não chegou)
-  const perDayNow = (src, monthly = freeMonthly(src)) => { const t = todayStr(), w = dayWindow(src, t); return !w.n || t < w.a ? 0 : monthly / w.n; };
+  // Duas formas de dividir a renda contada todo dia (o usuário escolhe em cada renda):
+  //  'day'  → valor do mês ÷ dias do mês (30/31): entra um pedaço fixo por dia, o que sobra vai acumulando.
+  //  'left' → o dinheiro entra inteiro no dia em que cai; cada dia vale o que SOBROU ÷ dias que faltam até a
+  //           próxima recarga/pagamento. Gastou mais num dia, os próximos ficam menores; acabou, fica zero.
+  const divideOf = s => s.type === 'invest' ? 'day' : (s.divide || (s.type === 'vr' ? 'left' : 'day'));
+  const leftMode = s => s.mode === 'daily' && divideOf(s) === 'left';
+  const payDate = (s, y, m) => { const dim = new Date(y, m + 1, 0).getDate(); return ds(new Date(y, m, Math.min(+s.payday || 1, dim))); };
+  function nextPay(s, d) { const x = pd(d); let r = payDate(s, x.getFullYear(), x.getMonth()); if (r <= d) r = payDate(s, x.getFullYear(), x.getMonth() + 1); return r; }
+  function prevPay(s, d) { const x = pd(d); let r = payDate(s, x.getFullYear(), x.getMonth()); if (r > d) r = payDate(s, x.getFullYear(), x.getMonth() - 1); return r; }
+  // dias que faltam contando hoje, até a véspera da próxima recarga/pagamento
+  const daysLeft = (s, d) => daysBetween(d, nextPay(s, d)) - 1;
+  // 'day': valor do mês ÷ dias daquele mês, com arredondamento que fecha o mês exato
+  const fixedShare = (monthly, d) => { const dim = dimOf(d), day = +d.slice(8); return r2(r2(monthly * day / dim) - r2(monthly * (day - 1) / dim)); };
+  // quanto vale cada dia agora
+  const perDayNow = (src, monthly = freeMonthly(src)) => {
+    if (leftMode(src)) { const p = pockets().find(x => x.src.id === src.id); return p ? Math.max(0, p.today.share || 0) : 0; }
+    return monthly / dimOf(todayStr());
+  };
   const r2 = v => Math.round(v * 100) / 100;
   let vCache = null;
   // parte do salário que vai para investimento (em % ou em R$) e o que sobra livre para o dia a dia
@@ -367,10 +368,17 @@
       if (src.mode === 'off' || !(src.monthly > 0) || !src.start) continue;
       const end = src.end && src.end < today ? src.end : today;
       const base = { time: null, desc: src.name, cat: INC_TYPES[src.type]?.cat || 'receitas', bank: src.bank || null, source: 'renda', virtual: true, inc: src.id };
-      if (src.mode === 'daily') {
-        // valor do mês ÷ dias que faltam no mês (a partir de quando o dinheiro chega), fechando o valor exato
+      if (leftMode(src)) {
+        // o valor entra inteiro no dia em que cai; se a renda começa no meio do período, entra a parte proporcional
+        const p0 = prevPay(src, src.start);
+        if (p0 !== src.start) {
+          const amount = r2(src.monthly * daysLeft(src, src.start) / (daysBetween(p0, nextPay(src, src.start)) - 1));
+          if (amount) out.push({ ...base, id: `inc:${src.id}:${src.start}`, date: src.start, amount });
+        }
+        for (let r = p0 === src.start ? src.start : nextPay(src, src.start); r <= end; r = nextPay(src, r)) out.push({ ...base, id: `inc:${src.id}:${r}`, date: r, amount: r2(src.monthly) });
+      } else if (src.mode === 'daily') {
         for (let d = src.start; d <= end; d = addDays(d, 1)) {
-          const amount = dailyShare(src, d, src.monthly);
+          const amount = fixedShare(src.monthly, d);
           if (amount) out.push({ ...base, id: `inc:${src.id}:${d}`, date: d, amount });
         }
       } else {
@@ -1685,7 +1693,9 @@
   // "Na recarga, recomeçar pelo saldo real" (renda contada todo dia, como o VR)
   const cycleOn = s => !!(s.cycle && s.mode === 'daily');
   const isCycleDay = (s, d) => +d.slice(8) === Math.min(+s.payday || 1, dimOf(d));
-  const setAdj = (id, d, v) => { db.pocketAdj ||= {}; db.pocketAdj[id] ||= {}; if (v == null) delete db.pocketAdj[id][d]; else db.pocketAdj[id][d] = r2(v); };
+  // ajustes ao saldo real: um conjunto para cada forma de dividir (o significado é diferente)
+  const adjKey = left => left ? 'pocketAdjL' : 'pocketAdj';
+  const setAdj = (id, d, v, left = false) => { const k = adjKey(left); db[k] ||= {}; db[k][id] ||= {}; if (v == null) delete db[k][id][d]; else db[k][id][d] = r2(v); };
   let pCache = null;
   function pockets() {
     const srcs = pocketSources();
@@ -1704,8 +1714,27 @@
     const list = srcs.map(s => {
       const end = s.end && s.end < today ? s.end : today;
       const adj = (db.pocketAdj || {})[s.id] || {};
-      const cyc = cycleOn(s);
+      const cyc = cycleOn(s) && !leftMode(s);
       let bal = 0; const days = []; let need = null;
+      if (leftMode(s)) {
+        const adj = (db.pocketAdjL || {})[s.id] || {};
+        // o que sobrou de verdade ÷ dias que faltam. Vale-refeição não fica negativo: acabou, é zero.
+        const floor = s.type === 'vr';
+        for (let d = s.start; d <= end; d = addDays(d, 1)) {
+          const i = inc[`${s.id}|${d}`] || 0, o = out[`${s.id}|${d}`] || 0;
+          let have, mark = '';
+          if (adj[d] != null) { have = adj[d]; mark = 'adj'; }
+          else { have = r2(bal + i); if (d === s.start && +s.openBal) { have = r2(have + +s.openBal); mark = 'ini'; } }
+          if (floor) have = Math.max(0, have);
+          const left = daysLeft(s, d), share = r2(have / left);
+          let close = r2(have - o), avail = r2(share - o);
+          if (floor) { close = Math.max(0, close); avail = Math.max(0, avail); }
+          days.push({ d, open: bal, inc: i, out: o, bal: close, have, share, left, avail, mark });
+          bal = close;
+        }
+        const last = days[days.length - 1] || { d: today, open: 0, inc: 0, out: 0, bal: 0, have: 0, share: 0, left: 1, avail: 0 };
+        return { src: s, days, today: { ...last, total: last.bal, bal: last.avail }, ended: !!(s.end && s.end < today), need: null, left: true };
+      }
       for (let d = s.start; d <= end; d = addDays(d, 1)) {
         const i = inc[`${s.id}|${d}`] || 0, o = out[`${s.id}|${d}`] || 0;
         let open = bal, mark = '';
@@ -1733,7 +1762,9 @@
       <div class="pk-top"><span class="pk-ic">${svg(ty.ic)}</span><span class="pk-name">${esc(p.src.name)}</span>${p.ended ? '<span class="pk-tag">encerrada</span>' : ''}</div>
       <div class="pk-lbl">${p.ended ? 'Saldo final' : 'Disponível hoje'}</div>
       <div class="pk-val ${t.bal < 0 ? 'neg' : ''}">${t.bal < 0 ? '−' : ''}${fmt(Math.abs(t.bal))}</div>
-      <div class="pk-flow"><span>${t.mark === 'adj' ? 'Saldo real' : t.mark === 'ini' ? 'Já tinha' : t.mark === 'cycle' ? 'Recomeçou' : 'Ontem'} ${sign(t.open)}</span><span>Entrou +${fmt(t.inc)}</span><span>Saiu −${fmt(t.out)}</span></div>
+      ${p.left
+        ? `<div class="pk-flow"><span>Tem ${fmt(t.have)} ÷ ${t.left} dia${t.left > 1 ? 's' : ''}</span><span>Por dia ${fmt(t.share)}</span><span>Saiu −${fmt(t.out)}</span></div>`
+        : `<div class="pk-flow"><span>${t.mark === 'adj' ? 'Saldo real' : t.mark === 'ini' ? 'Já tinha' : t.mark === 'cycle' ? 'Recomeçou' : 'Ontem'} ${sign(t.open)}</span><span>Entrou +${fmt(t.inc)}</span><span>Saiu −${fmt(t.out)}</span></div>`}
       ${p.need ? `<div class="pk-need">${svg('edit')} A recarga chegou: toque e diga quanto sobrou</div>` : ''}
       ${big ? `<div class="pk-spark"><canvas id="spark-${p.src.id}"></canvas></div>` : ''}
     </button>`;
@@ -1759,15 +1790,16 @@
     $('#pocket-icon').style.cssText = `background:${alpha(c, .14)};color:${c}`;
     $('#pocket-icon').innerHTML = svg(ty.ic);
     $('#pocket-title').textContent = p.src.name;
-    $('#pocket-sub').textContent = `Hoje: ${p.today.bal < 0 ? '−' : ''}${fmt(Math.abs(p.today.bal))} · ${p.src.mode === 'daily' ? `${fmt(perDayNow(p.src, p.src.monthly))} por dia${(() => { const w = dayWindow(p.src, todayStr()); return w.n && todayStr() >= w.a ? ` (÷ ${w.n} dia${w.n > 1 ? 's' : ''} até o fim do mês)` : ' (a recarga deste mês ainda não caiu)'; })()}` : `${fmt(p.src.monthly)} no dia ${p.src.payday}`}`;
+    $('#pocket-sub').textContent = `Hoje: ${p.today.bal < 0 ? '−' : ''}${fmt(Math.abs(p.today.bal))} · ${p.src.mode === 'daily' ? (p.left ? `${fmt(p.today.share)} por dia (${fmt(p.today.have)} ÷ ${p.today.left} dia${p.today.left > 1 ? 's' : ''} até ${p.src.type === 'vr' ? 'a próxima recarga' : 'o próximo pagamento'})` : `${fmt(p.src.monthly / dimOf(todayStr()))} por dia (÷ ${dimOf(todayStr())} dias do mês)`) : `${fmt(p.src.monthly)} no dia ${p.src.payday}`}`;
     const days = p.days.slice(-31);
     setChart('pocket', $('#chart-pocket'), {
       type: 'bar',
       data: { labels: days.map(d => `${+d.d.slice(8)}/${+d.d.slice(5, 7)}`), datasets: [{ data: days.map(d => d.bal), backgroundColor: days.map(d => d.bal < 0 ? '#ff7a6b' : '#5ee49a'), borderRadius: 5, borderSkipped: false, maxBarThickness: 14 }] },
       options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { ...tooltip, callbacks: { title: it => dayLabel(days[it[0].dataIndex].d), label: c => `Fechou o dia em ${fmt(c.parsed.y)}` } } }, scales: { ...axes(), x: { ...axes().x, ticks: { maxTicksLimit: 6, maxRotation: 0 } } } },
     });
-    $('#pocket-days').innerHTML = `<div class="dt-row dt-head"><span>Dia</span><span>Veio de ontem</span><span>Entrou</span><span>Saiu</span><span>Fechou</span></div>` +
-      [...p.days].reverse().slice(0, 62).map(d => `<div class="dt-row ${d.mark ? 'mk ' + d.mark : ''}" ${d.mark ? `data-mk="${d.d}"` : ''}><span>${d.d === todayStr() ? 'Hoje' : `${pad(+d.d.slice(8))}/${d.d.slice(5, 7)}`}${d.mark ? `<i>${d.mark === 'adj' ? 'real' : d.mark === 'ini' ? 'já tinha' : p.src.type === 'vr' ? 'recarga' : 'pagto'}</i>` : ''}</span><span class="${d.open < 0 ? 'neg' : ''}">${sign(d.open)}</span><span class="pos">+${fmt(d.inc)}</span><span class="neg">${d.out ? '−' + fmt(d.out) : '—'}</span><b class="${d.bal < 0 ? 'neg' : ''}">${d.bal < 0 ? '−' : ''}${fmt(Math.abs(d.bal))}</b></div>`).join('');
+    $('#pocket-days').innerHTML = (p.left ? `<div class="dt-row dt-head"><span>Dia</span><span>Tinha</span><span>Por dia</span><span>Saiu</span><span>Sobrou</span></div>` +
+      [...p.days].reverse().slice(0, 62).map(d => `<div class="dt-row ${d.mark ? 'mk ' + d.mark : ''}" ${d.mark ? `data-mk="${d.d}"` : ''}><span>${d.d === todayStr() ? 'Hoje' : `${pad(+d.d.slice(8))}/${d.d.slice(5, 7)}`}${d.mark ? `<i>${d.mark === 'adj' ? 'real' : 'já tinha'}</i>` : d.inc ? `<i>${p.src.type === 'vr' ? 'recarga' : 'entrou'}</i>` : ''}</span><span>${fmt(d.have)}</span><span class="pos">${fmt(d.share)}</span><span class="neg">${d.out ? '−' + fmt(d.out) : '—'}</span><b class="${d.bal < 0 ? 'neg' : ''}">${d.bal < 0 ? '−' : ''}${fmt(Math.abs(d.bal))}</b></div>`).join('') : '') + (p.left ? '' : `<div class="dt-row dt-head"><span>Dia</span><span>Veio de ontem</span><span>Entrou</span><span>Saiu</span><span>Fechou</span></div>` +
+      [...p.days].reverse().slice(0, 62).map(d => `<div class="dt-row ${d.mark ? 'mk ' + d.mark : ''}" ${d.mark ? `data-mk="${d.d}"` : ''}><span>${d.d === todayStr() ? 'Hoje' : `${pad(+d.d.slice(8))}/${d.d.slice(5, 7)}`}${d.mark ? `<i>${d.mark === 'adj' ? 'real' : d.mark === 'ini' ? 'já tinha' : p.src.type === 'vr' ? 'recarga' : 'pagto'}</i>` : ''}</span><span class="${d.open < 0 ? 'neg' : ''}">${sign(d.open)}</span><span class="pos">+${fmt(d.inc)}</span><span class="neg">${d.out ? '−' + fmt(d.out) : '—'}</span><b class="${d.bal < 0 ? 'neg' : ''}">${d.bal < 0 ? '−' : ''}${fmt(Math.abs(d.bal))}</b></div>`).join(''));
     // recarga chegou e ainda não sabemos quanto sobrou
     const isVr = p.src.type === 'vr', word = isVr ? 'recarga' : 'pagamento';
     $('#pocket-ask').classList.toggle('hidden', !p.need);
@@ -1794,18 +1826,19 @@
   $('#pocket-adjust').addEventListener('click', async () => {
     const p = pockets().find(x => x.src.id === pocketOpen); if (!p) return;
     const t = p.today;
-    const n = await askAmount('Quanto você tem agora?', `Digite o saldo real de “${p.src.name}” agora (o que aparece no app${p.src.type === 'vr' ? ' do VR' : ' do banco'}). A partir de hoje o app conta em cima desse valor.`, t.bal);
+    const n = await askAmount('Quanto você tem agora?', `Digite o saldo real de “${p.src.name}” agora (o que aparece no app${p.src.type === 'vr' ? ' do VR' : ' do banco'}). A partir de hoje o app conta em cima desse valor.`, p.left ? t.total : t.bal);
     if (n == null) return;
-    setAdj(p.src.id, t.d, r2(n - t.inc + t.out)); save(); render(); openPocket(p.src.id);
+    setAdj(p.src.id, t.d, p.left ? r2(n + t.out) : r2(n - t.inc + t.out), !!p.left); save(); render(); openPocket(p.src.id);
     toast(`Saldo de ${p.src.name} ajustado para ${fmt(n)}`);
   });
   // tocar num dia ajustado: desfazer o ajuste
   $('#pocket-days').addEventListener('click', async e => {
     const r = e.target.closest('[data-mk]'); if (!r || !pocketOpen) return;
-    const adj = db.pocketAdj?.[pocketOpen]?.[r.dataset.mk];
+    const isLeft = !!pockets().find(x => x.src.id === pocketOpen)?.left;
+    const adj = db[adjKey(isLeft)]?.[pocketOpen]?.[r.dataset.mk];
     if (adj == null) { $('#pocket-ask').scrollIntoView({ block: 'nearest', behavior: 'smooth' }); return; }
     if (!(await ask({ title: 'Desfazer este ajuste?', text: `Em ${dayLabel(r.dataset.mk).toLowerCase()} o saldo foi ajustado (veio ${fmt(adj)}). Desfazendo, o app volta a calcular sozinho.`, ok: 'Desfazer', icon: 'sliders' }))) return;
-    setAdj(pocketOpen, r.dataset.mk, null); save(); render(); openPocket(pocketOpen); toast('Ajuste desfeito');
+    setAdj(pocketOpen, r.dataset.mk, null, isLeft); save(); render(); openPocket(pocketOpen); toast('Ajuste desfeito');
   });
   const closePocket = () => { pocketOpen = null; $('#pocket-sheet').classList.add('hidden'); $('#pocket-backdrop').classList.add('hidden'); };
   $('#pocket-close').addEventListener('click', closePocket);
@@ -1874,6 +1907,7 @@
     $('#inc-cycle-day').value = src?.payday || 5;
     $('#inc-openbal').value = src?.openBal ? (+src.openBal).toFixed(2).replace('.', ',') : '';
     inc.cycle = src ? !!src.cycle : inc.type === 'vr';
+    inc.divide = divideOf(src || { type: inc.type });
     const first = todayStr().slice(0, 8) + '01';
     $('#inc-start').value = src?.start || first;
     $('#inc-end').value = src?.end || '';
@@ -1902,10 +1936,15 @@
     $('#inc-amount-lbl').textContent = inc.type === 'invest' ? 'Renda por mês (calculada ou digite)' : 'Quanto você recebe por mês';
     $$('#inc-modes button').forEach(b => b.classList.toggle('active', b.dataset.mode === inc.mode));
     $('#payday-row').classList.toggle('hidden', inc.mode !== 'payday');
-    const vr = inc.type === 'vr';
+    const vr = inc.type === 'vr', left = inc.divide === 'left';
     $('#cycle-box').classList.toggle('hidden', inc.mode !== 'daily' || inc.type === 'invest');
+    $('#divide-toggle').classList.toggle('on', left);
+    $('#divide-desc').textContent = left
+      ? `Cada dia vale o que sobrou ÷ os dias que faltam até ${vr ? 'a próxima recarga' : 'o próximo pagamento'}. Ex.: sobraram R$ 20 com 15 dias pela frente → R$ 1,33 por dia.${vr ? ' Acabou, fica zero (nunca negativo).' : ''}`
+      : 'Desligado: valor do mês ÷ 30 ou 31, um pedaço igual todo dia.';
+    $('#cycle-toggle-row').classList.toggle('hidden', left);
     $('#cycle-toggle').classList.toggle('on', !!inc.cycle);
-    $('#cycle-row').classList.toggle('hidden', !inc.cycle);
+    $('#cycle-row').classList.toggle('hidden', !(inc.cycle || left));
     $('#cycle-title').textContent = vr ? 'Na recarga, recomeçar pelo saldo real' : 'No pagamento, recomeçar pelo saldo real';
     $('#cycle-day-lbl').textContent = vr ? 'A recarga cai no dia' : 'O pagamento cai no dia';
     $('#cycle-desc').textContent = inc.cycle
@@ -1926,13 +1965,12 @@
     const part = canSplit && inc.split.on ? investPart({ monthly: gross, invest: { on: true, mode: inc.split.mode, value: isFinite(sv) ? sv : 0 } }) : 0;
     const m = r2(gross - part), today = todayStr(), dim = dimOf(today);
     $('#split-preview').innerHTML = canSplit && inc.split.on && gross ? `<b>${fmt(part)}</b> vai para investimentos (${pct(gross ? part / gross : 0)}) · <b>${fmt(m)}</b> fica livre para o dia a dia` : '';
-    const cyc = inc.mode === 'daily' && inc.type !== 'invest' && inc.cycle;
-    const w = dayWindow({ mode: 'daily', cycle: cyc, payday: parseInt($('#inc-cycle-day').value, 10) || 1, start: $('#inc-start').value || today.slice(0, 8) + '01' }, today);
-    const wordIn = inc.type === 'vr' ? 'a recarga cair' : 'o dinheiro cair';
+    const lft = inc.mode === 'daily' && inc.type !== 'invest' && inc.divide === 'left';
+    const dl = daysLeft({ payday: parseInt($('#inc-cycle-day').value, 10) || 1 }, today);
     $('#inc-preview').textContent = !m ? '' : inc.mode === 'daily'
-      ? (w.n && today >= w.a
-        ? `${fmt(m)} ÷ ${w.n} dia${w.n > 1 ? 's' : ''} que falta${w.n > 1 ? 'm' : ''} em ${MES_LONGO[new Date().getMonth()]} = ${fmt(m / w.n)} por dia. Mês que vem, a partir do dia em que ${wordIn}, divide pelos dias que faltarem (do dia 1: ÷ 30 ou 31).`
-        : `Neste mês ainda não caiu: a partir do dia ${+w.a.slice(8)}, ${fmt(m)} ÷ ${w.n} dias = ${fmt(m / (w.n || 1))} por dia.`)
+      ? (lft
+        ? `Entra ${fmt(m)} no dia ${parseInt($('#inc-cycle-day').value, 10) || 1}. Hoje faltam ${dl} dia${dl > 1 ? 's' : ''} até ${inc.type === 'vr' ? 'a próxima recarga' : 'o próximo pagamento'}: se tivesse ${fmt(m)} agora, daria ${fmt(m / dl)} por dia.`
+        : `Em ${MES_LONGO[new Date().getMonth()]} (${dim} dias): ${fmt(m / dim)} por dia. Num mês de ${dim === 31 ? 30 : 31} dias: ${fmt(m / (dim === 31 ? 30 : 31))} por dia.`)
       : inc.mode === 'payday' ? `Entra ${fmt(m)} todo dia ${$('#inc-payday').value || 1} (ou no último dia, em meses mais curtos).`
       : 'Não entra nas contas. Fica só registrado aqui.';
   }
@@ -1940,12 +1978,13 @@
     const b = e.target.closest('button'); if (!b) return;
     const prevDef = INC_TYPES[inc.type].def;
     inc.type = b.dataset.t;
-    if (!inc.editing) inc.cycle = inc.type === 'vr';
+    if (!inc.editing) { inc.cycle = inc.type === 'vr'; inc.divide = divideOf({ type: inc.type }); }
     if (!$('#inc-name').value.trim() || $('#inc-name').value === prevDef) $('#inc-name').value = INC_TYPES[inc.type].def;
     syncInc();
   });
   $('#inc-modes').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; inc.mode = b.dataset.mode; syncInc(); });
   $('#cycle-toggle').addEventListener('click', () => { inc.cycle = !inc.cycle; syncInc(); });
+  $('#divide-toggle').addEventListener('click', () => { inc.divide = inc.divide === 'left' ? 'day' : 'left'; syncInc(); });
   $('#inc-payday').addEventListener('click', e => { e.stopPropagation(); inc.mode = 'payday'; syncInc(); });
   ['#inc-amount', '#inc-principal', '#inc-rate', '#inc-payday', '#inc-cycle-day', '#inc-openbal', '#split-value'].forEach(k => $(k).addEventListener('input', syncInc));
   ['#inc-bank', '#inc-start', '#inc-end'].forEach(k => $(k).addEventListener('change', syncInc));
@@ -1967,14 +2006,15 @@
     e.preventDefault();
     const monthly = incMonthly();
     if (!monthly && inc.mode !== 'off') { $('#inc-amount').focus(); toast('Digite quanto você recebe por mês'); return; }
-    const useCycle = inc.mode === 'daily' && inc.type !== 'invest' && !!inc.cycle;
+    const useLeft = inc.mode === 'daily' && inc.type !== 'invest' && inc.divide === 'left';
+    const useCycle = inc.mode === 'daily' && inc.type !== 'invest' && (!!inc.cycle || useLeft);
     const payday = Math.min(31, Math.max(1, parseInt($(useCycle ? '#inc-cycle-day' : '#inc-payday').value, 10) || 1));
     const start = $('#inc-start').value || todayStr().slice(0, 8) + '01';
     const end = $('#inc-end').value || null;
     if (end && end < start) { toast('A data final é antes do começo'); return; }
     const data = {
       type: inc.type, name: $('#inc-name').value.trim() || INC_TYPES[inc.type].def, monthly: r2(monthly), mode: inc.mode, payday,
-      bank: $('#inc-bank').value || null, start, end, cycle: useCycle,
+      bank: $('#inc-bank').value || null, start, end, cycle: useCycle && !useLeft, divide: inc.type === 'invest' ? 'day' : (useLeft ? 'left' : 'day'),
       openBal: (() => { const v = Parsers.parseAmount($('#inc-openbal').value); return isFinite(v) && v ? r2(v) : null; })(),
       principal: inc.type === 'invest' ? (Parsers.parseAmount($('#inc-principal').value) || null) : null,
       rate: inc.type === 'invest' ? (Parsers.parseAmount($('#inc-rate').value) || null) : null,
