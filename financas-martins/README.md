@@ -60,6 +60,10 @@ Diferenças em relação ao Android:
   categoria, conta ou forma de pagamento, itens, anotação e origem. Cada linha se edita ali mesmo
   (a anotação também entra na busca). Tocar numa conta do Início mostra saldo, movimento e permite
   mudar nome, tipo, banco e saldo inicial. Tocar em "Entrou"/"Saiu" abre o extrato já filtrado.
+- **Valor por dia = valor do mês ÷ dias que faltam no mês**, contando a partir de quando o dinheiro
+  chega (dia 1, começo da renda ou dia da recarga). Recarga no dia 1 → ÷ 30/31; recarga faltando 4
+  dias para o mês acabar → ÷ 4. Em "Mais opções" da renda dá para informar **quanto já tinha no
+  começo** (só ajuste: soma no saldo, não conta como renda).
 - **Recomeçar na recarga** (renda contada todo dia, como o VR): ligado, no dia da recarga o que
   sobrou "no papel" do mês anterior é zerado e o app pergunta quanto sobrou de verdade no cartão.
   Esse valor soma no saldo, mas não conta como renda. Em qualquer saldo do dia a dia também há

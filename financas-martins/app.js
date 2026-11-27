@@ -323,6 +323,23 @@
   };
   const incomes = () => db.incomes || [];
   const dimOf = s => { const d = pd(s); return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); };
+  // Renda contada todo dia: o valor do mês é dividido pelos dias que FALTAM no mês a partir do dia em que
+  // o dinheiro chega (começo do mês, começo da renda ou dia da recarga). Recarga no dia 1 → ÷ 30/31;
+  // recarga com 4 dias para acabar o mês → ÷ 4.
+  function dayWindow(src, d) {
+    const me = d.slice(0, 8) + pad(dimOf(d));
+    let a = d.slice(0, 8) + '01';
+    if (src.start && src.start > a) a = src.start;
+    if (src.cycle && src.mode === 'daily') { const r = d.slice(0, 8) + pad(Math.min(+src.payday || 1, dimOf(d))); if (r > a) a = r; }
+    return { a, e: me, n: a > me ? 0 : daysBetween(a, me) };
+  }
+  function dailyShare(src, d, monthly) {
+    const w = dayWindow(src, d); if (!w.n || d < w.a) return 0;
+    const k = daysBetween(w.a, d);
+    return r2(r2(monthly * k / w.n) - r2(monthly * (k - 1) / w.n));
+  }
+  // quanto entra por dia hoje (0 se o dinheiro deste mês ainda não chegou)
+  const perDayNow = (src, monthly = freeMonthly(src)) => { const t = todayStr(), w = dayWindow(src, t); return !w.n || t < w.a ? 0 : monthly / w.n; };
   const r2 = v => Math.round(v * 100) / 100;
   let vCache = null;
   // parte do salário que vai para investimento (em % ou em R$) e o que sobra livre para o dia a dia
@@ -351,10 +368,10 @@
       const end = src.end && src.end < today ? src.end : today;
       const base = { time: null, desc: src.name, cat: INC_TYPES[src.type]?.cat || 'receitas', bank: src.bank || null, source: 'renda', virtual: true, inc: src.id };
       if (src.mode === 'daily') {
-        // valor do mês ÷ dias daquele mês, com arredondamento que fecha o mês exato
+        // valor do mês ÷ dias que faltam no mês (a partir de quando o dinheiro chega), fechando o valor exato
         for (let d = src.start; d <= end; d = addDays(d, 1)) {
-          const dim = dimOf(d), day = +d.slice(8);
-          out.push({ ...base, id: `inc:${src.id}:${d}`, date: d, amount: r2(r2(src.monthly * day / dim) - r2(src.monthly * (day - 1) / dim)) });
+          const amount = dailyShare(src, d, src.monthly);
+          if (amount) out.push({ ...base, id: `inc:${src.id}:${d}`, date: d, amount });
         }
       } else {
         const s0 = pd(src.start); const m = new Date(s0.getFullYear(), s0.getMonth(), 1);
@@ -1624,12 +1641,12 @@
 
   /* =================== sua renda =================== */
   const incTile = k => { const t = INC_TYPES[k], c = CAT[t.cat].color; return `<span class="tile" style="background:${alpha(c, .14)};color:${c}">${svg(t.ic)}</span>`; };
-  const modeText = s => s.mode === 'daily' ? `todo dia (${fmt(freeMonthly(s) / dimOf(todayStr()))}/dia este mês)` : s.mode === 'payday' ? `${fmt(freeMonthly(s))} no dia ${s.payday}` : 'não entra nas contas';
+  const modeText = s => s.mode === 'daily' ? `todo dia (${fmt(perDayNow(s))}/dia agora)` : s.mode === 'payday' ? `${fmt(freeMonthly(s))} no dia ${s.payday}` : 'não entra nas contas';
   const isLive = s => s.mode !== 'off' && freeMonthly(s) > 0 && s.start <= todayStr() && (!s.end || s.end >= todayStr());
   function incomeNumbers() {
     const today = todayStr(), month = today.slice(0, 7);
     const v = virtualIncome();
-    const perDay = incomes().filter(s => isLive(s) && s.mode === 'daily').reduce((a, s) => a + s.monthly / dimOf(today), 0);
+    const perDay = incomes().filter(s => isLive(s) && s.mode === 'daily').reduce((a, s) => a + perDayNow(s, s.monthly), 0);
     return {
       today: v.filter(t => t.date === today).reduce((a, t) => a + t.amount, 0),
       perDay,
@@ -1693,6 +1710,7 @@
         const i = inc[`${s.id}|${d}`] || 0, o = out[`${s.id}|${d}`] || 0;
         let open = bal, mark = '';
         if (adj[d] != null) { open = adj[d]; mark = 'adj'; }
+        else if (d === s.start && +s.openBal) { open = +s.openBal; mark = 'ini'; }
         else if (cyc && d > s.start && isCycleDay(s, d)) {
           // dia da recarga: o acumulado do mês anterior não vale; começa do zero até você dizer quanto sobrou
           open = 0; mark = 'cycle';
@@ -1715,7 +1733,7 @@
       <div class="pk-top"><span class="pk-ic">${svg(ty.ic)}</span><span class="pk-name">${esc(p.src.name)}</span>${p.ended ? '<span class="pk-tag">encerrada</span>' : ''}</div>
       <div class="pk-lbl">${p.ended ? 'Saldo final' : 'Disponível hoje'}</div>
       <div class="pk-val ${t.bal < 0 ? 'neg' : ''}">${t.bal < 0 ? '−' : ''}${fmt(Math.abs(t.bal))}</div>
-      <div class="pk-flow"><span>${t.mark === 'adj' ? 'Saldo real' : t.mark === 'cycle' ? 'Recomeçou' : 'Ontem'} ${sign(t.open)}</span><span>Entrou +${fmt(t.inc)}</span><span>Saiu −${fmt(t.out)}</span></div>
+      <div class="pk-flow"><span>${t.mark === 'adj' ? 'Saldo real' : t.mark === 'ini' ? 'Já tinha' : t.mark === 'cycle' ? 'Recomeçou' : 'Ontem'} ${sign(t.open)}</span><span>Entrou +${fmt(t.inc)}</span><span>Saiu −${fmt(t.out)}</span></div>
       ${p.need ? `<div class="pk-need">${svg('edit')} A recarga chegou: toque e diga quanto sobrou</div>` : ''}
       ${big ? `<div class="pk-spark"><canvas id="spark-${p.src.id}"></canvas></div>` : ''}
     </button>`;
@@ -1741,7 +1759,7 @@
     $('#pocket-icon').style.cssText = `background:${alpha(c, .14)};color:${c}`;
     $('#pocket-icon').innerHTML = svg(ty.ic);
     $('#pocket-title').textContent = p.src.name;
-    $('#pocket-sub').textContent = `Hoje: ${p.today.bal < 0 ? '−' : ''}${fmt(Math.abs(p.today.bal))} · ${p.src.mode === 'daily' ? `${fmt(p.src.monthly / dimOf(todayStr()))} por dia` : `${fmt(p.src.monthly)} no dia ${p.src.payday}`}`;
+    $('#pocket-sub').textContent = `Hoje: ${p.today.bal < 0 ? '−' : ''}${fmt(Math.abs(p.today.bal))} · ${p.src.mode === 'daily' ? `${fmt(perDayNow(p.src, p.src.monthly))} por dia${(() => { const w = dayWindow(p.src, todayStr()); return w.n && todayStr() >= w.a ? ` (÷ ${w.n} dia${w.n > 1 ? 's' : ''} até o fim do mês)` : ' (a recarga deste mês ainda não caiu)'; })()}` : `${fmt(p.src.monthly)} no dia ${p.src.payday}`}`;
     const days = p.days.slice(-31);
     setChart('pocket', $('#chart-pocket'), {
       type: 'bar',
@@ -1749,7 +1767,7 @@
       options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { ...tooltip, callbacks: { title: it => dayLabel(days[it[0].dataIndex].d), label: c => `Fechou o dia em ${fmt(c.parsed.y)}` } } }, scales: { ...axes(), x: { ...axes().x, ticks: { maxTicksLimit: 6, maxRotation: 0 } } } },
     });
     $('#pocket-days').innerHTML = `<div class="dt-row dt-head"><span>Dia</span><span>Veio de ontem</span><span>Entrou</span><span>Saiu</span><span>Fechou</span></div>` +
-      [...p.days].reverse().slice(0, 62).map(d => `<div class="dt-row ${d.mark ? 'mk ' + d.mark : ''}" ${d.mark ? `data-mk="${d.d}"` : ''}><span>${d.d === todayStr() ? 'Hoje' : `${pad(+d.d.slice(8))}/${d.d.slice(5, 7)}`}${d.mark ? `<i>${d.mark === 'adj' ? 'real' : p.src.type === 'vr' ? 'recarga' : 'pagto'}</i>` : ''}</span><span class="${d.open < 0 ? 'neg' : ''}">${sign(d.open)}</span><span class="pos">+${fmt(d.inc)}</span><span class="neg">${d.out ? '−' + fmt(d.out) : '—'}</span><b class="${d.bal < 0 ? 'neg' : ''}">${d.bal < 0 ? '−' : ''}${fmt(Math.abs(d.bal))}</b></div>`).join('');
+      [...p.days].reverse().slice(0, 62).map(d => `<div class="dt-row ${d.mark ? 'mk ' + d.mark : ''}" ${d.mark ? `data-mk="${d.d}"` : ''}><span>${d.d === todayStr() ? 'Hoje' : `${pad(+d.d.slice(8))}/${d.d.slice(5, 7)}`}${d.mark ? `<i>${d.mark === 'adj' ? 'real' : d.mark === 'ini' ? 'já tinha' : p.src.type === 'vr' ? 'recarga' : 'pagto'}</i>` : ''}</span><span class="${d.open < 0 ? 'neg' : ''}">${sign(d.open)}</span><span class="pos">+${fmt(d.inc)}</span><span class="neg">${d.out ? '−' + fmt(d.out) : '—'}</span><b class="${d.bal < 0 ? 'neg' : ''}">${d.bal < 0 ? '−' : ''}${fmt(Math.abs(d.bal))}</b></div>`).join('');
     // recarga chegou e ainda não sabemos quanto sobrou
     const isVr = p.src.type === 'vr', word = isVr ? 'recarga' : 'pagamento';
     $('#pocket-ask').classList.toggle('hidden', !p.need);
@@ -1854,6 +1872,7 @@
     $('#inc-rate').value = src?.rate ? String(src.rate).replace('.', ',') : '';
     $('#inc-payday').value = src?.payday || 5;
     $('#inc-cycle-day').value = src?.payday || 5;
+    $('#inc-openbal').value = src?.openBal ? (+src.openBal).toFixed(2).replace('.', ',') : '';
     inc.cycle = src ? !!src.cycle : inc.type === 'vr';
     const first = todayStr().slice(0, 8) + '01';
     $('#inc-start').value = src?.start || first;
@@ -1893,7 +1912,8 @@
       ? `No dia ${vr ? 'da recarga' : 'do pagamento'} o que sobrou “no papel” do mês anterior não vale mais: o app recomeça e pergunta quanto sobrou de verdade.`
       : `Desligado: o que não foi gasto vai se acumulando de um mês para o outro.`;
     const bk = bankById($('#inc-bank').value);
-    $('#inc-more-sum').textContent = `${bk ? acctLabel(bk) : 'sem conta'} · desde ${$('#inc-start').value ? shortDate($('#inc-start').value) : 'hoje'}${$('#inc-end').value ? ' até ' + shortDate($('#inc-end').value) : ''}`;
+    const ob = Parsers.parseAmount($('#inc-openbal').value);
+    $('#inc-more-sum').textContent = `${bk ? acctLabel(bk) : 'sem conta'} · desde ${$('#inc-start').value ? shortDate($('#inc-start').value) : 'hoje'}${$('#inc-end').value ? ' até ' + shortDate($('#inc-end').value) : ''}${isFinite(ob) && ob ? ` · já tinha ${fmt(ob)}` : ''}`;
     // parte para investir (salário e outras fontes)
     const canSplit = inc.type === 'salario' || inc.type === 'extra';
     $('#inc-split').classList.toggle('hidden', !canSplit);
@@ -1906,8 +1926,13 @@
     const part = canSplit && inc.split.on ? investPart({ monthly: gross, invest: { on: true, mode: inc.split.mode, value: isFinite(sv) ? sv : 0 } }) : 0;
     const m = r2(gross - part), today = todayStr(), dim = dimOf(today);
     $('#split-preview').innerHTML = canSplit && inc.split.on && gross ? `<b>${fmt(part)}</b> vai para investimentos (${pct(gross ? part / gross : 0)}) · <b>${fmt(m)}</b> fica livre para o dia a dia` : '';
+    const cyc = inc.mode === 'daily' && inc.type !== 'invest' && inc.cycle;
+    const w = dayWindow({ mode: 'daily', cycle: cyc, payday: parseInt($('#inc-cycle-day').value, 10) || 1, start: $('#inc-start').value || today.slice(0, 8) + '01' }, today);
+    const wordIn = inc.type === 'vr' ? 'a recarga cair' : 'o dinheiro cair';
     $('#inc-preview').textContent = !m ? '' : inc.mode === 'daily'
-      ? `Em ${MES_LONGO[new Date().getMonth()]} (${dim} dias): ${fmt(m / dim)} por dia. Num mês de ${dim === 31 ? 30 : 31} dias: ${fmt(m / (dim === 31 ? 30 : 31))} por dia.`
+      ? (w.n && today >= w.a
+        ? `${fmt(m)} ÷ ${w.n} dia${w.n > 1 ? 's' : ''} que falta${w.n > 1 ? 'm' : ''} em ${MES_LONGO[new Date().getMonth()]} = ${fmt(m / w.n)} por dia. Mês que vem, a partir do dia em que ${wordIn}, divide pelos dias que faltarem (do dia 1: ÷ 30 ou 31).`
+        : `Neste mês ainda não caiu: a partir do dia ${+w.a.slice(8)}, ${fmt(m)} ÷ ${w.n} dias = ${fmt(m / (w.n || 1))} por dia.`)
       : inc.mode === 'payday' ? `Entra ${fmt(m)} todo dia ${$('#inc-payday').value || 1} (ou no último dia, em meses mais curtos).`
       : 'Não entra nas contas. Fica só registrado aqui.';
   }
@@ -1922,7 +1947,7 @@
   $('#inc-modes').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; inc.mode = b.dataset.mode; syncInc(); });
   $('#cycle-toggle').addEventListener('click', () => { inc.cycle = !inc.cycle; syncInc(); });
   $('#inc-payday').addEventListener('click', e => { e.stopPropagation(); inc.mode = 'payday'; syncInc(); });
-  ['#inc-amount', '#inc-principal', '#inc-rate', '#inc-payday', '#split-value'].forEach(k => $(k).addEventListener('input', syncInc));
+  ['#inc-amount', '#inc-principal', '#inc-rate', '#inc-payday', '#inc-cycle-day', '#inc-openbal', '#split-value'].forEach(k => $(k).addEventListener('input', syncInc));
   ['#inc-bank', '#inc-start', '#inc-end'].forEach(k => $(k).addEventListener('change', syncInc));
   $('#split-toggle').addEventListener('click', () => { inc.split.on = !inc.split.on; syncInc(); if (inc.split.on) setTimeout(() => $('#split-value').focus(), 50); });
   $('#split-mode').addEventListener('click', e => {
@@ -1950,6 +1975,7 @@
     const data = {
       type: inc.type, name: $('#inc-name').value.trim() || INC_TYPES[inc.type].def, monthly: r2(monthly), mode: inc.mode, payday,
       bank: $('#inc-bank').value || null, start, end, cycle: useCycle,
+      openBal: (() => { const v = Parsers.parseAmount($('#inc-openbal').value); return isFinite(v) && v ? r2(v) : null; })(),
       principal: inc.type === 'invest' ? (Parsers.parseAmount($('#inc-principal').value) || null) : null,
       rate: inc.type === 'invest' ? (Parsers.parseAmount($('#inc-rate').value) || null) : null,
       invest: (inc.type === 'salario' || inc.type === 'extra') && inc.split.on ? { on: true, mode: inc.split.mode, value: Parsers.parseAmount($('#split-value').value) || 0 } : null,

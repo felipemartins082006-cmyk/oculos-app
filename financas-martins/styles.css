@@ -944,3 +944,5 @@ details.more .when { justify-content: flex-start; }
 #pocket-adjust { min-height: 44px; }
 .dt-row.mk { background: rgba(var(--accent-rgb), .07); border-radius: 10px; }
 .dt-row.mk i { display: block; font-style: normal; font-size: 9px; font-weight: 800; color: var(--lime); text-transform: uppercase; letter-spacing: .02em; line-height: 1.2; }
+
+.openbal-note { margin: -4px 2px 0; color: var(--muted); font-size: 12.5px; line-height: 1.4; }
