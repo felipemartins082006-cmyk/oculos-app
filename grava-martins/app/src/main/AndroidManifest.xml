@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+  <!-- Gravar a tela fica num serviço em primeiro plano (com notificação) -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+  <!-- Som do microfone na gravação (opcional) -->
+  <uses-permission android:name="android.permission.RECORD_AUDIO" />
+  <!-- Botão flutuante por cima dos outros apps (opcional) -->
+  <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+  <uses-permission android:name="android.permission.VIBRATE" />
+
+  <application
+      android:allowBackup="false"
+      android:icon="@mipmap/ic_launcher"
+      android:roundIcon="@mipmap/ic_launcher_round"
+      android:label="@string/app_name"
+      android:supportsRtl="true"
+      android:theme="@style/Theme.Grava">
+
+    <activity
+        android:name=".MainActivity"
+        android:exported="true"
+        android:launchMode="singleTask">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+      </intent-filter>
+    </activity>
+
+    <!-- Tela invisível usada pelos botões da notificação: fecha a cortina de notificações
+         antes do print/gravação. Fica numa tarefa separada para não trazer o app para frente. -->
+    <activity
+        android:name=".AcaoActivity"
+        android:exported="false"
+        android:excludeFromRecents="true"
+        android:noHistory="true"
+        android:taskAffinity=""
+        android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+    <service
+        android:name=".GravadorService"
+        android:exported="false"
+        android:foregroundServiceType="mediaProjection|microphone" />
+  </application>
+</manifest>
