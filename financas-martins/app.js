@@ -1665,6 +1665,10 @@
     if (b && (b.type === 'vr' || b.type === 'va')) { const v = srcs.find(s => s.type === 'vr'); if (v) return v.id; }
     return (srcs.find(s => s.type === 'salario') || srcs.find(s => s.type === 'extra') || srcs[0])?.id || null;
   }
+  // "Na recarga, recomeçar pelo saldo real" (renda contada todo dia, como o VR)
+  const cycleOn = s => !!(s.cycle && s.mode === 'daily');
+  const isCycleDay = (s, d) => +d.slice(8) === Math.min(+s.payday || 1, dimOf(d));
+  const setAdj = (id, d, v) => { db.pocketAdj ||= {}; db.pocketAdj[id] ||= {}; if (v == null) delete db.pocketAdj[id][d]; else db.pocketAdj[id][d] = r2(v); };
   let pCache = null;
   function pockets() {
     const srcs = pocketSources();
@@ -1682,14 +1686,23 @@
     }
     const list = srcs.map(s => {
       const end = s.end && s.end < today ? s.end : today;
-      let bal = 0; const days = [];
+      const adj = (db.pocketAdj || {})[s.id] || {};
+      const cyc = cycleOn(s);
+      let bal = 0; const days = []; let need = null;
       for (let d = s.start; d <= end; d = addDays(d, 1)) {
         const i = inc[`${s.id}|${d}`] || 0, o = out[`${s.id}|${d}`] || 0;
-        const open = bal; bal = r2(bal + i - o);
-        days.push({ d, open, inc: i, out: o, bal });
+        let open = bal, mark = '';
+        if (adj[d] != null) { open = adj[d]; mark = 'adj'; }
+        else if (cyc && d > s.start && isCycleDay(s, d)) {
+          // dia da recarga: o acumulado do mês anterior não vale; começa do zero até você dizer quanto sobrou
+          open = 0; mark = 'cycle';
+          if (d >= addDays(today, -6)) need = d;
+        }
+        bal = r2(open + i - o);
+        days.push({ d, open, inc: i, out: o, bal, mark });
       }
       const last = days[days.length - 1] || { d: today, open: 0, inc: 0, out: 0, bal: 0 };
-      return { src: s, days, today: last, ended: !!(s.end && s.end < today) };
+      return { src: s, days, today: last, ended: !!(s.end && s.end < today), need };
     });
     pCache = { db, key, list };
     return list;
@@ -1702,7 +1715,8 @@
       <div class="pk-top"><span class="pk-ic">${svg(ty.ic)}</span><span class="pk-name">${esc(p.src.name)}</span>${p.ended ? '<span class="pk-tag">encerrada</span>' : ''}</div>
       <div class="pk-lbl">${p.ended ? 'Saldo final' : 'Disponível hoje'}</div>
       <div class="pk-val ${t.bal < 0 ? 'neg' : ''}">${t.bal < 0 ? '−' : ''}${fmt(Math.abs(t.bal))}</div>
-      <div class="pk-flow"><span>Ontem ${sign(t.open)}</span><span>Entrou +${fmt(t.inc)}</span><span>Saiu −${fmt(t.out)}</span></div>
+      <div class="pk-flow"><span>${t.mark === 'adj' ? 'Saldo real' : t.mark === 'cycle' ? 'Recomeçou' : 'Ontem'} ${sign(t.open)}</span><span>Entrou +${fmt(t.inc)}</span><span>Saiu −${fmt(t.out)}</span></div>
+      ${p.need ? `<div class="pk-need">${svg('edit')} A recarga chegou: toque e diga quanto sobrou</div>` : ''}
       ${big ? `<div class="pk-spark"><canvas id="spark-${p.src.id}"></canvas></div>` : ''}
     </button>`;
   }
@@ -1735,10 +1749,47 @@
       options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { ...tooltip, callbacks: { title: it => dayLabel(days[it[0].dataIndex].d), label: c => `Fechou o dia em ${fmt(c.parsed.y)}` } } }, scales: { ...axes(), x: { ...axes().x, ticks: { maxTicksLimit: 6, maxRotation: 0 } } } },
     });
     $('#pocket-days').innerHTML = `<div class="dt-row dt-head"><span>Dia</span><span>Veio de ontem</span><span>Entrou</span><span>Saiu</span><span>Fechou</span></div>` +
-      [...p.days].reverse().slice(0, 62).map(d => `<div class="dt-row"><span>${d.d === todayStr() ? 'Hoje' : `${pad(+d.d.slice(8))}/${d.d.slice(5, 7)}`}</span><span class="${d.open < 0 ? 'neg' : ''}">${sign(d.open)}</span><span class="pos">+${fmt(d.inc)}</span><span class="neg">${d.out ? '−' + fmt(d.out) : '—'}</span><b class="${d.bal < 0 ? 'neg' : ''}">${d.bal < 0 ? '−' : ''}${fmt(Math.abs(d.bal))}</b></div>`).join('');
+      [...p.days].reverse().slice(0, 62).map(d => `<div class="dt-row ${d.mark ? 'mk ' + d.mark : ''}" ${d.mark ? `data-mk="${d.d}"` : ''}><span>${d.d === todayStr() ? 'Hoje' : `${pad(+d.d.slice(8))}/${d.d.slice(5, 7)}`}${d.mark ? `<i>${d.mark === 'adj' ? 'real' : p.src.type === 'vr' ? 'recarga' : 'pagto'}</i>` : ''}</span><span class="${d.open < 0 ? 'neg' : ''}">${sign(d.open)}</span><span class="pos">+${fmt(d.inc)}</span><span class="neg">${d.out ? '−' + fmt(d.out) : '—'}</span><b class="${d.bal < 0 ? 'neg' : ''}">${d.bal < 0 ? '−' : ''}${fmt(Math.abs(d.bal))}</b></div>`).join('');
+    // recarga chegou e ainda não sabemos quanto sobrou
+    const isVr = p.src.type === 'vr', word = isVr ? 'recarga' : 'pagamento';
+    $('#pocket-ask').classList.toggle('hidden', !p.need);
+    if (p.need) $('#pocket-ask').innerHTML = `<div class="grow"><b>${cap(word)} ${p.need === todayStr() ? 'de hoje' : `de ${dayLabel(p.need).toLowerCase()}`}</b><small>O acumulado do mês anterior foi zerado. Se ainda sobrava dinheiro${isVr ? ' no cartão' : ''} antes da ${word}, diga quanto: ele soma no saldo, mas não conta como renda.</small></div><button type="button" class="cta small" id="pocket-left">Informar quanto sobrou</button>`;
+    pocketOpen = id;
     $('#pocket-sheet').classList.remove('hidden'); $('#pocket-backdrop').classList.remove('hidden');
   }
-  const closePocket = () => { $('#pocket-sheet').classList.add('hidden'); $('#pocket-backdrop').classList.add('hidden'); };
+  let pocketOpen = null;
+  async function askAmount(title, text, value) {
+    const v = await openDlg({ title, text, icon: 'wallet', ok: 'Salvar', input: { value: (+value || 0).toFixed(2).replace('.', ','), placeholder: '0,00', mode: 'decimal' } });
+    if (typeof v !== 'string') return null;
+    const n = Parsers.parseAmount(v); return isFinite(n) ? n : null;
+  }
+  // diz quanto sobrou antes da recarga/pagamento: vira o "veio de ontem" daquele dia
+  $('#pocket-ask').addEventListener('click', async e => {
+    if (!e.target.closest('#pocket-left')) return;
+    const p = pockets().find(x => x.src.id === pocketOpen); if (!p?.need) return;
+    const n = await askAmount('Quanto sobrou antes da recarga?', `Em “${p.src.name}”. Ex.: se tinha R$ 11,00 no cartão quando a recarga caiu, digite 11. Se não sobrou nada, digite 0.`, 0);
+    if (n == null) return;
+    setAdj(p.src.id, p.need, n); save(); render(); openPocket(p.src.id);
+    toast(n ? `${fmt(n)} somados ao saldo de ${p.src.name}` : 'Pronto: começou do zero na recarga');
+  });
+  // corrige o saldo de hoje para o valor real (o que o app do banco/VR mostra)
+  $('#pocket-adjust').addEventListener('click', async () => {
+    const p = pockets().find(x => x.src.id === pocketOpen); if (!p) return;
+    const t = p.today;
+    const n = await askAmount('Quanto você tem agora?', `Digite o saldo real de “${p.src.name}” agora (o que aparece no app${p.src.type === 'vr' ? ' do VR' : ' do banco'}). A partir de hoje o app conta em cima desse valor.`, t.bal);
+    if (n == null) return;
+    setAdj(p.src.id, t.d, r2(n - t.inc + t.out)); save(); render(); openPocket(p.src.id);
+    toast(`Saldo de ${p.src.name} ajustado para ${fmt(n)}`);
+  });
+  // tocar num dia ajustado: desfazer o ajuste
+  $('#pocket-days').addEventListener('click', async e => {
+    const r = e.target.closest('[data-mk]'); if (!r || !pocketOpen) return;
+    const adj = db.pocketAdj?.[pocketOpen]?.[r.dataset.mk];
+    if (adj == null) { $('#pocket-ask').scrollIntoView({ block: 'nearest', behavior: 'smooth' }); return; }
+    if (!(await ask({ title: 'Desfazer este ajuste?', text: `Em ${dayLabel(r.dataset.mk).toLowerCase()} o saldo foi ajustado (veio ${fmt(adj)}). Desfazendo, o app volta a calcular sozinho.`, ok: 'Desfazer', icon: 'sliders' }))) return;
+    setAdj(pocketOpen, r.dataset.mk, null); save(); render(); openPocket(pocketOpen); toast('Ajuste desfeito');
+  });
+  const closePocket = () => { pocketOpen = null; $('#pocket-sheet').classList.add('hidden'); $('#pocket-backdrop').classList.add('hidden'); };
   $('#pocket-close').addEventListener('click', closePocket);
   $('#pocket-backdrop').addEventListener('click', closePocket);
 
@@ -1802,6 +1853,8 @@
     $('#inc-principal').value = money(src?.principal);
     $('#inc-rate').value = src?.rate ? String(src.rate).replace('.', ',') : '';
     $('#inc-payday').value = src?.payday || 5;
+    $('#inc-cycle-day').value = src?.payday || 5;
+    inc.cycle = src ? !!src.cycle : inc.type === 'vr';
     const first = todayStr().slice(0, 8) + '01';
     $('#inc-start').value = src?.start || first;
     $('#inc-end').value = src?.end || '';
@@ -1830,6 +1883,15 @@
     $('#inc-amount-lbl').textContent = inc.type === 'invest' ? 'Renda por mês (calculada ou digite)' : 'Quanto você recebe por mês';
     $$('#inc-modes button').forEach(b => b.classList.toggle('active', b.dataset.mode === inc.mode));
     $('#payday-row').classList.toggle('hidden', inc.mode !== 'payday');
+    const vr = inc.type === 'vr';
+    $('#cycle-box').classList.toggle('hidden', inc.mode !== 'daily' || inc.type === 'invest');
+    $('#cycle-toggle').classList.toggle('on', !!inc.cycle);
+    $('#cycle-row').classList.toggle('hidden', !inc.cycle);
+    $('#cycle-title').textContent = vr ? 'Na recarga, recomeçar pelo saldo real' : 'No pagamento, recomeçar pelo saldo real';
+    $('#cycle-day-lbl').textContent = vr ? 'A recarga cai no dia' : 'O pagamento cai no dia';
+    $('#cycle-desc').textContent = inc.cycle
+      ? `No dia ${vr ? 'da recarga' : 'do pagamento'} o que sobrou “no papel” do mês anterior não vale mais: o app recomeça e pergunta quanto sobrou de verdade.`
+      : `Desligado: o que não foi gasto vai se acumulando de um mês para o outro.`;
     const bk = bankById($('#inc-bank').value);
     $('#inc-more-sum').textContent = `${bk ? acctLabel(bk) : 'sem conta'} · desde ${$('#inc-start').value ? shortDate($('#inc-start').value) : 'hoje'}${$('#inc-end').value ? ' até ' + shortDate($('#inc-end').value) : ''}`;
     // parte para investir (salário e outras fontes)
@@ -1853,10 +1915,12 @@
     const b = e.target.closest('button'); if (!b) return;
     const prevDef = INC_TYPES[inc.type].def;
     inc.type = b.dataset.t;
+    if (!inc.editing) inc.cycle = inc.type === 'vr';
     if (!$('#inc-name').value.trim() || $('#inc-name').value === prevDef) $('#inc-name').value = INC_TYPES[inc.type].def;
     syncInc();
   });
   $('#inc-modes').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; inc.mode = b.dataset.mode; syncInc(); });
+  $('#cycle-toggle').addEventListener('click', () => { inc.cycle = !inc.cycle; syncInc(); });
   $('#inc-payday').addEventListener('click', e => { e.stopPropagation(); inc.mode = 'payday'; syncInc(); });
   ['#inc-amount', '#inc-principal', '#inc-rate', '#inc-payday', '#split-value'].forEach(k => $(k).addEventListener('input', syncInc));
   ['#inc-bank', '#inc-start', '#inc-end'].forEach(k => $(k).addEventListener('change', syncInc));
@@ -1878,13 +1942,14 @@
     e.preventDefault();
     const monthly = incMonthly();
     if (!monthly && inc.mode !== 'off') { $('#inc-amount').focus(); toast('Digite quanto você recebe por mês'); return; }
-    const payday = Math.min(31, Math.max(1, parseInt($('#inc-payday').value, 10) || 1));
+    const useCycle = inc.mode === 'daily' && inc.type !== 'invest' && !!inc.cycle;
+    const payday = Math.min(31, Math.max(1, parseInt($(useCycle ? '#inc-cycle-day' : '#inc-payday').value, 10) || 1));
     const start = $('#inc-start').value || todayStr().slice(0, 8) + '01';
     const end = $('#inc-end').value || null;
     if (end && end < start) { toast('A data final é antes do começo'); return; }
     const data = {
       type: inc.type, name: $('#inc-name').value.trim() || INC_TYPES[inc.type].def, monthly: r2(monthly), mode: inc.mode, payday,
-      bank: $('#inc-bank').value || null, start, end,
+      bank: $('#inc-bank').value || null, start, end, cycle: useCycle,
       principal: inc.type === 'invest' ? (Parsers.parseAmount($('#inc-principal').value) || null) : null,
       rate: inc.type === 'invest' ? (Parsers.parseAmount($('#inc-rate').value) || null) : null,
       invest: (inc.type === 'salario' || inc.type === 'extra') && inc.split.on ? { on: true, mode: inc.split.mode, value: Parsers.parseAmount($('#split-value').value) || 0 } : null,

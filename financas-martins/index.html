@@ -499,6 +499,13 @@
     </div>
     <div class="payday-row hidden" id="payday-row">Entra inteiro no dia <input id="inc-payday" inputmode="numeric" maxlength="2" value="5" aria-label="Dia do pagamento"> de cada mês</div>
     <p class="inc-preview" id="inc-preview"></p>
+    <div class="cycle-box hidden" id="cycle-box">
+      <div class="toggle-row" style="margin-top:0">
+        <div class="grow"><b id="cycle-title">Na recarga, recomeçar pelo saldo real</b><small id="cycle-desc"></small></div>
+        <button type="button" class="switch" id="cycle-toggle" role="switch" aria-label="Recomeçar na recarga"><i></i></button>
+      </div>
+      <div class="payday-row hidden" id="cycle-row"><span id="cycle-day-lbl">A recarga cai no dia</span> <input id="inc-cycle-day" inputmode="numeric" maxlength="2" value="5" aria-label="Dia da recarga"> de cada mês</div>
+    </div>
   </div>
   <div class="split-box" id="inc-split">
     <div class="toggle-row" style="margin-top:0">
@@ -534,6 +541,8 @@
   <div class="drill-head"><span class="tile big" id="pocket-icon"></span><div class="grow"><h3 id="pocket-title"></h3><p id="pocket-sub"></p></div>
     <button type="button" class="icon-x" id="pocket-close" aria-label="Fechar"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
   <div class="chart-box short"><canvas id="chart-pocket"></canvas></div>
+  <div class="pocket-ask hidden" id="pocket-ask"></div>
+  <button type="button" class="ghost" id="pocket-adjust">Ajustar para o saldo real</button>
   <div class="day-table" id="pocket-days"></div>
 </div>
 

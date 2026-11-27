@@ -60,6 +60,10 @@ Diferenças em relação ao Android:
   categoria, conta ou forma de pagamento, itens, anotação e origem. Cada linha se edita ali mesmo
   (a anotação também entra na busca). Tocar numa conta do Início mostra saldo, movimento e permite
   mudar nome, tipo, banco e saldo inicial. Tocar em "Entrou"/"Saiu" abre o extrato já filtrado.
+- **Recomeçar na recarga** (renda contada todo dia, como o VR): ligado, no dia da recarga o que
+  sobrou "no papel" do mês anterior é zerado e o app pergunta quanto sobrou de verdade no cartão.
+  Esse valor soma no saldo, mas não conta como renda. Em qualquer saldo do dia a dia também há
+  **"Ajustar para o saldo real"** (digita o que o app do banco/VR mostra). Tocar num dia ajustado desfaz.
 - **Data e hora no visual do app** (sem a roda do Android): atalhos Hoje/Ontem/Anteontem e
   calendário do mês; hora em grade (hora + minutos de 5 em 5, ajuste de 1 minuto, "Agora").
 - **Registro manual** com teclado numérico próprio: valor, descrição, categoria e conta. Dia e hora

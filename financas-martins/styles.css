@@ -931,3 +931,16 @@ details.more .when { justify-content: flex-start; }
 .info-actions .ghost { min-height: 46px; }
 .hero-row .tapable { cursor: pointer; border-radius: 10px; }
 .hero-row .tapable:active { background: rgba(255, 255, 255, .08); }
+
+/* ---------- recomeçar na recarga / ajustar ao saldo real ---------- */
+.cycle-box { margin-top: 12px; padding: 12px; border-radius: 16px; background: var(--bg-3); display: grid; gap: 10px; }
+.cycle-box .toggle-row b { font-size: 14px; }
+.pk-need { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 12px; font-weight: 800; background: rgba(255, 255, 255, .92); color: #10131a; border-radius: 10px; padding: 6px 9px; }
+.pk-need svg { width: 14px; height: 14px; }
+.pocket-ask { display: grid; gap: 10px; padding: 12px; border-radius: 16px; background: rgba(var(--accent-rgb), .1); border: 1px solid rgba(var(--accent-rgb), .35); }
+.pocket-ask b { display: block; font-size: 14.5px; }
+.pocket-ask small { color: var(--text-2); font-size: 12.5px; line-height: 1.4; }
+.pocket-ask .cta.small { min-height: 44px; }
+#pocket-adjust { min-height: 44px; }
+.dt-row.mk { background: rgba(var(--accent-rgb), .07); border-radius: 10px; }
+.dt-row.mk i { display: block; font-style: normal; font-size: 9px; font-weight: 800; color: var(--lime); text-transform: uppercase; letter-spacing: .02em; line-height: 1.2; }
